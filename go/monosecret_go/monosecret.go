@@ -48,7 +48,7 @@ type MissingRequiredError struct {
 
 // CallerContext identifies the software integration invoking SecretSpec.
 // It is caller-asserted audit metadata and never supplies an access reason.
-// Available since SecretSpec 0.20.
+// Available since Monosecret 0.20.
 type CallerContext struct {
 	Name      string `json:"name"`
 	Version   string `json:"version,omitempty"`
@@ -217,9 +217,9 @@ func (b *Builder) WithNoValues(v bool) *Builder { return b.set("no_values", v) }
 // WithInlineSpec resolves a strict, versioned inline declaration instead of a
 // filesystem manifest. `spec` is serialized as the native inline-spec v1
 // document (project/profiles/secrets); `baseDir` resolves relative provider
-// paths just like the directory of a manifest. Available since SecretSpec 0.20.
+// paths just like the directory of a manifest. Available since Monosecret 0.20.
 //
-// The native library must export `secretspec_call`. If it is older, Load and
+// The native library must export `monosecret_call`. If it is older, Load and
 // Report return a capability error rather than falling back to a manifest search.
 func (b *Builder) WithInlineSpec(spec any, baseDir string) *Builder {
 	if b.req != nil {

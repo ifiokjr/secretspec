@@ -38,12 +38,12 @@ func nativeCall(payload string) (string, error) {
 	req := C.CString(payload)
 	defer C.free(unsafe.Pointer(req))
 
-	res := C.secretspec_call(req)
+	res := C.monosecret_call(req)
 	if res == nil {
-		return "", &Error{Kind: "ffi", Message: "secretspec_call returned null"}
+		return "", &Error{Kind: "ffi", Message: "monosecret_call returned null"}
 	}
 	out := C.GoString(res)
-	C.secretspec_free(res)
+	C.monosecret_free(res)
 	return out, nil
 }
 
