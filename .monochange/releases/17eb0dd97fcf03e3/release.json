@@ -1,0 +1,548 @@
+{
+  "schema_version": "0.4",
+  "kind": "monochange.releaseRecord",
+  "created_at": "2026-08-28T19:03:35Z",
+  "command": "release",
+  "version": "0.3.1",
+  "versions": {
+    "monosecret": "0.3.1"
+  },
+  "release_targets": [
+    {
+      "id": "monosecret",
+      "kind": "group",
+      "version": "0.3.1",
+      "version_format": "primary",
+      "tag": true,
+      "release": true,
+      "tag_name": "v0.3.1",
+      "members": [
+        "rust:monosecret",
+        "rust:monosecret_derive",
+        "rust:monosecret_ffi",
+        "@monosecret/cli",
+        "@monosecret/client",
+        "@monosecret/client-darwin-arm64",
+        "@monosecret/client-linux-arm64-gnu",
+        "@monosecret/client-linux-x64-gnu",
+        "@monosecret/client-win32-x64-msvc",
+        "@monosecret/skill",
+        "@monosecret/cli-darwin-arm64",
+        "@monosecret/cli-darwin-x64",
+        "@monosecret/cli-linux-arm64-gnu",
+        "@monosecret/cli-linux-arm64-musl",
+        "@monosecret/cli-linux-x64-gnu",
+        "@monosecret/cli-linux-x64-musl",
+        "@monosecret/cli-win32-arm64-msvc",
+        "@monosecret/cli-win32-x64-msvc",
+        "dart",
+        "dart:monosecret_builder"
+      ]
+    }
+  ],
+  "released_packages": [
+    "@monosecret/cli",
+    "@monosecret/cli-darwin-arm64",
+    "@monosecret/cli-darwin-x64",
+    "@monosecret/cli-linux-arm64-gnu",
+    "@monosecret/cli-linux-arm64-musl",
+    "@monosecret/cli-linux-x64-gnu",
+    "@monosecret/cli-linux-x64-musl",
+    "@monosecret/cli-win32-arm64-msvc",
+    "@monosecret/cli-win32-x64-msvc",
+    "@monosecret/client",
+    "@monosecret/client-darwin-arm64",
+    "@monosecret/client-linux-arm64-gnu",
+    "@monosecret/client-linux-x64-gnu",
+    "@monosecret/client-win32-x64-msvc",
+    "@monosecret/skill",
+    "monosecret",
+    "monosecret_builder",
+    "monosecret_derive",
+    "monosecret_ffi"
+  ],
+  "changed_files": [
+    "CHANGELOG.md",
+    "Cargo.lock",
+    "Cargo.toml",
+    "Package.swift",
+    "crates/monosecret/CHANGELOG.md",
+    "crates/monosecret/Cargo.toml",
+    "crates/monosecret_derive/CHANGELOG.md",
+    "crates/monosecret_derive/Cargo.toml",
+    "crates/monosecret_ffi/Cargo.toml",
+    "dart/monosecret/CHANGELOG.md",
+    "dart/monosecret/lib/src/version.dart",
+    "dart/monosecret/pubspec.yaml",
+    "dart/monosecret_builder/CHANGELOG.md",
+    "dart/monosecret_builder/pubspec.yaml",
+    "dotnet/monosecret_dotnet/src/Monosecret/Monosecret.csproj",
+    "haskell/monosecret_hs/monosecret.cabal",
+    "npm/monosecret__cli/package.json",
+    "npm/monosecret__cli-darwin-arm64/package.json",
+    "npm/monosecret__cli-darwin-x64/package.json",
+    "npm/monosecret__cli-linux-arm64-gnu/package.json",
+    "npm/monosecret__cli-linux-arm64-musl/package.json",
+    "npm/monosecret__cli-linux-x64-gnu/package.json",
+    "npm/monosecret__cli-linux-x64-musl/package.json",
+    "npm/monosecret__cli-win32-arm64-msvc/package.json",
+    "npm/monosecret__cli-win32-x64-msvc/package.json",
+    "npm/monosecret__client/package.json",
+    "npm/monosecret__client-darwin-arm64/package.json",
+    "npm/monosecret__client-linux-arm64-gnu/package.json",
+    "npm/monosecret__client-linux-x64-gnu/package.json",
+    "npm/monosecret__client-win32-x64-msvc/package.json",
+    "npm/monosecret__skill/package.json",
+    "pubspec.yaml",
+    "python/monosecret_py/pyproject.toml",
+    "ruby/monosecret_rb/monosecret_rb.gemspec"
+  ],
+  "package_publications": [
+    {
+      "package": "@monosecret/cli",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-darwin-arm64",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-darwin-x64",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-linux-arm64-gnu",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-linux-arm64-musl",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-linux-x64-gnu",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-linux-x64-musl",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-win32-arm64-msvc",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-win32-x64-msvc",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/skill",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "dart",
+      "ecosystem": "dart",
+      "registry": "pub_dev",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "dart:monosecret_builder",
+      "ecosystem": "dart",
+      "registry": "pub_dev",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "rust:monosecret",
+      "ecosystem": "cargo",
+      "registry": "crates_io",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "rust:monosecret_derive",
+      "ecosystem": "cargo",
+      "registry": "crates_io",
+      "version": "0.3.1",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    }
+  ],
+  "updated_changelogs": [
+    "CHANGELOG.md",
+    "crates/monosecret/CHANGELOG.md",
+    "crates/monosecret_derive/CHANGELOG.md",
+    "dart/monosecret/CHANGELOG.md",
+    "dart/monosecret_builder/CHANGELOG.md"
+  ],
+  "deleted_changesets": [
+    ".changeset/1787159595-monosecret.md",
+    ".changeset/1788298000-monosecret.md"
+  ],
+  "changesets": [
+    {
+      "path": ".changeset/1787159595-monosecret.md",
+      "summary": "Restore op+token:// scheme and batch shared-item reads",
+      "details": "Restore the legacy `op+token://<account>/<basePath>` provider scheme and route its field references through the batched `op inject` path. Secrets that live as sections of one shared 1Password item are now fetched in a single `op inject` call (plus one auth preflight) instead of one `op read` per secret, cutting `monosecret run` / `msload` secret-loading time by roughly an order of magnitude. The `onepassword+token://` scheme keeps its current behavior; `op+token://` is restored for backward compatibility and still requires the token as a provider credential or OP_SERVICE_ACCOUNT_TOKEN.",
+      "targets": [
+        {
+          "id": "monosecret",
+          "kind": "group",
+          "bump": "patch",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "fix"
+        }
+      ],
+      "context": {
+        "provider": "github",
+        "host": "github.com",
+        "capabilities": {
+          "commit_web_urls": true,
+          "actor_profiles": true,
+          "review_request_lookup": true,
+          "related_issues": true,
+          "issue_comments": true
+        },
+        "introduced": {
+          "actor": {
+            "provider": "github",
+            "host": "github.com",
+            "id": null,
+            "login": "ifiokjr",
+            "display_name": "ifiokjr",
+            "url": "https://github.com/ifiokjr",
+            "source": "review_request_author"
+          },
+          "commit": {
+            "provider": "github",
+            "host": "github.com",
+            "sha": "e61783c45856530cb07df86ad33b49b495b4b5c2",
+            "short_sha": "e61783c",
+            "url": "https://github.com/ifiokjr/monosecret/commit/e61783c45856530cb07df86ad33b49b495b4b5c2",
+            "authored_at": "2026-08-19T19:00:19+01:00",
+            "committed_at": "2026-08-19T19:00:19+01:00",
+            "author_name": "Ifiok Jr.",
+            "author_email": "1160934+ifiokjr@users.noreply.github.com"
+          },
+          "review_request": {
+            "provider": "github",
+            "host": "github.com",
+            "kind": "pull_request",
+            "id": "#40",
+            "title": "fix(onepassword): batch shared-item field reads via op inject",
+            "url": "https://github.com/ifiokjr/monosecret/pull/40",
+            "author": {
+              "provider": "github",
+              "host": "github.com",
+              "id": null,
+              "login": "ifiokjr",
+              "display_name": "ifiokjr",
+              "url": "https://github.com/ifiokjr",
+              "source": "review_request_author"
+            }
+          }
+        },
+        "last_updated": {
+          "actor": {
+            "provider": "github",
+            "host": "github.com",
+            "id": null,
+            "login": "ifiokjr",
+            "display_name": "ifiokjr",
+            "url": "https://github.com/ifiokjr",
+            "source": "review_request_author"
+          },
+          "commit": {
+            "provider": "github",
+            "host": "github.com",
+            "sha": "e61783c45856530cb07df86ad33b49b495b4b5c2",
+            "short_sha": "e61783c",
+            "url": "https://github.com/ifiokjr/monosecret/commit/e61783c45856530cb07df86ad33b49b495b4b5c2",
+            "authored_at": "2026-08-19T19:00:19+01:00",
+            "committed_at": "2026-08-19T19:00:19+01:00",
+            "author_name": "Ifiok Jr.",
+            "author_email": "1160934+ifiokjr@users.noreply.github.com"
+          },
+          "review_request": {
+            "provider": "github",
+            "host": "github.com",
+            "kind": "pull_request",
+            "id": "#40",
+            "title": "fix(onepassword): batch shared-item field reads via op inject",
+            "url": "https://github.com/ifiokjr/monosecret/pull/40",
+            "author": {
+              "provider": "github",
+              "host": "github.com",
+              "id": null,
+              "login": "ifiokjr",
+              "display_name": "ifiokjr",
+              "url": "https://github.com/ifiokjr",
+              "source": "review_request_author"
+            }
+          }
+        },
+        "related_issues": []
+      }
+    },
+    {
+      "path": ".changeset/1788298000-monosecret.md",
+      "summary": "Sync upstream SecretSpec (v0.19.1 → upstream main)",
+      "details": "Merges `cachix/secretspec` from v0.19.0 (the previous sync in #25) through upstream `main` @ `671de322` (2026-08-28), rebranded into the `crates/monosecret`, `crates/monosecret_derive`, `crates/monosecret_ffi`, and per-language `monosecret_*` SDK layout. Also records the upstream v0.19.0 merge ancestry that PR #25 lost to GitHub's squash button, so future syncs diff against the correct base.\n\n##### New providers\n\n- **Fly.io** (`fly://`): write-only application secrets via `flyctl`, with rename compatibility for older stores.\n- **Azure App Configuration** (`aac://`): connection-string auth reusing Azure Core's HMAC, reversible discovery, HTTP-redirect rejection, and operational setup docs.\n- **Cloudflare Secrets Store** (`cloudflare://`): write-only secrets in a Cloudflare account-level store.\n- **Kubernetes** (`kubernetes://`): read/write/delete secrets in a cluster via JSON patch, with patch authorization enforcement, early address resolution in `check_writable`, and a reserved delimiter for namespaced coordinates.\n\n##### New features\n\n- **Rust-first Spec API (0.20+)**: `Spec` / `SpecBuilder` let applications declare secrets directly in Rust; `spec_edit` preserves TOML formatting through builder edits and `spec_edit`-backed `add` writes descriptions back to `monosecret.toml` with inherited-edit provenance. The typed loader supports interactive prompt-and-store and preserves TOML edits through the builder.\n- **Inline specifications for all SDKs**: a versioned `call` ABI (`monosecret_call`, `INLINE_SPEC_SCHEMA_VERSION`) lets SDKs resolve strict inline-spec v1 declarations with an explicit source (`search`, `path`, or `inline`), with capability detection against older native libraries. Ported to the .NET, Go, Haskell, Node (napi), PHP, Python, Ruby, and Swift SDKs.\n- **Structured caller context (0.20+)**: `CallerContext` (`--caller`, `--caller-version`, `--caller-operation`) records _what_ invoked access in audit records without ever satisfying `require_reason`; threaded through the CLI, FFI (`monosecret_call` envelope), and every SDK.\n- **Shell completions**: `monosecret completions` for bash, zsh, fish, and nushell (clap_complete + clap_complete_nushell).\n- **Git credential helper integration**: `git-credential-monosecret` binary plus `monosecret git` configuration command, with repository-local includes, percent-encoding-aware paths, Windows support, and quiet Unix pipe-close handling.\n- **Docker credential helper integration**: `docker-credential-monosecret` binary and `monosecret docker` configuration that avoids persisting ambient profiles.\n- **JSON Schema generation** (`monosecret schema`): expose generated JSON Schema for specs, with property descriptions emitted by codegen.\n- **INI extraction**: `extract` with `format = \"ini\"` selects values from INI documents alongside JSON pointers.\n- **Interactive prompt-and-store for the typed loader**: `prompt_missing` resolves declared-but-missing secrets by prompting and storing.\n- **Spec builder round-trips**: TOML edits through the builder preserve comments and unknown tables.\n- **`import` rework**: imports run through explicit preparation, collision-check, copy, verification, and source-cleanup phases; `--delete-source` removes values only after every destination write succeeds.\n\n##### Fixes\n\n- `check` / value-free resolution surfaces (`check --json`, `check --explain`, SDK report resolutions) no longer report an unprovisioned required `generate` secret as resolved; such secrets are now `missing_required` with a non-zero exit until one real `check`/`run` mints the value. Optional `generate` secrets and non-retaining providers (e.g. `null`) are unaffected.\n- `run` forwards signals to the child process, and the CLI restores the default SIGPIPE disposition so `monosecret check | head` exits quietly.\n- 1Password: `op inject` batch recovery when referenced items are missing, fail-fast on auth errors, scoped auth diagnostic matching, and per-secret fallback preservation for unrecoverable batch failures.\n- Infisical: separate Universal Auth login connection, shared metadata-only environment probes, ref environment resolved from the profile, path defaults in entry identity.\n- GCSM: collision-safe `monosecret2--{project}--{profile}--{key}` convention names with legacy fallback.\n- BWS: use the vault host as the default server URL.\n- Bitwarden: preserve convention discovery and migration refs when project/profile contain `/`; case-insensitive convention recognition on `init --from bw://`.\n- AWSSM: provider path boundary joining and IAM docs now grant `BatchGetSecretValue` on `*`.\n- dotenv parsing switched from dotenvy to **dotenv-ng**: `$`-containing values stay literal, bcrypt-style strings round-trip, hyphens/unicode keys accepted, and output uses minimal quoting.\n- AWS SSM / Scaleway: a JSON `null` field is treated as no value with shared rendering; SDK `close()` attempts every `as_path` file.\n- Age provider supports deleting entries (0.20+).\n- `set`/`check` preview the resolved write destination; `check` writes its report to stdout.\n- Infisical: ambiguous-404 environment probes shared across reads, resolved environments compared structurally.\n- BWS: default server URL from the vault host.\n- GCSM legacy migration reads fixed; convention names collision-safe.\n\n##### SDK & tooling\n\n- All SDKs (Dart, Go, Haskell, Node, PHP, Python, Ruby, Swift, .NET) gain caller context, inline-spec `call` support, and the AWS-state release / `close()` fixes; the Node addon and CLI also learn musl target handling, and SDK CI builds every Rust-backed native package in one cargo invocation.\n- The derive crate now generates code through the shared codegen IR with `__private` re-exports and supports `prompt_missing` interactive store on first access.\n- FFI gains `monosecret_call` (versioned native operations incl. inline spec sources) plus its C header contract and cinstall updates.\n\n##### Documentation & skill\n\n- New provider guides (Fly.io, Azure App Configuration, Cloudflare, Kubernetes), git/docker integration guides, the dotenv-ng fork and moving-secrets blog posts, KDBX manual setup, GCSM versioned naming, Infisical environment probing, split AWS IAM policy examples, and the 0.20 CLI/caller-context reference updates.\n- The `@monosecret/skill` agent skill now documents the 0.20 command surface (completions, integrations, import preflight, typed SDKs, declarative features).\n\n##### Deferred\n\n- Upstream's JVM SDK (`secretspec-jvm`) is **not** ported in this sync; the fork's per-language SDK set is unchanged. A follow-up will port it as a `jvm/` workspace SDK with its own CI.\n- Upstream's cargo-dist/WinGet/ARM64 release workflows stay out of scope — the fork keeps its monochange-based publishing.",
+      "targets": [
+        {
+          "id": "monosecret",
+          "kind": "group",
+          "bump": "minor",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "feat"
+        }
+      ],
+      "context": {
+        "provider": "github",
+        "host": "github.com",
+        "capabilities": {
+          "commit_web_urls": true,
+          "actor_profiles": true,
+          "review_request_lookup": true,
+          "related_issues": true,
+          "issue_comments": true
+        },
+        "introduced": null,
+        "last_updated": null,
+        "related_issues": []
+      }
+    }
+  ],
+  "changelogs": [
+    {
+      "owner_id": "monosecret",
+      "owner_kind": "group",
+      "path": "CHANGELOG.md",
+      "format": "keep_a_changelog",
+      "notes": {
+        "title": "[0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)",
+        "summary": [
+          "Grouped release for `monosecret`."
+        ],
+        "sections": [
+          {
+            "title": "Features",
+            "collapsed": false,
+            "entries": [
+              "#### Sync upstream SecretSpec (v0.19.1 → upstream main)\n_Packages:_ _monosecret_\n\nMerges `cachix/secretspec` from v0.19.0 (the previous sync in #25) through upstream `main` @ `671de322` (2026-08-28), rebranded into the `crates/monosecret`, `crates/monosecret_derive`, `crates/monosecret_ffi`, and per-language `monosecret_*` SDK layout. Also records the upstream v0.19.0 merge ancestry that PR #25 lost to GitHub's squash button, so future syncs diff against the correct base.\n\n##### New providers\n\n- **Fly.io** (`fly://`): write-only application secrets via `flyctl`, with rename compatibility for older stores.\n- **Azure App Configuration** (`aac://`): connection-string auth reusing Azure Core's HMAC, reversible discovery, HTTP-redirect rejection, and operational setup docs.\n- **Cloudflare Secrets Store** (`cloudflare://`): write-only secrets in a Cloudflare account-level store.\n- **Kubernetes** (`kubernetes://`): read/write/delete secrets in a cluster via JSON patch, with patch authorization enforcement, early address resolution in `check_writable`, and a reserved delimiter for namespaced coordinates.\n\n##### New features\n\n- **Rust-first Spec API (0.20+)**: `Spec` / `SpecBuilder` let applications declare secrets directly in Rust; `spec_edit` preserves TOML formatting through builder edits and `spec_edit`-backed `add` writes descriptions back to `monosecret.toml` with inherited-edit provenance. The typed loader supports interactive prompt-and-store and preserves TOML edits through the builder.\n- **Inline specifications for all SDKs**: a versioned `call` ABI (`monosecret_call`, `INLINE_SPEC_SCHEMA_VERSION`) lets SDKs resolve strict inline-spec v1 declarations with an explicit source (`search`, `path`, or `inline`), with capability detection against older native libraries. Ported to the .NET, Go, Haskell, Node (napi), PHP, Python, Ruby, and Swift SDKs.\n- **Structured caller context (0.20+)**: `CallerContext` (`--caller`, `--caller-version`, `--caller-operation`) records _what_ invoked access in audit records without ever satisfying `require_reason`; threaded through the CLI, FFI (`monosecret_call` envelope), and every SDK.\n- **Shell completions**: `monosecret completions` for bash, zsh, fish, and nushell (clap_complete + clap_complete_nushell).\n- **Git credential helper integration**: `git-credential-monosecret` binary plus `monosecret git` configuration command, with repository-local includes, percent-encoding-aware paths, Windows support, and quiet Unix pipe-close handling.\n- **Docker credential helper integration**: `docker-credential-monosecret` binary and `monosecret docker` configuration that avoids persisting ambient profiles.\n- **JSON Schema generation** (`monosecret schema`): expose generated JSON Schema for specs, with property descriptions emitted by codegen.\n- **INI extraction**: `extract` with `format = \"ini\"` selects values from INI documents alongside JSON pointers.\n- **Interactive prompt-and-store for the typed loader**: `prompt_missing` resolves declared-but-missing secrets by prompting and storing.\n- **Spec builder round-trips**: TOML edits through the builder preserve comments and unknown tables.\n- **`import` rework**: imports run through explicit preparation, collision-check, copy, verification, and source-cleanup phases; `--delete-source` removes values only after every destination write succeeds.\n\n##### Fixes\n\n- `check` / value-free resolution surfaces (`check --json`, `check --explain`, SDK report resolutions) no longer report an unprovisioned required `generate` secret as resolved; such secrets are now `missing_required` with a non-zero exit until one real `check`/`run` mints the value. Optional `generate` secrets and non-retaining providers (e.g. `null`) are unaffected.\n- `run` forwards signals to the child process, and the CLI restores the default SIGPIPE disposition so `monosecret check | head` exits quietly.\n- 1Password: `op inject` batch recovery when referenced items are missing, fail-fast on auth errors, scoped auth diagnostic matching, and per-secret fallback preservation for unrecoverable batch failures.\n- Infisical: separate Universal Auth login connection, shared metadata-only environment probes, ref environment resolved from the profile, path defaults in entry identity.\n- GCSM: collision-safe `monosecret2--{project}--{profile}--{key}` convention names with legacy fallback.\n- BWS: use the vault host as the default server URL.\n- Bitwarden: preserve convention discovery and migration refs when project/profile contain `/`; case-insensitive convention recognition on `init --from bw://`.\n- AWSSM: provider path boundary joining and IAM docs now grant `BatchGetSecretValue` on `*`.\n- dotenv parsing switched from dotenvy to **dotenv-ng**: `$`-containing values stay literal, bcrypt-style strings round-trip, hyphens/unicode keys accepted, and output uses minimal quoting.\n- AWS SSM / Scaleway: a JSON `null` field is treated as no value with shared rendering; SDK `close()` attempts every `as_path` file.\n- Age provider supports deleting entries (0.20+).\n- `set`/`check` preview the resolved write destination; `check` writes its report to stdout.\n- Infisical: ambiguous-404 environment probes shared across reads, resolved environments compared structurally.\n- BWS: default server URL from the vault host.\n- GCSM legacy migration reads fixed; convention names collision-safe.\n\n##### SDK & tooling\n\n- All SDKs (Dart, Go, Haskell, Node, PHP, Python, Ruby, Swift, .NET) gain caller context, inline-spec `call` support, and the AWS-state release / `close()` fixes; the Node addon and CLI also learn musl target handling, and SDK CI builds every Rust-backed native package in one cargo invocation.\n- The derive crate now generates code through the shared codegen IR with `__private` re-exports and supports `prompt_missing` interactive store on first access.\n- FFI gains `monosecret_call` (versioned native operations incl. inline spec sources) plus its C header contract and cinstall updates.\n\n##### Documentation & skill\n\n- New provider guides (Fly.io, Azure App Configuration, Cloudflare, Kubernetes), git/docker integration guides, the dotenv-ng fork and moving-secrets blog posts, KDBX manual setup, GCSM versioned naming, Infisical environment probing, split AWS IAM policy examples, and the 0.20 CLI/caller-context reference updates.\n- The `@monosecret/skill` agent skill now documents the 0.20 command surface (completions, integrations, import preflight, typed SDKs, declarative features).\n\n##### Deferred\n\n- Upstream's JVM SDK (`secretspec-jvm`) is **not** ported in this sync; the fork's per-language SDK set is unchanged. A follow-up will port it as a `jvm/` workspace SDK with its own CI.\n- Upstream's cargo-dist/WinGet/ARM64 release workflows stay out of scope — the fork keeps its monochange-based publishing."
+            ]
+          },
+          {
+            "title": "Fixes",
+            "collapsed": false,
+            "entries": [
+              "#### Restore op+token:// scheme and batch shared-item reads\n_Packages:_ _monosecret_\n\nRestore the legacy `op+token://<account>/<basePath>` provider scheme and route its field references through the batched `op inject` path. Secrets that live as sections of one shared 1Password item are now fetched in a single `op inject` call (plus one auth preflight) instead of one `op read` per secret, cutting `monosecret run` / `msload` secret-loading time by roughly an order of magnitude. The `onepassword+token://` scheme keeps its current behavior; `op+token://` is restored for backward compatibility and still requires the token as a provider credential or OP_SERVICE_ACCOUNT_TOKEN.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #40](https://github.com/ifiokjr/monosecret/pull/40)"
+            ]
+          }
+        ]
+      },
+      "rendered": "## [0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)\n\nGrouped release for `monosecret`.\n### Features\n\n#### Sync upstream SecretSpec (v0.19.1 → upstream main)\n_Packages:_ _monosecret_\n\nMerges `cachix/secretspec` from v0.19.0 (the previous sync in #25) through upstream `main` @ `671de322` (2026-08-28), rebranded into the `crates/monosecret`, `crates/monosecret_derive`, `crates/monosecret_ffi`, and per-language `monosecret_*` SDK layout. Also records the upstream v0.19.0 merge ancestry that PR #25 lost to GitHub's squash button, so future syncs diff against the correct base.\n\n##### New providers\n\n- **Fly.io** (`fly://`): write-only application secrets via `flyctl`, with rename compatibility for older stores.\n- **Azure App Configuration** (`aac://`): connection-string auth reusing Azure Core's HMAC, reversible discovery, HTTP-redirect rejection, and operational setup docs.\n- **Cloudflare Secrets Store** (`cloudflare://`): write-only secrets in a Cloudflare account-level store.\n- **Kubernetes** (`kubernetes://`): read/write/delete secrets in a cluster via JSON patch, with patch authorization enforcement, early address resolution in `check_writable`, and a reserved delimiter for namespaced coordinates.\n\n##### New features\n\n- **Rust-first Spec API (0.20+)**: `Spec` / `SpecBuilder` let applications declare secrets directly in Rust; `spec_edit` preserves TOML formatting through builder edits and `spec_edit`-backed `add` writes descriptions back to `monosecret.toml` with inherited-edit provenance. The typed loader supports interactive prompt-and-store and preserves TOML edits through the builder.\n- **Inline specifications for all SDKs**: a versioned `call` ABI (`monosecret_call`, `INLINE_SPEC_SCHEMA_VERSION`) lets SDKs resolve strict inline-spec v1 declarations with an explicit source (`search`, `path`, or `inline`), with capability detection against older native libraries. Ported to the .NET, Go, Haskell, Node (napi), PHP, Python, Ruby, and Swift SDKs.\n- **Structured caller context (0.20+)**: `CallerContext` (`--caller`, `--caller-version`, `--caller-operation`) records _what_ invoked access in audit records without ever satisfying `require_reason`; threaded through the CLI, FFI (`monosecret_call` envelope), and every SDK.\n- **Shell completions**: `monosecret completions` for bash, zsh, fish, and nushell (clap_complete + clap_complete_nushell).\n- **Git credential helper integration**: `git-credential-monosecret` binary plus `monosecret git` configuration command, with repository-local includes, percent-encoding-aware paths, Windows support, and quiet Unix pipe-close handling.\n- **Docker credential helper integration**: `docker-credential-monosecret` binary and `monosecret docker` configuration that avoids persisting ambient profiles.\n- **JSON Schema generation** (`monosecret schema`): expose generated JSON Schema for specs, with property descriptions emitted by codegen.\n- **INI extraction**: `extract` with `format = \"ini\"` selects values from INI documents alongside JSON pointers.\n- **Interactive prompt-and-store for the typed loader**: `prompt_missing` resolves declared-but-missing secrets by prompting and storing.\n- **Spec builder round-trips**: TOML edits through the builder preserve comments and unknown tables.\n- **`import` rework**: imports run through explicit preparation, collision-check, copy, verification, and source-cleanup phases; `--delete-source` removes values only after every destination write succeeds.\n\n##### Fixes\n\n- `check` / value-free resolution surfaces (`check --json`, `check --explain`, SDK report resolutions) no longer report an unprovisioned required `generate` secret as resolved; such secrets are now `missing_required` with a non-zero exit until one real `check`/`run` mints the value. Optional `generate` secrets and non-retaining providers (e.g. `null`) are unaffected.\n- `run` forwards signals to the child process, and the CLI restores the default SIGPIPE disposition so `monosecret check | head` exits quietly.\n- 1Password: `op inject` batch recovery when referenced items are missing, fail-fast on auth errors, scoped auth diagnostic matching, and per-secret fallback preservation for unrecoverable batch failures.\n- Infisical: separate Universal Auth login connection, shared metadata-only environment probes, ref environment resolved from the profile, path defaults in entry identity.\n- GCSM: collision-safe `monosecret2--{project}--{profile}--{key}` convention names with legacy fallback.\n- BWS: use the vault host as the default server URL.\n- Bitwarden: preserve convention discovery and migration refs when project/profile contain `/`; case-insensitive convention recognition on `init --from bw://`.\n- AWSSM: provider path boundary joining and IAM docs now grant `BatchGetSecretValue` on `*`.\n- dotenv parsing switched from dotenvy to **dotenv-ng**: `$`-containing values stay literal, bcrypt-style strings round-trip, hyphens/unicode keys accepted, and output uses minimal quoting.\n- AWS SSM / Scaleway: a JSON `null` field is treated as no value with shared rendering; SDK `close()` attempts every `as_path` file.\n- Age provider supports deleting entries (0.20+).\n- `set`/`check` preview the resolved write destination; `check` writes its report to stdout.\n- Infisical: ambiguous-404 environment probes shared across reads, resolved environments compared structurally.\n- BWS: default server URL from the vault host.\n- GCSM legacy migration reads fixed; convention names collision-safe.\n\n##### SDK & tooling\n\n- All SDKs (Dart, Go, Haskell, Node, PHP, Python, Ruby, Swift, .NET) gain caller context, inline-spec `call` support, and the AWS-state release / `close()` fixes; the Node addon and CLI also learn musl target handling, and SDK CI builds every Rust-backed native package in one cargo invocation.\n- The derive crate now generates code through the shared codegen IR with `__private` re-exports and supports `prompt_missing` interactive store on first access.\n- FFI gains `monosecret_call` (versioned native operations incl. inline spec sources) plus its C header contract and cinstall updates.\n\n##### Documentation & skill\n\n- New provider guides (Fly.io, Azure App Configuration, Cloudflare, Kubernetes), git/docker integration guides, the dotenv-ng fork and moving-secrets blog posts, KDBX manual setup, GCSM versioned naming, Infisical environment probing, split AWS IAM policy examples, and the 0.20 CLI/caller-context reference updates.\n- The `@monosecret/skill` agent skill now documents the 0.20 command surface (completions, integrations, import preflight, typed SDKs, declarative features).\n\n##### Deferred\n\n- Upstream's JVM SDK (`secretspec-jvm`) is **not** ported in this sync; the fork's per-language SDK set is unchanged. A follow-up will port it as a `jvm/` workspace SDK with its own CI.\n- Upstream's cargo-dist/WinGet/ARM64 release workflows stay out of scope — the fork keeps its monochange-based publishing.\n\n### Fixes\n\n#### Restore op+token:// scheme and batch shared-item reads\n_Packages:_ _monosecret_\n\nRestore the legacy `op+token://<account>/<basePath>` provider scheme and route its field references through the batched `op inject` path. Secrets that live as sections of one shared 1Password item are now fetched in a single `op inject` call (plus one auth preflight) instead of one `op read` per secret, cutting `monosecret run` / `msload` secret-loading time by roughly an order of magnitude. The `onepassword+token://` scheme keeps its current behavior; `op+token://` is restored for backward compatibility and still requires the token as a provider credential or OP_SERVICE_ACCOUNT_TOKEN.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #40](https://github.com/ifiokjr/monosecret/pull/40)"
+    },
+    {
+      "owner_id": "rust:monosecret",
+      "owner_kind": "package",
+      "path": "crates/monosecret/CHANGELOG.md",
+      "format": "keep_a_changelog",
+      "notes": {
+        "title": "[0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)",
+        "summary": [],
+        "sections": [
+          {
+            "title": "Changed",
+            "collapsed": false,
+            "entries": [
+              "- No package-specific changes were recorded; `monosecret` was updated to 0.3.1 as part of group `monosecret`."
+            ]
+          }
+        ]
+      },
+      "rendered": "## [0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)\n\n### Changed\n\n- No package-specific changes were recorded; `monosecret` was updated to 0.3.1 as part of group `monosecret`."
+    },
+    {
+      "owner_id": "rust:monosecret_derive",
+      "owner_kind": "package",
+      "path": "crates/monosecret_derive/CHANGELOG.md",
+      "format": "keep_a_changelog",
+      "notes": {
+        "title": "[0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)",
+        "summary": [],
+        "sections": [
+          {
+            "title": "Changed",
+            "collapsed": false,
+            "entries": [
+              "- No package-specific changes were recorded; `monosecret_derive` was updated to 0.3.1 as part of group `monosecret`."
+            ]
+          }
+        ]
+      },
+      "rendered": "## [0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)\n\n### Changed\n\n- No package-specific changes were recorded; `monosecret_derive` was updated to 0.3.1 as part of group `monosecret`."
+    },
+    {
+      "owner_id": "dart",
+      "owner_kind": "package",
+      "path": "dart/monosecret/CHANGELOG.md",
+      "format": "keep_a_changelog",
+      "notes": {
+        "title": "[0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)",
+        "summary": [],
+        "sections": [
+          {
+            "title": "Changed",
+            "collapsed": false,
+            "entries": [
+              "- No package-specific changes were recorded; `monosecret` was updated to 0.3.1 as part of group `monosecret`."
+            ]
+          }
+        ]
+      },
+      "rendered": "## [0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)\n\n### Changed\n\n- No package-specific changes were recorded; `monosecret` was updated to 0.3.1 as part of group `monosecret`."
+    },
+    {
+      "owner_id": "dart:monosecret_builder",
+      "owner_kind": "package",
+      "path": "dart/monosecret_builder/CHANGELOG.md",
+      "format": "keep_a_changelog",
+      "notes": {
+        "title": "[0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)",
+        "summary": [],
+        "sections": [
+          {
+            "title": "Changed",
+            "collapsed": false,
+            "entries": [
+              "- No package-specific changes were recorded; `monosecret_builder` was updated to 0.3.1 as part of group `monosecret`."
+            ]
+          }
+        ]
+      },
+      "rendered": "## [0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)\n\n### Changed\n\n- No package-specific changes were recorded; `monosecret_builder` was updated to 0.3.1 as part of group `monosecret`."
+    }
+  ],
+  "provider": {
+    "kind": "github",
+    "owner": "ifiokjr",
+    "repo": "monosecret",
+    "host": null
+  }
+}
