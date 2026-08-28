@@ -86,7 +86,7 @@ testCallerContextBuilder = do
 testInlineSpec :: IO ()
 testInlineSpec = do
   tmp <- getTemporaryDirectory
-  let dir = tmp </> "secretspec-hs-inline"
+  let dir = tmp </> "monosecret-hs-inline"
   createDirectoryIfMissing True dir
   writeFile (dir </> "inline.env") "TOKEN=inline-haskell\n"
   let spec = object

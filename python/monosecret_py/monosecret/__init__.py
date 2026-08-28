@@ -67,7 +67,7 @@ class MissingRequiredError(MonosecretError):
 
 @dataclass(frozen=True)
 class CallerContext:
-    """Caller-asserted software-integration context (SecretSpec 0.20+)."""
+    """Caller-asserted software-integration context (Monosecret 0.20+)."""
 
     name: str
     version: Optional[str] = None
@@ -215,9 +215,9 @@ def _resolve_envelope(request: dict) -> dict:
 
 def _call_envelope(request: dict) -> dict:
     if not hasattr(_native, "call"):
-        raise SecretSpecError(
+        raise MonosecretError(
             "capability",
-            "the loaded native extension predates inline specifications; reinstall SecretSpec 0.20+",
+            "the loaded native extension predates inline specifications; reinstall Monosecret 0.20+",
         )
     raw = _native.call(json.dumps(request))
     return json.loads(raw)
@@ -320,7 +320,7 @@ class _Builder:
         return self
 
     def with_inline_spec(self, spec: dict, base_dir: str) -> "_Builder":
-        """Resolve inline-spec v1 at ``base_dir`` (SecretSpec 0.20+).
+        """Resolve inline-spec v1 at ``base_dir`` (Monosecret 0.20+).
 
         Inline resolution uses the versioned native call entry point, so an
         older runtime cannot fall back to a filesystem manifest.
@@ -351,7 +351,7 @@ class _Builder:
         return self
 
     def with_caller(self, caller: Optional[CallerContext]) -> "_Builder":
-        """Identify the invoking software integration (SecretSpec 0.20+)."""
+        """Identify the invoking software integration (Monosecret 0.20+)."""
         if caller is not None:
             self._request["caller"] = caller._request()
         return self

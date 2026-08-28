@@ -45,7 +45,7 @@ module Monosecret
     end
   end
 
-  # Caller-asserted software-integration context (SecretSpec 0.20+).
+  # Caller-asserted software-integration context (Monosecret 0.20+).
   CallerContext = Struct.new(:name, :version, :operation, :resource, keyword_init: true) do
     def to_h
       { "name" => name, "version" => version, "operation" => operation,
@@ -139,11 +139,11 @@ module Monosecret
 
       def call(request_json)
         unless respond_to?(:c_call, true)
-          raise Error.new("capability", "the loaded native extension predates inline specifications; rebuild the secretspec gem")
+          raise Error.new("capability", "the loaded native extension predates inline specifications; rebuild the monosecret gem")
         end
 
         result = c_call(request_json)
-        raise Error.new("ffi", "secretspec_call returned null") if result.nil?
+        raise Error.new("ffi", "monosecret_call returned null") if result.nil?
 
         result
       end
@@ -195,7 +195,7 @@ module Monosecret
       self
     end
 
-    # Identify the invoking software integration (SecretSpec 0.20+).
+    # Identify the invoking software integration (Monosecret 0.20+).
     def with_caller(caller)
       @request["caller"] = caller.to_h if caller
       self

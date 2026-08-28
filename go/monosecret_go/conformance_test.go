@@ -71,7 +71,7 @@ func TestConformance(t *testing.T) {
 }
 
 // TestInlineSpecConformance exercises the purego/dlopen-capable SDK through
-// the versioned `secretspec_call` symbol. It deliberately has no manifest: a
+// the versioned `monosecret_call` symbol. It deliberately has no manifest: a
 // successful result proves the inline declaration did not fall back to a file
 // search and that its logical base directory resolves relative providers.
 func TestInlineSpecConformance(t *testing.T) {

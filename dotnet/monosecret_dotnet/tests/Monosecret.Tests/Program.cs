@@ -115,7 +115,7 @@ internal static class Program
               } } }
             }
             """;
-        using var resolved = SecretSpecClient.Builder()
+        using var resolved = MonosecretClient.Builder()
             .WithInlineSpec(spec, dir)
             .WithReason("C# inline test")
             .Load();
@@ -130,8 +130,8 @@ internal static class Program
         try
         {
             Directory.SetCurrentDirectory(directory);
-            var error = Throws<SecretSpecException>(() =>
-                SecretSpecClient.Builder()
+            var error = Throws<MonosecretException>(() =>
+                MonosecretClient.Builder()
                     .WithInlineSpec("null", directory)
                     .WithReason("C# null inline test")
                     .Load());

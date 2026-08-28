@@ -46,7 +46,7 @@ type MissingRequiredError struct {
 	Missing []string
 }
 
-// CallerContext identifies the software integration invoking SecretSpec.
+// CallerContext identifies the software integration invoking Monosecret.
 // It is caller-asserted audit metadata and never supplies an access reason.
 // Available since Monosecret 0.20.
 type CallerContext struct {

@@ -69,7 +69,7 @@ final class Builder
         return $this->set('reason', $reason);
     }
 
-    /** Identify the invoking software integration (SecretSpec 0.20+). */
+    /** Identify the invoking software integration (Monosecret 0.20+). */
     public function withCaller(?CallerContext $caller): self
     {
         if ($caller !== null) {
