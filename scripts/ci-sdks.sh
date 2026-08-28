@@ -23,7 +23,7 @@ cargo build \
 	-p monosecret_ffi \
 	-p monosecret \
 	-p monosecret_client_native \
-	-p monosecret_php_native \
+	-p monosecret-php-native \
 	-p monosecret_py_native
 
 target_dir="$(cargo metadata --no-deps --format-version 1 |
