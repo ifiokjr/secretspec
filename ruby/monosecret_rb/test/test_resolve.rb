@@ -44,7 +44,7 @@ class ResolveTest < Minitest::Test
   end
 
   def test_caller_context_is_structured_and_separate_from_reason
-    builder = Monosecret::Monosecret.builder.with_caller(
+    builder = Monosecret.builder.with_caller(
       Monosecret::CallerContext.new(
         name: "git",
         version: "2.51.0",
@@ -93,7 +93,7 @@ class ResolveTest < Minitest::Test
           "TOKEN" => { "description" => "token", "providers" => ["env"] }
         } } }
       }
-      resolved = Monosecret::Monosecret.builder
+      resolved = Monosecret.builder
                                         .with_inline_spec(spec, dir)
                                         .with_reason("ruby inline test")
                                         .load
