@@ -9,6 +9,8 @@ import profilesExample from '../../../../../crates/monosecret_derive/examples/pr
 import scopesExample from '../../../../../crates/monosecret_derive/examples/scopes.rs?raw';
 import asPathExample from '../../../../../crates/monosecret_derive/examples/as_path.rs?raw';
 import namedExample from '../../../../../crates/monosecret_derive/examples/named.rs?raw';
+import promptMissingExample from '../../../../../crates/monosecret_derive/examples/prompt_missing.rs?raw';
+import rustFirstExample from '../../../../../crates/monosecret/examples/rust_first.rs?raw';
 import exampleManifest from '../../../../../crates/monosecret_derive/monosecret.toml?raw';
 
 Monosecret provides a Rust library with type-safe access to secrets through a
@@ -17,16 +19,26 @@ Rust types for its profiles and secrets.
 
 ## Quick start
 
-Add the runtime, derive macro, and the generated code's direct dependencies to
-your `Cargo.toml`:
+Add the runtime and derive macro from the command line:
+
+```shell
+cargo add monosecret monosecret_derive
+```
+
+Alternatively, add both dependencies to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-monosecret = "0.2"
-monosecret_derive = "0.2"
-secrecy = { version = "0.10", features = ["serde"] }
-serde = { version = "1", features = ["derive"] }
+monosecret = "0.20"
+monosecret_derive = "0.20"
 ```
+
+:::caution[Version compatibility]
+Generated code reaches `serde` and `secrecy` through `monosecret` starting in
+Monosecret 0.20. On 0.19 and earlier, also depend on `secrecy = { version =
+"0.10", features = ["serde"] }` and `serde = { version = "1", features =
+["derive"] }`.
+:::
 
 The examples on this page are compiled as Cargo examples in
 `monosecret_derive`. They generate their types from this manifest:
@@ -42,6 +54,68 @@ use with any declared profile:
 Required and defaulted secrets are generated as `String`; secrets that may be
 absent are `Option<String>`. Field names use Rust snake case, so `DATABASE_URL`
 becomes `database_url`.
+
+## Describing secrets in Rust (0.20+)
+
+Starting with Monosecret 0.20, `Spec` is the format-independent declaration
+API. Build one directly in Rust when an application owns its secret contract
+in code, then pass the validated specification to `Secrets::from_spec`:
+
+<Code code={rustFirstExample} lang="rust" meta='title="rust_first.rs"' />
+
+`Spec::from_toml` and `Spec::try_from(path)` produce the same type through the
+same validation and compilation path. Convert from a path for manifests with
+`extends`, because a TOML string has no directory from which to resolve relative
+paths.
+A spec loaded from a file retains that file's directory for relative provider
+paths. A Rust-built declaration resolves them from the current working directory
+by default; `Secrets::from_spec_at` selects another logical base directory.
+
+Use `schema_json(None)` to emit the value-free JSON Schema for the union shape,
+or pass a profile name for that profile's effective fields:
+
+```rust
+let union_schema = spec.schema_json(None)?;
+let production_schema = spec.schema_json(Some("production"))?;
+```
+
+Schema generation reads declarations only. It does not resolve secret values or
+contact providers.
+
+`Spec` is immutable so its declarations and compiled view cannot drift apart.
+Use `to_builder()` to edit a copy, or `into_builder()` to consume the original,
+then rebuild to validate the result:
+
+```rust
+let edited = spec
+    .to_builder()
+    .remove_secret("default", "LEGACY_TOKEN")
+    .add_secret(
+        "production",
+        "DEPLOY_TOKEN",
+        Secret::required("Production deployment token"),
+    )
+    .build()?;
+```
+
+`remove_secret` removes the declaration from that profile. Removing an override
+can reveal the declaration inherited from `default`; removing it from `default`
+also removes it from profiles that only inherited it. `build()` rejects dangling
+scope membership, invalid compositions, empty profiles, and other semantic
+errors introduced by an edit.
+
+For a spec loaded from TOML, `secret`, `add_secret`, `replace_secret`, and
+`remove_secret` preserve comments, ordering, quoting, and unrelated syntax in
+the root document. Read the edited document with `edited.preserved_text()`.
+Adding and then removing the same declaration restores the original bytes, and
+inherited declarations are never inlined into a child manifest. Other builder
+operations are semantic edits and clear the retained text; use `to_toml()` when
+freshly formatted output is acceptable. A spec constructed with
+`Spec::builder()` has no original document to preserve.
+
+The Rust-first API complements `declare_secrets!`: `Spec` describes and
+resolves names dynamically, while the macro continues to generate statically
+typed fields from a manifest at compile time.
 
 ## Profile-specific types
 
@@ -87,6 +161,40 @@ rather than turning into a missing value, and whole-profile presence constraints
 `with_default_reason()` (also 0.2+) supplies a reason only when the caller has
 not already set one through `with_reason()` or `MONOSECRET_REASON`, so a wrapper
 can describe itself without overwriting the more specific reason it was given.
+When a wrapper only needs to identify the software integration, use the separate
+caller context below; unlike a default reason, it cannot satisfy
+`require_reason`.
+
+## Caller context (0.20+)
+
+Software integrations can record what invoked Monosecret without replacing the
+user-supplied access reason:
+
+```rust
+use monosecret::{CallerContext, Secrets};
+
+let spec = Secrets::load()?.with_caller(
+    CallerContext::new("git")
+        .with_version("2.51.0")
+        .with_operation("credential_get")
+        .with_resource("github.com"),
+);
+```
+
+Generated builders expose the same `with_caller()` method. Caller context is
+caller-asserted audit metadata, not an authenticated identity, and never
+satisfies `require_reason`. Do not put credentials or secret values in it.
+
+## Interactive prompting (0.20+)
+
+`Secrets::ensure_secrets` prompts for and stores any missing required secret
+when stdin is a real terminal. Generated builders opt into the same behavior
+with `prompt_missing()`:
+
+<Code code={promptMissingExample} lang="rust" meta='title="prompt_missing.rs"' />
+
+Left unset (the default), a missing required secret still fails fast with
+`RequiredSecretMissing`, exactly as without `prompt_missing()`.
 
 ## Secrets as file paths
 

@@ -12,6 +12,13 @@ pub struct ProviderRegistration {
 	/// Semantic credential names accepted by the provider. Empty for providers
 	/// that accept no injected credentials; used to reject unsupported names.
 	pub credential_names: &'static [&'static str],
+	/// Whether the provider can return plaintext secret values through
+	/// [`Provider::get`](super::Provider::get).
+	///
+	/// Most providers can, so registrations opt out only for write-only stores.
+	/// CLI workflows use this to avoid recommending read-dependent commands.
+	#[cfg_attr(not(any(feature = "cli", test)), allow(dead_code))]
+	pub reads: bool,
 	/// Whether the provider implements [`Provider::delete`](super::Provider::delete).
 	///
 	/// Declared here rather than probed on an instance, so routing that needs an
@@ -26,6 +33,16 @@ pub struct ProviderRegistration {
 #[doc(hidden)]
 pub const fn declared_flag(values: &[bool]) -> bool {
 	matches!(values, [true, ..])
+}
+
+/// Folds an optional read-capability flag, defaulting to `true` for existing
+/// providers and requiring only write-only providers to opt out.
+#[doc(hidden)]
+pub const fn declared_read_capability(values: &[bool]) -> bool {
+	match values {
+		[reads, ..] => *reads,
+		[] => true,
+	}
 }
 
 /// Distributed slice that collects all provider registrations.
@@ -63,6 +80,21 @@ pub static PROVIDER_REGISTRY: [ProviderRegistration];
 ///     schemes: ["bws"],
 ///     examples: ["bws://project-uuid"],
 ///     credential_names: ["access_token"],
+/// }
+/// ```
+///
+/// Write-only providers declare that `get` cannot return plaintext values, so
+/// CLI workflows do not recommend read-dependent follow-up commands:
+///
+/// ```ignore
+/// register_provider! {
+///     struct: WriteOnlyProvider,
+///     config: WriteOnlyConfig,
+///     name: "write-only",
+///     description: "A write-only store",
+///     schemes: ["write-only"],
+///     examples: ["write-only://store"],
+///     reads: false,
 /// }
 /// ```
 ///
@@ -108,12 +140,14 @@ macro_rules! register_provider {
         schemes: [$($scheme:expr),* $(,)?],
         examples: [$($example:expr),* $(,)?]
         $(, credential_names: [$($credential_name:expr),* $(,)?])?
+        $(, reads: $reads:literal)?
         $(, deletes: $deletes:literal)? $(,)?
     ) => {
         $crate::register_provider!(@register
             $struct_name, $config_type, $name, $description,
             [$($scheme,)*], [$($example,)*],
             [$($($credential_name,)*)?],
+            [$($reads,)?],
             [$($deletes,)?],
             |provider| {
                 Ok($crate::provider::ProviderWithPreflight {
@@ -133,6 +167,7 @@ macro_rules! register_provider {
         schemes: [$($scheme:expr),* $(,)?],
         examples: [$($example:expr),* $(,)?],
         $(credential_names: [$($credential_name:expr),* $(,)?],)?
+        $(reads: $reads:literal,)?
         $(deletes: $deletes:literal,)?
         preflight: $preflight:ident $(,)?
     ) => {
@@ -140,6 +175,7 @@ macro_rules! register_provider {
             $struct_name, $config_type, $name, $description,
             [$($scheme,)*], [$($example,)*],
             [$($($credential_name,)*)?],
+            [$($reads,)?],
             [$($deletes,)?],
             |provider| {
                 let provider = std::sync::Arc::new(provider);
@@ -157,6 +193,7 @@ macro_rules! register_provider {
         $struct_name:ident, $config_type:ty, $name:expr, $description:expr,
         [$($scheme:expr,)*], [$($example:expr,)*],
         [$($credential_name:expr,)*],
+        [$($reads:literal,)?],
         [$($deletes:literal,)?],
         $wrap:expr
     ) => {
@@ -175,6 +212,7 @@ macro_rules! register_provider {
                 },
                 schemes: &[$($scheme,)*],
                 credential_names: &[$($credential_name,)*],
+                reads: $crate::provider::declared_read_capability(&[$($reads,)?]),
                 deletes: $crate::provider::declared_flag(&[$($deletes,)?]),
                 factory: |url, credentials| {
                     let config = <$config_type>::try_from(url)?;

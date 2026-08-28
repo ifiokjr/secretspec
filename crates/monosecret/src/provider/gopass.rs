@@ -28,10 +28,10 @@ pub struct GoPassConfig {
 impl TryFrom<&ProviderUrl> for GoPassConfig {
 	type Error = MonosecretError;
 
-	/// Creates a GoPassConfig from a URL.
+	/// Creates a `GoPassConfig` from a URL.
 	///
 	/// The URL must have the scheme "gopass" (e.g., "gopass://" or
-	/// "gopass://monosecret/shared/{profile}/{key}").
+	/// "<gopass://monosecret/shared/{profile}/{key>}").
 	fn try_from(url: &ProviderUrl) -> Result<Self, Self::Error> {
 		if url.scheme() != "gopass" {
 			return Err(MonosecretError::ProviderOperationFailed(format!(
@@ -44,7 +44,7 @@ impl TryFrom<&ProviderUrl> for GoPassConfig {
 
 		if let Some(host) = url.host() {
 			let path = url.path();
-			config.folder_prefix = Some(format!("{}{}", host, path));
+			config.folder_prefix = Some(format!("{host}{path}"));
 		}
 
 		Ok(config)
@@ -77,14 +77,14 @@ crate::register_provider! {
 }
 
 impl GoPassProvider {
-	/// Creates a new GoPassProvider with the given configuration.
+	/// Creates a new `GoPassProvider` with the given configuration.
 	pub fn new(config: GoPassConfig) -> Self {
 		Self { config }
 	}
 
 	/// Formats the entry name for a secret.
 	///
-	/// Uses folder_prefix as a format string with {project}, {profile}, and {key} placeholders.
+	/// Uses `folder_prefix` as a format string with {project}, {profile}, and {key} placeholders.
 	/// Defaults to "monosecret/{project}/{profile}/{key}" if not configured.
 	fn format_entry_name(&self, project: &str, profile: &str, key: &str) -> String {
 		let format_string = self
@@ -114,7 +114,7 @@ impl Provider for GoPassProvider {
 		profile: &str,
 		key: &str,
 	) -> crate::Result<NativeAddress> {
-		Ok(crate::config::NativeAddress {
+		Ok(NativeAddress {
 			item: self.format_entry_name(project, profile, key),
 			..Default::default()
 		})
@@ -148,8 +148,7 @@ impl Provider for GoPassProvider {
 			.output()
 			.map_err(|e| {
 				MonosecretError::ProviderOperationFailed(format!(
-					"Failed to execute 'gopass' command: {}. Is gopass installed?",
-					e
+					"Failed to execute 'gopass' command: {e}. Is gopass installed?"
 				))
 			})?;
 
@@ -157,8 +156,7 @@ impl Provider for GoPassProvider {
 			let content = String::from_utf8(output.stdout)
 				.map_err(|e| {
 					MonosecretError::ProviderOperationFailed(format!(
-						"Failed to parse gopass output as UTF-8: {}",
-						e
+						"Failed to parse gopass output as UTF-8: {e}"
 					))
 				})?
 				.trim()
@@ -174,8 +172,7 @@ impl Provider for GoPassProvider {
 				Ok(None)
 			} else {
 				Err(MonosecretError::ProviderOperationFailed(format!(
-					"gopass command failed: {}",
-					stderr
+					"gopass command failed: {stderr}"
 				)))
 			}
 		}
@@ -206,8 +203,7 @@ impl Provider for GoPassProvider {
 			.spawn()
 			.map_err(|e| {
 				MonosecretError::ProviderOperationFailed(format!(
-					"Failed to execute gopass command: {}",
-					e
+					"Failed to execute gopass command: {e}"
 				))
 			})?;
 
@@ -222,8 +218,7 @@ impl Provider for GoPassProvider {
 			.write_all(value.expose_secret().as_bytes())
 			.map_err(|e| {
 				MonosecretError::ProviderOperationFailed(format!(
-					"Failed to write to gopass stdin: {}",
-					e
+					"Failed to write to gopass stdin: {e}"
 				))
 			})?;
 
@@ -232,16 +227,14 @@ impl Provider for GoPassProvider {
 
 		let output = child.wait_with_output().map_err(|e| {
 			MonosecretError::ProviderOperationFailed(format!(
-				"Failed to wait for gopass command: {}",
-				e
+				"Failed to wait for gopass command: {e}"
 			))
 		})?;
 
 		if !output.status.success() {
 			let stderr = String::from_utf8_lossy(&output.stderr);
 			return Err(MonosecretError::ProviderOperationFailed(format!(
-				"gopass command failed: {}",
-				stderr
+				"gopass command failed: {stderr}"
 			)));
 		}
 
@@ -276,6 +269,10 @@ impl Provider for GoPassProvider {
 		)))
 	}
 
+	fn supports_delete(&self) -> bool {
+		true
+	}
+
 	fn name(&self) -> &'static str {
 		Self::PROVIDER_NAME
 	}
@@ -291,7 +288,7 @@ impl Provider for GoPassProvider {
 		if prefix.is_empty() {
 			"gopass".to_string()
 		} else {
-			format!("gopass://{}", prefix)
+			format!("gopass://{prefix}")
 		}
 	}
 

@@ -307,11 +307,15 @@ impl Provider for SlowTestProvider {
 pub(crate) struct StatefulTestProvider {
 	snapshot: std::sync::OnceLock<HashMap<String, String>>,
 	reason: Mutex<Option<String>>,
+	caller: Mutex<Option<crate::CallerContext>>,
 }
 pub(crate) struct StatefulTestConfig;
 
 static STATEFUL_REASON_READS: std::sync::LazyLock<Mutex<HashMap<String, Vec<Option<String>>>>> =
 	std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+static STATEFUL_CALLER_READS: std::sync::LazyLock<
+	Mutex<HashMap<String, Vec<Option<crate::CallerContext>>>>,
+> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 impl TryFrom<&super::ProviderUrl> for StatefulTestConfig {
 	type Error = crate::MonosecretError;
@@ -326,6 +330,7 @@ impl StatefulTestProvider {
 		Self {
 			snapshot: std::sync::OnceLock::new(),
 			reason: Mutex::new(None),
+			caller: Mutex::new(None),
 		}
 	}
 }
@@ -358,6 +363,12 @@ impl Provider for StatefulTestProvider {
 			.entry(item.clone())
 			.or_default()
 			.push(self.reason.lock().unwrap().clone());
+		STATEFUL_CALLER_READS
+			.lock()
+			.unwrap()
+			.entry(item.clone())
+			.or_default()
+			.push(self.caller.lock().unwrap().clone());
 		let snapshot = self
 			.snapshot
 			.get_or_init(|| MEM_STORE.lock().unwrap().clone());
@@ -385,10 +396,22 @@ impl Provider for StatefulTestProvider {
 	fn set_reason(&self, reason: Option<String>) {
 		*self.reason.lock().unwrap() = reason;
 	}
+
+	fn set_caller(&self, caller: Option<crate::CallerContext>) {
+		*self.caller.lock().unwrap() = caller;
+	}
 }
 
 pub(crate) fn take_stateful_reason_reads(item: &str) -> Vec<Option<String>> {
 	STATEFUL_REASON_READS
+		.lock()
+		.unwrap()
+		.remove(item)
+		.unwrap_or_default()
+}
+
+pub(crate) fn take_stateful_caller_reads(item: &str) -> Vec<Option<crate::CallerContext>> {
+	STATEFUL_CALLER_READS
 		.lock()
 		.unwrap()
 		.remove(item)
@@ -860,6 +883,57 @@ fn every_scheme_rejects_a_userinfo_password() {
 	}
 }
 
+/// A profile is runtime context for resolving native addresses, not part of a
+/// provider's name for its store. If one of these identities changed after
+/// `set_profile`, cache planning (which constructs providers without a
+/// profile) could no longer match the provider used during resolution.
+#[test]
+fn set_profile_preserves_provider_identities_across_the_registry() {
+	for reg in super::PROVIDER_REGISTRY {
+		assert!(
+			!reg.info.examples.is_empty(),
+			"provider {:?} has no registered example for the set_profile identity invariant",
+			reg.info.name
+		);
+
+		for &example in reg.info.examples {
+			let provider = Box::<dyn Provider>::try_from(example).unwrap_or_else(|error| {
+				panic!(
+					"provider {:?} registered an example that could not be built ({example:?}): \
+                     {error}",
+					reg.info.name
+				)
+			});
+			let uri = provider.uri();
+			let storage_identity = provider.storage_identity();
+			let entry_container_identity = provider.entry_container_identity();
+
+			provider.set_profile("set-profile-identity-invariant");
+
+			assert_eq!(
+				provider.uri(),
+				uri,
+				"provider {:?} changed uri() after set_profile (example {example:?})",
+				reg.info.name
+			);
+			assert_eq!(
+				provider.storage_identity(),
+				storage_identity,
+				"provider {:?} changed storage_identity() after set_profile (example \
+                 {example:?})",
+				reg.info.name
+			);
+			assert_eq!(
+				provider.entry_container_identity(),
+				entry_container_identity,
+				"provider {:?} changed entry_container_identity() after set_profile (example \
+                 {example:?})",
+				reg.info.name
+			);
+		}
+	}
+}
+
 #[test]
 fn test_create_from_string_with_plain_names() {
 	// Test plain provider names
@@ -1217,6 +1291,25 @@ mod integration_tests {
 				let provider_spec = format!("akv://{vault}");
 				let provider = Box::<dyn Provider>::try_from(provider_spec.as_str())
 					.expect("Should create akv provider");
+				(provider, None)
+			}
+			#[cfg(feature = "aac")]
+			// Set AAC_TEST_STORE to a real store name and authenticate
+			// with an App Configuration Data Owner identity. An optional
+			// AAC_TEST_LABEL keeps live fixtures in one exact label.
+			"aac" => {
+				let store = std::env::var("AAC_TEST_STORE").expect(
+                    "Testing the aac provider requires a real store: set AAC_TEST_STORE to a store name (and authenticate via AZURE_TENANT_ID/AZURE_CLIENT_ID/AZURE_CLIENT_SECRET or `az login`).",
+                );
+				let mut provider_spec = format!("aac://{store}");
+				if let Ok(label) = std::env::var("AAC_TEST_LABEL")
+					&& !label.is_empty()
+				{
+					provider_spec.push_str("?label=");
+					provider_spec.push_str(&crate::provider::ProviderUrl::encode_query(&label));
+				}
+				let provider = Box::<dyn Provider>::try_from(provider_spec.as_str())
+					.expect("Should create aac provider");
 				(provider, None)
 			}
 			_ => {
@@ -2227,4 +2320,98 @@ fn file_write_read_symmetry() {
 #[test]
 fn mock_provider_write_read_symmetry() {
 	assert_write_read_symmetry(&MockProvider::new());
+}
+
+/// A provider that opts into deletion, as the real ones do.
+struct DeletingProvider;
+
+impl Provider for DeletingProvider {
+	fn convention_address(
+		&self,
+		project: &str,
+		profile: &str,
+		key: &str,
+	) -> Result<crate::config::NativeAddress> {
+		Ok(crate::config::NativeAddress {
+			item: format!("{}/{}/{}", project, profile, key),
+			..Default::default()
+		})
+	}
+
+	fn get(&self, _addr: Address<'_>) -> Result<Option<SecretString>> {
+		Ok(None)
+	}
+
+	fn set(&self, _addr: Address<'_>, _value: &SecretString) -> Result<()> {
+		Ok(())
+	}
+
+	fn delete(&self, _addr: Address<'_>) -> Result<bool> {
+		Ok(true)
+	}
+
+	fn supports_delete(&self) -> bool {
+		true
+	}
+
+	fn name(&self) -> &'static str {
+		"deleting"
+	}
+
+	fn uri(&self) -> String {
+		"deleting://".to_string()
+	}
+}
+
+#[test]
+fn check_deletable_refuses_a_provider_that_cannot_delete() {
+	// The regression. `CountingProvider` inherits the default `delete`, which
+	// errors, so the preflight must refuse it. Previously the default
+	// `check_deletable` only resolved coordinates and returned Ok, so every
+	// such provider passed preflight and failed later in the deletion phase --
+	// after `import --delete-source` had already written the destination.
+	let provider = CountingProvider::new(&[]);
+	let addr = Address::convention("proj", "default", "API_KEY");
+
+	let err = provider
+		.check_deletable(addr)
+		.expect_err("a provider without delete must not pass the deletion preflight");
+
+	assert!(
+		err.to_string()
+			.contains("does not support deleting secrets"),
+		"got: {err}"
+	);
+}
+
+#[test]
+fn check_deletable_and_delete_refuse_with_the_same_reason() {
+	// The preflight's promise is that it predicts the operation. If the two
+	// disagreed, the preflight would be reporting on something else.
+	let provider = CountingProvider::new(&[]);
+	let addr = Address::convention("proj", "default", "API_KEY");
+
+	let preflight = provider.check_deletable(addr).unwrap_err().to_string();
+	let attempted = provider.delete(addr).unwrap_err().to_string();
+
+	assert_eq!(preflight, attempted);
+}
+
+#[test]
+fn check_deletable_admits_a_provider_that_opts_in() {
+	// Control: the guard rejects on capability, not unconditionally.
+	let provider = DeletingProvider;
+	let addr = Address::convention("proj", "default", "API_KEY");
+
+	provider
+		.check_deletable(addr)
+		.expect("a provider that implements delete must pass preflight");
+}
+
+#[test]
+fn providers_do_not_support_deletion_unless_they_say_so() {
+	// `supports_delete` defaults to false in lockstep with `delete`, so adding
+	// the method cannot silently make destructive behaviour available.
+	assert!(!CountingProvider::new(&[]).supports_delete());
+	assert!(DeletingProvider.supports_delete());
 }

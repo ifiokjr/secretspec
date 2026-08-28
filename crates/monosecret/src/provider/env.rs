@@ -208,7 +208,7 @@ impl Provider for EnvProvider {
 	/// the write before prompting for a value, with the same message `set`
 	/// would return.
 	fn check_writable(&self, _addr: Address<'_>) -> Result<()> {
-		Err(crate::MonosecretError::ProviderOperationFailed(
+		Err(MonosecretError::ProviderOperationFailed(
             "Environment variable provider is read-only. Set variables in your shell or process environment.".to_string()
         ))
 	}

@@ -124,7 +124,10 @@ rejects such routes during planning. The examples use a separate keyring
 namespace for `local`.
 
 The cache provider must also support deletion: keyring, pass, gopass, dotenv,
-or a Vault/OpenBao KV v2 mount. Other providers are rejected during planning.
+age (0.20+), Azure App Configuration (0.20+), or a Vault/OpenBao KV v2 mount. Other
+providers are rejected during planning. An Azure App Configuration cache must
+select a different storage identity and address space from every authoritative
+entry; a separate App Configuration resource is not required.
 
 Clear one entry or every cached entry in the active profile:
 
@@ -188,9 +191,9 @@ alias.
 ## Security
 
 The cache contains the secret value, not just metadata. Use an encrypted
-provider such as keyring, pass, or gopass when values must be encrypted at rest.
-Dotenv stores entries as plaintext. Native expiry limits how long a copy exists
-without another Monosecret run.
+provider such as keyring, pass, gopass, or age (0.20+) when values must be
+encrypted at rest. Dotenv stores entries as plaintext. Native expiry limits how
+long a copy exists without another Monosecret run.
 
 ## Reference
 
@@ -254,6 +257,11 @@ supports Azure CLI sessions as well as service principals, managed identity,
 and workload identity. Prefer the identity mode that matches the environment;
 do not replace short-lived or workload-bound credentials with long-lived
 credentials solely to reduce latency.
+
+Azure App Configuration (0.20+) supports the same Entra identity modes plus
+connection strings. When entries resolve Key Vault references, benchmark both
+the App Configuration request and the separate Key Vault request; a warm cache
+avoids both remote reads.
 
 To distinguish connection setup from the secret API itself, probe the remote
 endpoint without requesting a real secret. This Azure Key Vault example is

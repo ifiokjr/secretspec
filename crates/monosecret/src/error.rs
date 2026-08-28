@@ -36,9 +36,10 @@ pub(crate) fn display_error_chain(error: &(dyn std::error::Error + 'static)) -> 
 /// This enum represents all possible errors that can occur when working with
 /// the monosecret library.
 #[derive(Error, Debug, Diagnostic)]
+#[non_exhaustive]
 pub enum MonosecretError {
 	#[error("IO error: {0}")]
-	Io(#[from] std::io::Error),
+	Io(#[from] io::Error),
 	#[error("TOML parsing error: {0}")]
 	Toml(#[from] toml::de::Error),
 	#[error(
@@ -51,7 +52,9 @@ pub enum MonosecretError {
 	#[error("Keyring error: {0}")]
 	Keyring(#[from] keyring::Error),
 	#[error("Dotenv error: {0}")]
-	Dotenv(#[from] dotenvy::Error),
+	Dotenv(#[from] dotenv::Error),
+	#[error("Dotenv rendering error: {0}")]
+	DotenvRender(#[from] dotenv::RenderError),
 	#[error(
 		"No provider backend configured.\n\nTo fix this, either:\n  1. Run 'monosecret config global init' to set up your default provider\n  2. Use --provider flag (e.g., 'monosecret check --provider keyring')"
 	)]
@@ -94,6 +97,9 @@ pub enum MonosecretError {
 	InvalidProfile(String),
 	#[error("Invalid scope: {0}")]
 	InvalidScope(String),
+	/// A parsed or Rust-built declaration failed semantic validation (0.20+).
+	#[error("Invalid Monosecret declaration: {0}")]
+	InvalidSpec(String),
 	#[error("Validation failed: {0}")]
 	ValidationFailed(Box<ValidationErrors>),
 	#[error("Secret generation failed: {0}")]
@@ -127,7 +133,7 @@ impl MonosecretError {
 			MonosecretError::TomlSer(_) => "toml_ser",
 			#[cfg(feature = "keyring")]
 			MonosecretError::Keyring(_) => "keyring",
-			MonosecretError::Dotenv(_) => "dotenv",
+			MonosecretError::Dotenv(_) | MonosecretError::DotenvRender(_) => "dotenv",
 			MonosecretError::NoProviderConfigured => "no_provider_configured",
 			MonosecretError::ProviderNotFound(_) => "provider_not_found",
 			MonosecretError::SecretNotFound(_) => "secret_not_found",
@@ -145,6 +151,7 @@ impl MonosecretError {
 			MonosecretError::Json(_) => "json",
 			MonosecretError::InvalidProfile(_) => "invalid_profile",
 			MonosecretError::InvalidScope(_) => "invalid_scope",
+			MonosecretError::InvalidSpec(_) => "invalid_spec",
 			MonosecretError::ValidationFailed(_) => "validation_failed",
 			MonosecretError::GenerationFailed(_) => "generation_failed",
 			MonosecretError::DecodeFailed { .. } => "decode_failed",
@@ -174,9 +181,7 @@ impl From<ParseError> for MonosecretError {
 			ParseError::CircularDependency(msg) => {
 				MonosecretError::Io(io::Error::new(io::ErrorKind::InvalidData, msg))
 			}
-			ParseError::Validation(msg) => {
-				MonosecretError::Io(io::Error::new(io::ErrorKind::InvalidData, msg))
-			}
+			ParseError::Validation(msg) => MonosecretError::InvalidSpec(msg),
 			ParseError::ExtendedConfigNotFound(path) => {
 				MonosecretError::ExtendedConfigNotFound(path)
 			}
@@ -268,6 +273,10 @@ mod tests {
 			(
 				MonosecretError::InvalidProfile("ghost".into()),
 				"invalid_profile",
+			),
+			(
+				MonosecretError::InvalidSpec("bad declaration".into()),
+				"invalid_spec",
 			),
 			(
 				MonosecretError::GenerationFailed("rng".into()),

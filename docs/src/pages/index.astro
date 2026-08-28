@@ -56,6 +56,10 @@ const providerMetadata: ProviderMetadata[] = [
   { slug: 'scaleway', label: 'Scaleway Secret Manager (0.2+)' },
   { slug: 'sops', label: 'SOPS (0.2+)' },
   { icon: 'systemd', slug: 'systemd-credential', label: 'systemd credentials (0.2+)' },
+  { icon: 'microsoftazure', slug: 'aac', label: 'Azure App Configuration (0.20+)' },
+  { slug: 'fly', label: 'Fly.io secrets, write-only (0.20+)' },
+  { icon: 'cloudflare', slug: 'cloudflare', label: 'Cloudflare Secrets Store, write-only (0.20+)' },
+  { slug: 'kubernetes', label: 'Kubernetes (0.20+)' },
 ];
 
 
@@ -66,7 +70,7 @@ const sitePath = (path: string) => `${import.meta.env.BASE_URL.replace(/\/$/, ''
 <StarlightPage
   frontmatter={{
     title: 'Declare secrets once. Store them anywhere.',
-    description: 'Declare what your application needs in monosecret.toml — store the values in any of 27 providers. No secrets in git. Same code, every environment.',
+    description: 'Declare what your application needs in monosecret.toml — store the values in any of 31 providers. No secrets in git. Same code, every environment.',
     template: 'splash',
     hero: { tagline: '' },
   }}
@@ -98,7 +102,7 @@ const sitePath = (path: string) => `${import.meta.env.BASE_URL.replace(/\/$/, ''
       <p class="landing-badge">Declarative secrets manager</p>
       <h1 id="_top" class="landing-hero-title">Declare secrets once.<br>Store them anywhere.</h1>
       <p class="landing-hero-subtitle">
-        Stop leaking <code class="inline-code">.env</code> files. Define what your application needs in <code class="inline-code">monosecret.toml</code>, then plug in keyring, 1Password, Vault, AWS, or any of 27 providers — same code, every environment.
+        Stop leaking <code class="inline-code">.env</code> files. Define what your application needs in <code class="inline-code">monosecret.toml</code>, then plug in keyring, 1Password, Vault, AWS, or any of 31 providers — same code, every environment.
       </p>
       <div class="landing-hero-actions">
         <a href={sitePath('/quick-start/')} class="landing-btn landing-btn-primary">Get Started</a>
@@ -144,7 +148,7 @@ $ monosecret init --from dotenv
 
 <span class="tok-com"># 2. Pick a storage backend (one-time)</span>
 $ monosecret config init
-? Default provider: keyring, dotenv, env, onepassword, lastpass, bws, vault, awssm, gcsm, protonpass, pass, age (0.2+), akv (0.2+), awsps (0.2+), bw (0.2+), dashlane (0.2+), file (0.2+), gopass (0.2+), infisical (0.2+), kdbx (0.2+), keeper (0.2+), null (0.2+), openbao (0.2+), passbolt (0.2+), scaleway (0.2+), sops (0.2+), systemd-credential (0.2+)
+? Default provider: keyring, dotenv, env, onepassword, lastpass, bws, vault, awssm, gcsm, protonpass, pass, age (0.2+), akv (0.2+), awsps (0.2+), bw (0.2+), dashlane (0.2+), file (0.2+), gopass (0.2+), infisical (0.2+), kdbx (0.2+), keeper (0.2+), null (0.2+), openbao (0.2+), passbolt (0.2+), scaleway (0.2+), sops (0.2+), systemd-credential (0.2+), aac (0.20+), fly (0.20+), cloudflare (0.20+), kubernetes (0.20+)
 <span class="tok-str">✓</span> Saved to ~/.config/monosecret/config.toml
 
 <span class="tok-com"># 3. Run your app with secrets injected</span>
@@ -205,7 +209,7 @@ $ monosecret run --profile production -- npm start
         <p class="landing-step-title">Configure</p>
         <p class="landing-step-desc">Pick any supported provider, from a local keyring or encrypted file to a team password manager or cloud secret store.</p>
         <pre is:raw class="landing-step-code"><code>$ monosecret config init
-? Default provider: keyring, dotenv, env, onepassword, lastpass, bws, vault, awssm, gcsm, protonpass, pass, age (0.2+), akv (0.2+), awsps (0.2+), bw (0.2+), dashlane (0.2+), file (0.2+), gopass (0.2+), infisical (0.2+), kdbx (0.2+), keeper (0.2+), null (0.2+), openbao (0.2+), passbolt (0.2+), scaleway (0.2+), sops (0.2+), systemd-credential (0.2+)</code></pre>
+? Default provider: keyring, dotenv, env, onepassword, lastpass, bws, vault, awssm, gcsm, protonpass, pass, age (0.2+), akv (0.2+), awsps (0.2+), bw (0.2+), dashlane (0.2+), file (0.2+), gopass (0.2+), infisical (0.2+), kdbx (0.2+), keeper (0.2+), null (0.2+), openbao (0.2+), passbolt (0.2+), scaleway (0.2+), sops (0.2+), systemd-credential (0.2+), aac (0.20+), fly (0.20+), cloudflare (0.20+), kubernetes (0.20+)</code></pre>
       </div>
 
       <div class="landing-step">
@@ -287,7 +291,7 @@ println!("{}", s.secrets.database_url);</code></pre>
       <span class="landing-showcase-eyebrow">Declaration vs storage</span>
       <h2 class="landing-section-title">Declare a secret. Swap the source.</h2>
       <p class="landing-section-lead landing-section-lead-narrow">
-        Your <code class="inline-code">monosecret.toml</code> never changes. The same code reads from Keychain, 1Password, Vault, AWS, or any of 27 providers.
+        Your <code class="inline-code">monosecret.toml</code> never changes. The same code reads from Keychain, 1Password, Vault, AWS, or any of 31 providers.
       </p>
     </div>
 

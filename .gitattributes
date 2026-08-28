@@ -1,1 +1,2 @@
 crates/monosecret/src/provider/sops/test_fixtures/** text eol=lf
+*.bat text eol=crlf

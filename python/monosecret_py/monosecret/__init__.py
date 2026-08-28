@@ -39,6 +39,7 @@ __all__ = [
     "ConstraintViolation",
     "MonosecretError",
     "MissingRequiredError",
+    "CallerContext",
     "resolve",
     "report",
     "abi_version",
@@ -62,6 +63,28 @@ class MissingRequiredError(MonosecretError):
             "missing required secret(s): " + ", ".join(missing),
         )
         self.missing = missing
+
+
+@dataclass(frozen=True)
+class CallerContext:
+    """Caller-asserted software-integration context (SecretSpec 0.20+)."""
+
+    name: str
+    version: Optional[str] = None
+    operation: Optional[str] = None
+    resource: Optional[str] = None
+
+    def _request(self) -> dict[str, str]:
+        return {
+            key: value
+            for key, value in {
+                "name": self.name,
+                "version": self.version,
+                "operation": self.operation,
+                "resource": self.resource,
+            }.items()
+            if value is not None
+        }
 
 
 @dataclass(frozen=True)
@@ -116,13 +139,25 @@ class Resolved:
         after resolve returns; the caller owns their lifetime. Call ``close()``
         (or use this object as a context manager) when done so secret files do
         not accumulate in the temp dir. A file already gone is not an error.
+
+        Every file is attempted even if one cannot be removed; the first such
+        error is re-raised once the rest have been cleaned up. Stopping at the
+        first failure would leave the remaining secrets on disk, which is the
+        one outcome this method exists to prevent. Matches the Go SDK's
+        ``firstErr`` and the .NET SDK's ``firstError``.
         """
+        first_error: Optional[OSError] = None
         for secret in self.secrets.values():
             if secret.as_path and secret.path is not None:
                 try:
                     os.remove(secret.path)
                 except FileNotFoundError:
                     pass
+                except OSError as error:
+                    if first_error is None:
+                        first_error = error
+        if first_error is not None:
+            raise first_error
 
     def __enter__(self) -> "Resolved":
         return self
@@ -178,13 +213,23 @@ def _resolve_envelope(request: dict) -> dict:
     return json.loads(raw)
 
 
-def _checked_response(request: dict, kind: str, expected_version: int) -> dict:
+def _call_envelope(request: dict) -> dict:
+    if not hasattr(_native, "call"):
+        raise SecretSpecError(
+            "capability",
+            "the loaded native extension predates inline specifications; reinstall SecretSpec 0.20+",
+        )
+    raw = _native.call(json.dumps(request))
+    return json.loads(raw)
+
+
+def _checked_response(request: dict, kind: str, expected_version: int, *, versioned: bool = False) -> dict:
     """Resolve ``request`` and return the validated ``response`` envelope.
 
     ``kind`` is ``"resolve"`` or ``"report"``; it selects the schema version to
     enforce and labels the version-mismatch message.
     """
-    envelope = _resolve_envelope(request)
+    envelope = _call_envelope(request) if versioned else _resolve_envelope(request)
     if not envelope.get("ok", False):
         err = envelope.get("error", {})
         raise MonosecretError(err.get("kind", "unknown"), err.get("message", ""))
@@ -209,6 +254,7 @@ def resolve(
     profile: Optional[str] = None,
     scope: Optional[str] = None,
     reason: Optional[str] = None,
+    caller: Optional[CallerContext] = None,
 ) -> Resolved:
     """Resolve secrets and return a :class:`Resolved`.
 
@@ -222,6 +268,7 @@ def resolve(
         .with_profile(profile)
         .with_scope(scope)
         .with_reason(reason)
+        .with_caller(caller)
         .load()
     )
 
@@ -233,6 +280,7 @@ def report(
     profile: Optional[str] = None,
     scope: Optional[str] = None,
     reason: Optional[str] = None,
+    caller: Optional[CallerContext] = None,
 ) -> Report:
     """Resolve a value-free :class:`Report` (the inventory/preflight view).
 
@@ -247,6 +295,7 @@ def report(
         .with_profile(profile)
         .with_scope(scope)
         .with_reason(reason)
+        .with_caller(caller)
         .report()
     )
 
@@ -262,10 +311,22 @@ class Monosecret:
 class _Builder:
     def __init__(self) -> None:
         self._request: dict = {}
+        self._inline: Optional[tuple[dict, str]] = None
 
     def with_path(self, path: Optional[str]) -> "_Builder":
+        self._inline = None
         if path is not None:
             self._request["path"] = path
+        return self
+
+    def with_inline_spec(self, spec: dict, base_dir: str) -> "_Builder":
+        """Resolve inline-spec v1 at ``base_dir`` (SecretSpec 0.20+).
+
+        Inline resolution uses the versioned native call entry point, so an
+        older runtime cannot fall back to a filesystem manifest.
+        """
+        self._request.pop("path", None)
+        self._inline = (spec, base_dir)
         return self
 
     def with_provider(self, provider: Optional[str]) -> "_Builder":
@@ -289,13 +350,22 @@ class _Builder:
             self._request["reason"] = reason
         return self
 
+    def with_caller(self, caller: Optional[CallerContext]) -> "_Builder":
+        """Identify the invoking software integration (SecretSpec 0.20+)."""
+        if caller is not None:
+            self._request["caller"] = caller._request()
+        return self
+
     def with_no_values(self, no_values: bool = True) -> "_Builder":
         """Omit secret values, returning only structure and provenance."""
         self._request["no_values"] = no_values
         return self
 
     def load(self) -> Resolved:
-        response = _checked_response(self._request, "resolve", _RESOLVE_SCHEMA_VERSION)
+        request, versioned = self._native_request()
+        response = _checked_response(
+            request, "resolve", _RESOLVE_SCHEMA_VERSION, versioned=versioned
+        )
 
         missing_required = response.get("missing_required", [])
         if missing_required:
@@ -326,9 +396,8 @@ class _Builder:
         required secret appears as a :class:`SecretReport` with status
         ``"missing_required"``.
         """
-        request = dict(self._request)
-        request["mode"] = "report"
-        response = _checked_response(request, "report", _REPORT_SCHEMA_VERSION)
+        request, versioned = self._native_request("report")
+        response = _checked_response(request, "report", _REPORT_SCHEMA_VERSION, versioned=versioned)
         secrets = [
             SecretReport(
                 name=s["name"],
@@ -356,3 +425,18 @@ class _Builder:
                 for violation in response.get("constraint_violations", [])
             ],
         )
+
+    def _native_request(self, mode: Optional[str] = None) -> tuple[dict, bool]:
+        options = dict(self._request)
+        if mode is not None:
+            options["mode"] = mode
+        if self._inline is None:
+            return options, False
+        spec, base_dir = self._inline
+        return ({
+            "request_version": 1,
+            "operation": "resolve",
+            "source": {"kind": "inline", "spec_version": 1,
+                       "base_dir": base_dir, "spec": spec},
+            "options": options,
+        }, True)

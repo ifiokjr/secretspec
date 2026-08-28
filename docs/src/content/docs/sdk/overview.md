@@ -37,12 +37,11 @@ that core rather than a reimplementation:
 - **PHP** prefers an [ext-php-rs](https://github.com/davidcole1340/ext-php-rs)
   extension that embeds the resolver (working under FPM with no `ffi.enable`),
   and falls back to loading the same C ABI at runtime through `ext-ffi`.
-
-Because resolution happens in one place, every provider, chain, profile, and
-generator works the same in every language, and a new provider added to the core
-is immediately available everywhere with no per-SDK change. A cross-language
-conformance suite asserts that all the SDKs reduce the same inputs to the same
-result.
+  Because resolution happens in one place, every provider, chain, profile, and
+  generator works the same in every language, and a new provider added to the core
+  is immediately available everywhere with no per-SDK change. A cross-language
+  conformance suite asserts that all the SDKs reduce the same inputs to the same
+  result.
 
 ## The runtime API
 
@@ -112,11 +111,10 @@ no runtime library path to set:
 - **Node.js** builds the resolver into a napi-rs addon.
 - **PHP** ships as a normal PHP extension (provisioned like `ext-redis`), with an
   `ext-ffi` fallback that dlopens the bundled `cdylib`.
-
-Because the resolver is linked or embedded directly, the SDKs do not depend on a
-separately installed `cdylib` or an `LD_LIBRARY_PATH`/`MONOSECRET_FFI_LIB`
-override at runtime — the one exception being PHP's optional `ext-ffi` fallback,
-where `MONOSECRET_FFI_LIB` can point at a specific library build.
+  Because the resolver is linked or embedded directly, the SDKs do not depend on a
+  separately installed `cdylib` or an `LD_LIBRARY_PATH`/`MONOSECRET_FFI_LIB`
+  override at runtime — the one exception being PHP's optional `ext-ffi` fallback,
+  where `MONOSECRET_FFI_LIB` can point at a specific library build.
 
 ## Platform support
 

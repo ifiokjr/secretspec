@@ -13,9 +13,9 @@ use crate::provider::Address;
 use crate::provider::Provider;
 use crate::provider::ProviderUrl;
 
-/// Configuration for the LastPass provider.
+/// Configuration for the `LastPass` provider.
 ///
-/// This struct contains the configuration options for interacting with LastPass
+/// This struct contains the configuration options for interacting with `LastPass`
 /// through the `lpass` CLI tool.
 ///
 /// # Examples
@@ -33,7 +33,7 @@ use crate::provider::ProviderUrl;
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LastPassConfig {
-	/// Optional folder prefix format string for organizing secrets in LastPass.
+	/// Optional folder prefix format string for organizing secrets in `LastPass`.
 	///
 	/// Supports placeholders: {project}, {profile}, and {key}.
 	/// Defaults to "monosecret/{project}/{profile}/{key}" if not specified.
@@ -41,7 +41,7 @@ pub struct LastPassConfig {
 }
 
 impl Default for LastPassConfig {
-	/// Creates a default LastPassConfig with no folder prefix.
+	/// Creates a default `LastPassConfig` with no folder prefix.
 	fn default() -> Self {
 		Self {
 			folder_prefix: None,
@@ -52,7 +52,7 @@ impl Default for LastPassConfig {
 impl TryFrom<&ProviderUrl> for LastPassConfig {
 	type Error = MonosecretError;
 
-	/// Creates a LastPassConfig from a URL.
+	/// Creates a `LastPassConfig` from a URL.
 	///
 	/// Parses a URL in the format `lastpass://[folder]` where the folder
 	/// component is optional. The folder can be specified either as the
@@ -75,15 +75,15 @@ impl TryFrom<&ProviderUrl> for LastPassConfig {
 	}
 }
 
-/// LastPass provider implementation for Monosecret.
+/// `LastPass` provider implementation for Monosecret.
 ///
-/// This provider integrates with LastPass password manager through the `lpass` CLI tool.
-/// It stores secrets in a hierarchical structure within LastPass using a configurable
+/// This provider integrates with `LastPass` password manager through the `lpass` CLI tool.
+/// It stores secrets in a hierarchical structure within `LastPass` using a configurable
 /// format string that defaults to: `monosecret/{project}/{profile}/{key}`.
 ///
 /// # Requirements
 ///
-/// The LastPass CLI (`lpass`) must be installed and the user must be logged in:
+/// The `LastPass` CLI (`lpass`) must be installed and the user must be logged in:
 /// - macOS: `brew install lastpass-cli`
 /// - Linux: Use your package manager (e.g., `apt install lastpass-cli`)
 /// - NixOS: `nix-env -iA nixpkgs.lastpass-cli`
@@ -120,18 +120,18 @@ crate::register_provider! {
 }
 
 impl LastPassProvider {
-	/// Creates a new LastPassProvider with the given configuration.
+	/// Creates a new `LastPassProvider` with the given configuration.
 	///
 	/// # Arguments
 	///
-	/// * `config` - The LastPass configuration to use
+	/// * `config` - The `LastPass` configuration to use
 	pub fn new(config: LastPassConfig) -> Self {
 		Self { config }
 	}
 
-	/// Executes a LastPass CLI command and returns its output.
+	/// Executes a `LastPass` CLI command and returns its output.
 	///
-	/// This is the core method for interacting with the LastPass CLI. It handles
+	/// This is the core method for interacting with the `LastPass` CLI. It handles
 	/// command execution, error detection, and provides helpful error messages
 	/// for common issues like missing CLI installation or authentication.
 	///
@@ -147,7 +147,7 @@ impl LastPassProvider {
 	/// # Errors
 	///
 	/// - Returns an error if the `lpass` CLI is not installed
-	/// - Returns an error if the user is not logged in to LastPass
+	/// - Returns an error if the user is not logged in to `LastPass`
 	/// - Returns an error if the command fails for any other reason
 	fn execute_lpass_command(&self, args: &[&str]) -> Result<String> {
 		let mut cmd = Command::new("lpass");
@@ -185,10 +185,10 @@ impl LastPassProvider {
 		})
 	}
 
-	/// Formats the item name for storage in LastPass.
+	/// Formats the item name for storage in `LastPass`.
 	///
-	/// Creates a hierarchical path for organizing secrets within LastPass.
-	/// Uses folder_prefix as a format string with {project}, {profile}, and {key} placeholders.
+	/// Creates a hierarchical path for organizing secrets within `LastPass`.
+	/// Uses `folder_prefix` as a format string with {project}, {profile}, and {key} placeholders.
 	/// Defaults to "monosecret/{project}/{profile}/{key}" if not configured.
 	///
 	/// # Arguments
@@ -199,7 +199,7 @@ impl LastPassProvider {
 	///
 	/// # Returns
 	///
-	/// A formatted string representing the full path to the secret in LastPass.
+	/// A formatted string representing the full path to the secret in `LastPass`.
 	fn format_item_name(&self, project: &str, key: &str, profile: &str) -> String {
 		let format_string = self
 			.config
@@ -213,7 +213,7 @@ impl LastPassProvider {
 			.replace("{key}", key)
 	}
 
-	/// Checks the current LastPass login status.
+	/// Checks the current `LastPass` login status.
 	///
 	/// Executes `lpass status` to determine if the user is currently logged in.
 	///
@@ -234,7 +234,7 @@ impl LastPassProvider {
 		}
 	}
 
-	/// Checks that the user is logged in to LastPass.
+	/// Checks that the user is logged in to `LastPass`.
 	/// Called by the preflight guard before any provider operations.
 	pub(crate) fn check_auth(&self) -> Result<()> {
 		if !self.check_login_status()? {
@@ -266,7 +266,7 @@ impl Provider for LastPassProvider {
 		Self::PROVIDER_NAME
 	}
 
-	/// `lpass status` probes the user's singleton LastPass session, so every
+	/// `lpass status` probes the user's singleton `LastPass` session, so every
 	/// instance shares one preflight probe.
 	fn auth_scope_key(&self) -> Option<String> {
 		Some(String::new())
@@ -286,15 +286,15 @@ impl Provider for LastPassProvider {
 	}
 
 	/// The template selects an item inside the account's own vault; it does not
-	/// select another LastPass store.
+	/// select another `LastPass` store.
 	fn entry_container_identity(&self) -> String {
 		"lastpass".to_string()
 	}
 
-	/// Retrieves a secret from LastPass.
+	/// Retrieves a secret from `LastPass`.
 	///
-	/// Fetches the value of a secret stored in LastPass at the path
-	/// determined by the folder_prefix format string. Uses `lpass show` with
+	/// Fetches the value of a secret stored in `LastPass` at the path
+	/// determined by the `folder_prefix` format string. Uses `lpass show` with
 	/// the `--sync=now` flag to ensure fresh data from the server.
 	///
 	/// # Arguments
@@ -307,12 +307,12 @@ impl Provider for LastPassProvider {
 	///
 	/// - `Ok(Some(value))` if the secret exists and has a value
 	/// - `Ok(None)` if the secret doesn't exist or has an empty value
-	/// - `Err` if there's an error accessing LastPass
+	/// - `Err` if there's an error accessing `LastPass`
 	///
 	/// # Errors
 	///
-	/// - Returns an error if not logged in to LastPass
-	/// - Returns an error if the LastPass CLI fails
+	/// - Returns an error if not logged in to `LastPass`
+	/// - Returns an error if the `LastPass` CLI fails
 	fn get(&self, addr: Address<'_>) -> Result<Option<SecretString>> {
 		let item_name = crate::provider::flat_item(self, addr)?;
 
@@ -334,10 +334,10 @@ impl Provider for LastPassProvider {
 		}
 	}
 
-	/// Stores a secret in LastPass.
+	/// Stores a secret in `LastPass`.
 	///
-	/// Creates or updates a secret in LastPass at the path
-	/// determined by the folder_prefix format string. The method first checks if
+	/// Creates or updates a secret in `LastPass` at the path
+	/// determined by the `folder_prefix` format string. The method first checks if
 	/// the item exists to determine whether to use `lpass edit` (for updates)
 	/// or `lpass add` (for new items).
 	///
@@ -354,8 +354,8 @@ impl Provider for LastPassProvider {
 	///
 	/// # Errors
 	///
-	/// - Returns an error if not logged in to LastPass
-	/// - Returns an error if the LastPass CLI command fails
+	/// - Returns an error if not logged in to `LastPass`
+	/// - Returns an error if the `LastPass` CLI command fails
 	///
 	/// # Implementation Details
 	///
@@ -435,7 +435,7 @@ impl Provider for LastPassProvider {
 }
 
 impl Default for LastPassProvider {
-	/// Creates a LastPassProvider with default configuration.
+	/// Creates a `LastPassProvider` with default configuration.
 	///
 	/// This is equivalent to calling `LastPassProvider::new(LastPassConfig::default())`.
 	fn default() -> Self {

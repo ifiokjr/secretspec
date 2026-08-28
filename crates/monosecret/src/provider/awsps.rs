@@ -358,11 +358,7 @@ impl AwspsProvider {
 
 		Ok(Some((
 			key.to_string(),
-			crate::Secret {
-				description: Some(format!("{key} secret")),
-				required: Some(true),
-				..Default::default()
-			},
+			crate::Secret::required(format!("{key} secret")),
 		)))
 	}
 
@@ -846,7 +842,7 @@ mod tests {
 				.unwrap()
 				.unwrap();
 		assert_eq!(key, "DATABASE_URL");
-		assert_eq!(declaration.required, Some(true));
+		assert_eq!(declaration.required_setting(), Some(true));
 		assert!(
 			AwspsProvider::declaration_from_parameter(path, "/production/payments/nested/TOKEN")
 				.unwrap()

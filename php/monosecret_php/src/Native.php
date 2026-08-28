@@ -16,7 +16,8 @@ namespace Monosecret;
  *     production path: it needs no `ffi.enable` and works under FPM/web like any
  *     other PHP extension. Preferred whenever it is loaded.
  *  2. A runtime `ext-ffi` fallback that dlopens the `libmonosecret_ffi` cdylib and
- *     calls the three C entry points from `crates/monosecret_ffi/include/monosecret.h`.
+ *     calls the stable C entry points from `crates/monosecret_ffi/include/monosecret.h`
+ *     and binds the optional versioned-call entry point only when needed.
  *     Zero-config for CLI and local dev; requires the FFI extension.
  *
  * Both call `monosecret::resolve_json` and return the identical envelope.
@@ -25,17 +26,21 @@ namespace Monosecret;
  */
 final class Native
 {
-    /**
-     * C declarations for the three-function ABI. Kept in lock-step with
-     * `crates/monosecret_ffi/include/monosecret.h`.
-     */
+    /** The legacy ABI, which remains usable with pre-0.20 native libraries. */
     private const CDEF = <<<'C'
         char *monosecret_resolve(const char *request_json);
         void monosecret_free(char *ptr);
         const char *monosecret_abi_version(void);
         C;
 
+    /** The optional 0.20+ entry point, bound only when an inline call needs it. */
+    private const CALL_CDEF = <<<'C'
+        char *monosecret_call(const char *request_json);
+        void monosecret_free(char *ptr);
+        C;
+
     private static ?\FFI $ffi = null;
+    private static ?\FFI $callFfi = null;
 
     private function __construct()
     {
@@ -54,6 +59,16 @@ final class Native
         }
 
         return self::resolveViaFfi($requestJson);
+    }
+
+    /** Execute a versioned native operation, including inline specs. */
+    public static function call(string $requestJson): string
+    {
+        if (\function_exists('monosecret_native_call')) {
+            return \monosecret_native_call($requestJson);
+        }
+
+        return self::callViaFfi($requestJson);
     }
 
     /** The ABI version reported by the active backend. */
@@ -78,11 +93,48 @@ final class Native
      */
     private static function resolveViaFfi(string $requestJson): string
     {
-        $ffi = self::ffi();
-        $ptr = $ffi->monosecret_resolve($requestJson);
+        return self::ffiCall('monosecret_resolve', $requestJson);
+    }
+
+    private static function callViaFfi(string $requestJson): string
+    {
+        try {
+            return self::ffiCallWith(self::callFfi(), 'monosecret_call', $requestJson);
+        } catch (MonosecretException $error) {
+            // Keep backend-load and native-call failures distinguishable from an
+            // older library that merely lacks the versioned entry point.
+            throw $error;
+        } catch (\FFI\Exception $error) {
+            if (!self::isMissingCallSymbol($error)) {
+                throw new MonosecretException('ffi', $error->getMessage());
+            }
+            throw new MonosecretException(
+                'capability',
+                'the loaded libmonosecret_ffi library does not support inline specs (missing monosecret_call): '
+                . $error->getMessage(),
+            );
+        }
+    }
+
+    private static function isMissingCallSymbol(\FFI\Exception $error): bool
+    {
+        return \preg_match(
+            "/(?:undefined|unknown|resolv(?:e|ing)|function).*monosecret_call/i",
+            $error->getMessage(),
+        ) === 1;
+    }
+
+    private static function ffiCall(string $symbol, string $requestJson): string
+    {
+        return self::ffiCallWith(self::ffi(), $symbol, $requestJson);
+    }
+
+    private static function ffiCallWith(\FFI $ffi, string $symbol, string $requestJson): string
+    {
+        $ptr = $ffi->$symbol($requestJson);
         // monosecret_resolve returns null only on catastrophic allocation failure.
         if ($ptr === null || \FFI::isNull($ptr)) {
-            throw new MonosecretException('ffi', 'monosecret_resolve returned null');
+            throw new MonosecretException('ffi', $symbol . ' returned null');
         }
 
         try {
@@ -105,10 +157,31 @@ final class Native
                     . 'to use the Monosecret SDK',
                 );
             }
-            self::$ffi = \FFI::cdef(self::CDEF, self::locateLibrary());
+            try {
+                self::$ffi = \FFI::cdef(self::CDEF, self::locateLibrary());
+            } catch (\FFI\Exception $error) {
+                throw new MonosecretException('load', $error->getMessage());
+            }
         }
 
         return self::$ffi;
+    }
+
+    /** Lazily bind the optional versioned-call ABI without affecting legacy calls. */
+    private static function callFfi(): \FFI
+    {
+        if (self::$callFfi === null) {
+            if (!\extension_loaded('ffi')) {
+                throw new MonosecretException(
+                    'load',
+                    'the PHP FFI extension is required; enable ext-ffi (and set ffi.enable) '
+                    . 'to use the Monosecret SDK',
+                );
+            }
+            self::$callFfi = \FFI::cdef(self::CALL_CDEF, self::locateLibrary());
+        }
+
+        return self::$callFfi;
     }
 
     /**

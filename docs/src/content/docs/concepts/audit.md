@@ -5,8 +5,8 @@ description: A local, append-only record of every secret access for after-the-fa
 
 monosecret records every secret access to a local audit log so you can review,
 after the fact, **what** secret was accessed, **when**, by **whom**, with what
-**reason, if supplied**, and what the **outcome** was. Auditing is **on by
-default**.
+**reason, if supplied**, which software integration called Monosecret (0.20+),
+and what the **outcome** was. Auditing is **on by default**.
 
 Secret values are never written to the log. Only metadata is recorded, and any
 credentials embedded in a provider URI are redacted.
@@ -46,8 +46,14 @@ and how to turn it off.
   "provider": "keyring://",
   "outcome": "found",
   "reason": "deploy web frontend",
+  "caller": {
+    "name": "git",
+    "version": "2.51.0",
+    "operation": "credential_get",
+    "resource": "github.com"
+  },
   "actor": { "user": "alice", "agent": "claude-code", "is_agent": true },
-  "version": "0.2.0"
+  "version": "0.20.0"
 }
 ```
 
@@ -58,22 +64,28 @@ and how to turn it off.
 | `ts`                  | RFC 3339 UTC timestamp                                                                                                                                                                                                               |
 | `session_id`          | Shared by every event from one `monosecret` invocation                                                                                                                                                                               |
 | `seq`                 | Monotonic sequence within that invocation                                                                                                                                                                                            |
-| `action`              | The operation: `get`, `set`, `check`, `run`, `import`, `export`, `cache_clear` / `cache_refresh` (0.2+), or `delete` (0.2+)                                                                                                          |
+| `action`              | The operation: `get`, `set`, `check`, `run`, `import`, `export`, `cache_clear` / `cache_refresh` (0.17+), or `delete` (0.18+)                                                                                                        |
 | `project` / `profile` | The project and profile in effect                                                                                                                                                                                                    |
-| `scope`               | The named scope for a scoped `check`, `run`, or `export`; omitted otherwise (Monosecret 0.2+)                                                                                                                                        |
-| `key`                 | The secret name for single-secret actions (`get`/`set`, and `delete` in 0.2+); never its value                                                                                                                                       |
+| `scope`               | The named scope for a scoped `check`, `run`, or `export`; omitted otherwise (Monosecret 0.17+)                                                                                                                                       |
+| `key`                 | The secret name for single-secret actions (`get`/`set`, and `delete` in 0.18+); never its value                                                                                                                                      |
 | `keys`                | The set of secret names for bulk actions (`check`/`run`/`import`/`export`)                                                                                                                                                           |
 | `command`             | For `run`, the executed program (argv[0] only — never its arguments, which may contain secrets)                                                                                                                                      |
 | `provider`            | The provider URI that served the access, with credentials redacted                                                                                                                                                                   |
-| `outcome`             | `found`, `missing`, `default`, `written`, `deleted` (0.2+ cache clear), `started` (a `run` launched its command), or `error`                                                                                                         |
+| `outcome`             | `found`, `missing`, `default`, `written`, `deleted` (0.17+ cache clear), `started` (a `run` launched its command), or `error`                                                                                                        |
 |                       | A cached route writing its local entry is recorded as `cache_refresh`/`written`, never as `set`: no authoritative store was written. Dropping an entry — `cache clear`, or an entry a write superseded — is `cache_clear`/`deleted`. |
 | `error_kind`          | A non-sensitive tag when `outcome` is `error`                                                                                                                                                                                        |
 | `reason`              | The reason supplied via `--reason` / `MONOSECRET_REASON` / the SDK, if any                                                                                                                                                           |
+| `caller`              | Caller-asserted software integration context: `name`, and optional `version`, `operation`, and non-secret `resource` (Monosecret 0.20+)                                                                                              |
 | `actor`               | The OS user, the detected coding agent (if any), and whether this is an agent session                                                                                                                                                |
 
 This pairs naturally with the [`require_reason`](/reference/configuration/#requiring-a-reason-for-secret-access)
 policy: when that policy applies, Monosecret requires the caller to state _why_
 before proceeding and records the supplied reason alongside the access.
+
+Caller context answers _what software_ requested access; `reason` answers _why
+the user_ requested it. Caller context is informational, is not an authenticated
+identity, and never satisfies `require_reason`. Integrations must not place a
+credential or secret value in any caller field.
 
 ## Reading the log
 

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Monosecret\Tests;
 
 use PHPUnit\Framework\TestCase;
+use Monosecret\CallerContext;
 use Monosecret\MissingRequiredException;
+use Monosecret\Native;
 use Monosecret\SecretReport;
 use Monosecret\Monosecret;
 use Monosecret\MonosecretException;
@@ -61,6 +63,38 @@ final class ResolveTest extends TestCase
         self::assertNotEmpty(Monosecret::abiVersion());
     }
 
+    public function testLegacyFfiBindingDoesNotRequireInlineCallSymbol(): void
+    {
+        $reflection = new \ReflectionClass(Native::class);
+
+        self::assertStringNotContainsString(
+            'monosecret_call',
+            $reflection->getConstant('CDEF'),
+        );
+        self::assertStringContainsString(
+            'monosecret_call',
+            $reflection->getConstant('CALL_CDEF'),
+        );
+    }
+
+    public function testCallerContextCanAccompanyASeparateReason(): void
+    {
+        [$manifest, $provider] = $this->project("DATABASE_URL=postgres://db\n");
+        $resolved = Monosecret::builder()
+            ->withPath($manifest)
+            ->withProvider($provider)
+            ->withCaller(new CallerContext(
+                name: 'git',
+                version: '2.51.0',
+                operation: 'credential_get',
+                resource: 'github.com',
+            ))
+            ->withReason('push the release tag')
+            ->load();
+
+        self::assertSame('postgres://db', $resolved->secrets['DATABASE_URL']->get());
+    }
+
     public function testLoadValuesAndProvenance(): void
     {
         [$manifest, $provider] = $this->project("DATABASE_URL=postgres://db\n");
@@ -84,6 +118,26 @@ final class ResolveTest extends TestCase
 
         self::assertSame(['SENTRY_DSN'], $resolved->missingOptional);
         self::assertArrayNotHasKey('SENTRY_DSN', $resolved->secrets);
+    }
+
+    public function testInlineSpecResolvesAtItsLogicalBaseDir(): void
+    {
+        [$manifest] = $this->project('');
+        $dir = \dirname($manifest);
+        \file_put_contents($dir . \DIRECTORY_SEPARATOR . 'inline.env', "TOKEN=inline-php\n");
+        $spec = [
+            'project' => ['name' => 'php-inline'],
+            'providers' => ['env' => 'dotenv://inline.env'],
+            'profiles' => ['default' => ['secrets' => [
+                'TOKEN' => ['description' => 'token', 'providers' => ['env']],
+            ]]],
+        ];
+        $resolved = Monosecret::builder()
+            ->withInlineSpec($spec, $dir)
+            ->withReason('php inline test')
+            ->load();
+
+        self::assertSame('inline-php', $resolved->secrets['TOKEN']->get());
     }
 
     public function testSetAsEnv(): void

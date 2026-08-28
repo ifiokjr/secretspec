@@ -14,15 +14,29 @@ internal static partial class Native
     }
 
     internal static string Resolve(string requestJson)
+        => Invoke(monosecret_resolve, requestJson, "monosecret_resolve", false);
+
+    internal static string Call(string requestJson)
+        => Invoke(monosecret_call, requestJson, "monosecret_call", true);
+
+    private static string Invoke(
+        Func<string, IntPtr> function,
+        string requestJson,
+        string symbol,
+        bool missingSymbolIsCapability)
     {
         IntPtr response = IntPtr.Zero;
         try
         {
-            response = monosecret_resolve(requestJson);
+            response = function(requestJson);
             if (response == IntPtr.Zero)
-                throw new MonosecretException("ffi", "monosecret_resolve returned null");
+                throw new MonosecretException("ffi", $"{symbol} returned null");
             return Marshal.PtrToStringUTF8(response)
                 ?? throw new MonosecretException("ffi", "monosecret_resolve returned invalid UTF-8");
+        }
+        catch (EntryPointNotFoundException error) when (missingSymbolIsCapability)
+        {
+            throw new MonosecretException("capability", error.Message, error);
         }
         catch (Exception error) when (
             error is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
@@ -107,6 +121,10 @@ internal static partial class Native
     [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private static partial IntPtr monosecret_resolve(string requestJson);
+
+    [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr monosecret_call(string requestJson);
 
     [LibraryImport(LibraryName)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

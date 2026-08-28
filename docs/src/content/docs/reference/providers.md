@@ -303,6 +303,76 @@ passbolt://?template=teams/{project}/{profile}/{key}   # Replace the convention 
 
 **Write limitation**: `go-passbolt-cli` accepts created/updated values only as flags, so a value being written is visible in the child process argv until it exits. See the [Passbolt provider security notes](/providers/passbolt/#security-considerations-and-limitations).
 
+## Fly.io secrets provider (0.20+)
+
+**Availability**: Added in Monosecret 0.20.
+
+**URI**: `fly://APP[?stage=true][&detach=true]` - Publishes application
+secrets through `flyctl secrets`
+
+```text
+fly://my-app                    # Update Machines and monitor the rollout
+fly://my-app?stage=true         # Register changes without deploying them
+fly://my-app?detach=true        # Start the rollout without monitoring it
+```
+
+**Features (0.20+)**: Write, delete, provider credentials, and name-only
+discovery through `init --from`; secret values are sent to `flyctl` over stdin
+instead of process arguments
+
+**Prerequisites (0.20+)**: `flyctl`, an authenticated login or an
+`access_token` provider credential (`FLY_API_TOKEN` and `FLY_ACCESS_TOKEN` are
+fallbacks), and permission to manage the app named in the URI
+
+**Storage (0.20+)**: Fly app secret `{key}`. The app URI, rather than the
+Monosecret project or profile name, supplies isolation.
+
+**Read limitation**: Fly.io exposes secret names and digests but never
+plaintext values. `get`, `check`, `run`, fallback reads, generation-on-miss,
+and prompting-on-miss cannot use this write-only provider. See the
+[Fly.io provider guide](/providers/fly/).
+
+**Write limitation (0.20+)**: `flyctl` trims values read from stdin. Monosecret
+rejects leading or trailing whitespace rather than silently publishing a
+different value.
+
+## Cloudflare Secrets Store provider (0.20+)
+
+**Availability**: Added in Monosecret 0.20 and included in default builds; use
+the `cloudflare` feature for a custom minimal build.
+
+**URI**: `cloudflare://STORE_ID[?account_id=ACCOUNT_ID][&scopes=LIST][&auth=MODE][&wrangler_profile=NAME]`
+
+- Publishes account-level secrets through Cloudflare's REST API
+
+```text
+cloudflare://STORE_ID?account_id=ACCOUNT_ID
+cloudflare://STORE_ID?account_id=ACCOUNT_ID&auth=token
+cloudflare://STORE_ID?account_id=ACCOUNT_ID&auth=wrangler&wrangler_profile=production
+cloudflare://STORE_ID?account_id=ACCOUNT_ID&scopes=workers,containers
+```
+
+**Features (0.20+)**: Write, replace, delete, provider credentials, and
+name-only discovery through `init --from`; values are sent only in HTTPS
+request bodies
+
+**Prerequisites (0.20+)**: A Cloudflare account and Secrets Store, account
+**Secrets Store Write** permission, the account and store IDs, and either an
+`api_token` provider credential, `CLOUDFLARE_API_TOKEN`, or credentials from
+`wrangler auth token --json`. `CLOUDFLARE_ACCOUNT_ID` is the fallback when the
+URI omits `account_id`.
+
+**Storage (0.20+)**: Account secret `{key}` in the selected store. The store
+URI, rather than the Monosecret project or profile name, supplies isolation.
+New and replaced entries receive the configured scopes, defaulting to
+`workers`.
+
+**Read limitation (0.20+)**: Cloudflare's management API exposes metadata but
+never plaintext secret values. `get`, `check`, `run`, fallback reads,
+generation-on-miss, and prompting-on-miss cannot use this write-only provider.
+Plaintext is available only inside a bound Cloudflare service. See the
+[Cloudflare provider guide](/providers/cloudflare/).
+
 ## Google Cloud Secret Manager Provider
 
 **URI**: `gcsm://PROJECT_ID` - Stores secrets in Google Cloud Secret Manager
@@ -313,7 +383,7 @@ gcsm://my-gcp-project         # GCP project ID
 
 **Features**: Read/write, cloud sync, profiles, service account support
 **Prerequisites**: `gcloud` CLI, authenticated, Secret Manager API enabled, build with `--features gcsm`
-**Storage**: Secret name `monosecret-{project}-{profile}-{key}`
+**Storage (0.20+)**: Secret name `monosecret2--{project}--{profile}--{key}` with validated, non-overlapping `--` boundaries. Releases through 0.19 used `monosecret-{project}-{profile}-{key}`. When the new id holds no value, reads fall back to the 0.19 id and warn; the fallback writes nothing, so no new permissions are needed. Writes always use the new id, so `monosecret set` is what moves a secret, and the 0.19 secret is left in place. Names accepted through 0.19 that the new layout cannot represent, such as a project containing `--`, keep reading their 0.19 secret and must be renamed before they can be written. Explicit `ref` addresses are unaffected.
 
 ## AWS Secrets Manager Provider
 
@@ -434,6 +504,7 @@ bw://dev-secrets                        # Collection, by name or ID
 bw://myorg@dev-secrets                  # Organization and collection
 bw://?server=https://vault.company.com  # Expected self-hosted server (guard)
 bw://?type=login&field=username         # Default item type and field
+bw://?folder=team/{project}/{profile}   # Convention title prefix (0.20+)
 ```
 
 Organizations and collections may be named or given as IDs; Monosecret resolves
@@ -452,6 +523,14 @@ narrows both reads and writes to that item type, keeping a Card and a same-named
 Login separately addressable. An unsupported `?type=`, or an unknown query
 parameter, is rejected when the address is parsed rather than ignored.
 
+Monosecret 0.20+ convention items use the title
+`monosecret/{project}/{profile}/{key}`. `?folder=` replaces the prefix before
+the key; it is an item-title namespace, not a Bitwarden folder. Explicit
+`ref.item` values remain complete, unprefixed item titles. Releases through
+0.19 wrote bare convention titles, which must be renamed to the 0.20 layout or
+kept with an explicit `ref = { item = "OLD_TITLE" }`; there is no automatic
+bare-name fallback because a bare item carries no project/profile ownership.
+
 `?server=` does not configure the CLI. The `bw` CLI takes its server only from
 `bw config server`, which must be run while logged out, so self-hosted users
 configure the CLI themselves and Monosecret verifies the setting matches before
@@ -459,7 +538,7 @@ each operation. See the [provider guide](/providers/bw/#self-hosted-servers).
 
 **Features**: Read/write, all vault item types (logins, cards, identities, SSH keys, secure notes), organization/collection addressing by name or ID, field selection, `ref = { item, field }` mapping in `monosecret.toml`, declaration discovery through `init --from` (0.2+)
 **Prerequisites**: Bitwarden CLI (`bw`), signed in and unlocked (`BW_SESSION` env var), self-hosted servers set with `bw config server` before login, build with `--features bw`
-**Storage**: One vault item per secret; reads use per-type default fields unless `?field=` or a `ref` mapping selects one
+**Storage**: One vault item per secret; convention title `monosecret/{project}/{profile}/{key}` (0.20+, customizable with `?folder=`), with per-type default fields unless `?field=` or a `ref` mapping selects one
 
 ## Bitwarden Secrets Manager Provider
 
@@ -498,9 +577,46 @@ akv://myvault.vault.azure.cn             # Sovereign cloud (full DNS name)
 akv://myvault?suffix=vault.azure.cn      # Sovereign cloud (explicit suffix, bare vault name)
 ```
 
-**Features**: Read/write, cloud sync, profiles, service principal/managed identity/workload identity auth
+**Features**: Read/write, cloud sync, profiles, service principal/managed identity/workload identity auth, version-pinned refs (0.20+)
 **Prerequisites**: An Azure Key Vault instance, authenticated via one of the methods above, build with `--features akv`
 **Storage**: Secret name `monosecret--{base32(project)}--{base32(profile)}--{base32(key)}` (lowercase, unpadded Base32 preserves case and punctuation distinctions within Azure's case-insensitive secret-name namespace)
+
+## Azure App Configuration Provider (0.20+)
+
+:::caution[Version compatibility]
+The `aac` provider is added in Monosecret 0.20.
+:::
+
+**URI**:
+`aac://STORE[?auth=METHOD][&label=LABEL][&prefix=PREFIX][&tag=NAME=VALUE]...`
+
+- Reads and manages Azure App Configuration key-values and resolves canonical
+  Azure Key Vault references
+
+```bash
+aac://payments-production
+aac://shared?label=production&prefix=payments:
+aac://shared?tag=app=payments&tag=stage=production
+aac://shared?auth=connection_string&key_vault_auth=managed_identity
+```
+
+**Features (0.20+)**: Read/write/delete, project and profile namespacing,
+declaration discovery, exact label and tag selection, sovereign-cloud endpoint
+configuration, Entra or connection-string authentication, and Key Vault
+reference resolution
+**Prerequisites (0.20+)**: An Azure App Configuration store and matching
+data-plane permissions. Official and default builds include AAC; custom minimal
+builds use `--features aac`. Key Vault references also require an Entra
+identity with secret-read access.
+**Authentication (0.20+)**: `env`, `cli`, `managed_identity`,
+`workload_identity`, or `connection_string`. Prefer Entra authentication so
+workloads use Azure RBAC without distributing App Configuration access keys;
+reserve connection strings for environments where Entra is unavailable. See
+the [provider guide](/providers/aac/#authentication) for App
+Configuration and Key Vault identity separation.
+**Storage (0.20+)**:
+`{prefix}monosecret:{project}:{profile}:{key}` under one exact label; omission
+selects the null label
 
 ## Infisical Provider
 
@@ -525,8 +641,15 @@ legacy `INFISICAL_API_URL`, then defaults to Infisical Cloud.
 **Storage**: Secret `{key}` in folder `/monosecret/{project}/{profile}`, in the environment named by the profile (or by `?env=`). Keys are stored verbatim.
 
 By default the Monosecret profile names the Infisical environment, so a `production` profile reads
-the `production` environment. Projects whose environments do not correspond to profiles pin one with
+the `production` environment. This covers refs as well as convention naming (0.20+).
+Projects whose environments do not correspond to profiles pin one with
 `?env=`; the profile still names the folder, so profiles never share a secret.
+
+Infisical uses the same 404 for a missing secret, folder, environment, or
+project. In Monosecret 0.20+, an all-missing read checks the environment root
+once and reports a missing environment or project, including whether the
+profile or `?env=` selected the environment. Ordinary missing secrets and
+folders remain unset so provider fallback continues.
 
 Values are read with Infisical's secret references expanded, matching its own CLI, so a value of
 `postgres://${DB_USER}@host` arrives resolved.
@@ -543,7 +666,7 @@ age://secrets.age?identity=/home/alice/.config/age/plugin-identity.txt
 age://secrets.age?recipients-file=secrets.age.recipients # Share with a roster
 ```
 
-**Features**: Read/write, committed-file storage, X25519 and SSH keys, native tagged recipients, and non-interactive `age-plugin-*` recipients and identities
+**Features**: Read/write, delete (0.20+), committed-file storage, X25519 and SSH keys, native tagged recipients, and non-interactive `age-plugin-*` recipients and identities
 **Prerequisites**: An age identity; hybrid ML-KEM-768 + X25519 keys from `age-keygen -pq` are recommended for new setups and currently require the non-interactive `age-plugin-pq` compatibility plugin. Build with `--features age`.
 **Authentication**: The `identity` credential, `AGE_IDENTITY`, or `?identity=`; recipients from `?recipients-file=` or derived from the identity
 **Storage**: One `KEY=value` entry per secret inside the encrypted blob at PATH
@@ -576,6 +699,28 @@ per project/profile. A single-file provider supports `ref = { item = "..." }`
 as a root key (or a key in `[DEFAULT]` for INI); extra coordinates and refs
 through templated paths are rejected.
 
+## Kubernetes Provider (0.20+)
+
+:::caution[Version compatibility]
+The `kubernetes` provider is added in Monosecret 0.20.
+:::
+
+**URI**: `k8s+KIND://NAME[@NAMESPACE]` - Stores secrets in a Kubernetes
+ConfigMap or Secret
+
+```text
+k8s+configmap://db-config@db-postgres
+k8s+configmap://db-config
+k8s+secret://db-credentials@db-postgres
+```
+
+**Features**: Read/write Kubernetes ConfigMaps and Secrets
+**Prerequisites**: A Kubernetes configuration in `$KUBECONFIG` or
+`$HOME/.kube/config`; build with `--features kubernetes` (0.20+)
+**Authentication**: Configured in Kubernetes configuration
+**Storage**: `monosecret--{project}--{profile}--{key}` key under `.data` in the
+Kubernetes object
+
 ## Provider Selection
 
 ### Command Line
@@ -606,32 +751,36 @@ $ export MONOSECRET_PROVIDER="dotenv:///config/.env"
 
 ## Security Considerations
 
-| Provider                   | Encryption                    | Storage Location                 | Network Access                    |
-| -------------------------- | ----------------------------- | -------------------------------- | --------------------------------- |
-| Dotenv                     | ❌ Plain text                 | Local filesystem                 | ❌ No                             |
-| File (0.2+)                | ❌ Plain text                 | Local filesystem                 | ❌ No                             |
-| Environment                | ❌ Plain text                 | Process memory                   | ❌ No                             |
-| Null (0.2+)                | N/A — no stored value         | None                             | ❌ No                             |
-| systemd Credential (0.2+)  | Depends on unit source        | systemd-managed runtime memory   | ❌ No                             |
-| Keyring                    | ✅ System encryption          | System keychain                  | ❌ No                             |
-| KeePass KDBX (0.2+)        | ✅ KDBX encryption            | Local filesystem                 | ❌ No                             |
-| Pass                       | ✅ GPG encryption             | Local filesystem                 | ❌ No                             |
-| Gopass                     | ✅ GPG encryption             | Local filesystem                 | ❌ No                             |
-| Proton Pass                | ✅ End-to-end                 | Cloud (Proton)                   | ✅ Yes                            |
-| Passbolt (0.2+)            | ✅ End-to-end                 | Self-hosted (Passbolt server)    | ✅ Yes                            |
-| LastPass                   | ✅ End-to-end                 | Cloud (LastPass)                 | ✅ Yes                            |
-| Dashlane (0.2+)            | ✅ End-to-end                 | Cloud (Dashlane), synced locally | Yes — `dcli` auto-syncs hourly    |
-| 1Password                  | ✅ End-to-end                 | Cloud (1Password)                | ✅ Yes                            |
-| Keeper (0.2+)              | ✅ End-to-end                 | Cloud (Keeper)                   | ✅ Yes                            |
-| GCSM                       | ✅ Google-managed             | Cloud (GCP)                      | ✅ Yes                            |
-| AWSSM                      | ✅ AWS KMS                    | Cloud (AWS)                      | ✅ Yes                            |
-| AWS Parameter Store (0.2+) | ✅ AWS KMS (`SecureString`)   | Cloud (AWS)                      | ✅ Yes                            |
-| Scaleway (0.2+)            | ✅ Scaleway-managed           | Cloud (Scaleway)                 | ✅ Yes                            |
-| Vault                      | ✅ Vault encryption           | Vault server                     | ✅ Yes                            |
-| OpenBao (0.2+)             | ✅ OpenBao encryption         | OpenBao server                   | ✅ Yes                            |
-| BW (0.2+)                  | ✅ End-to-end                 | Cloud (Bitwarden) or self-hosted | ✅ Yes                            |
-| BWS                        | ✅ End-to-end                 | Cloud (Bitwarden)                | ✅ Yes                            |
-| AKV                        | ✅ Azure-managed              | Cloud (Azure)                    | ✅ Yes                            |
-| Infisical                  | ✅ Infisical-managed          | Cloud (Infisical) or self-hosted | ✅ Yes                            |
-| age (0.2+)                 | ✅ age encryption             | Local filesystem                 | ❌ No                             |
-| SOPS (0.2+)                | ✅ Configured SOPS encryption | Local filesystem                 | Depends on configured key service |
+| Provider                         | Encryption                           | Storage Location                 | Network Access                    |
+| -------------------------------- | ------------------------------------ | -------------------------------- | --------------------------------- |
+| Dotenv                           | ❌ Plain text                        | Local filesystem                 | ❌ No                             |
+| File (0.19+)                     | ❌ Plain text                        | Local filesystem                 | ❌ No                             |
+| Environment                      | ❌ Plain text                        | Process memory                   | ❌ No                             |
+| Null (0.19+)                     | N/A — no stored value                | None                             | ❌ No                             |
+| systemd Credential (0.17+)       | Depends on unit source               | systemd-managed runtime memory   | ❌ No                             |
+| Keyring                          | ✅ System encryption                 | System keychain                  | ❌ No                             |
+| KeePass KDBX (0.17+)             | ✅ KDBX encryption                   | Local filesystem                 | ❌ No                             |
+| Pass                             | ✅ GPG encryption                    | Local filesystem                 | ❌ No                             |
+| Gopass                           | ✅ GPG encryption                    | Local filesystem                 | ❌ No                             |
+| Proton Pass                      | ✅ End-to-end                        | Cloud (Proton)                   | ✅ Yes                            |
+| Passbolt (0.19+)                 | ✅ End-to-end                        | Self-hosted (Passbolt server)    | ✅ Yes                            |
+| Fly.io secrets (0.20+)           | ✅ Fly.io-managed                    | Cloud (Fly.io app vault)         | ✅ Yes                            |
+| Cloudflare Secrets Store (0.20+) | ✅ Cloudflare-managed                | Cloud (account-level store)      | ✅ Yes                            |
+| LastPass                         | ✅ End-to-end                        | Cloud (LastPass)                 | ✅ Yes                            |
+| Dashlane (0.18+)                 | ✅ End-to-end                        | Cloud (Dashlane), synced locally | Yes — `dcli` auto-syncs hourly    |
+| 1Password                        | ✅ End-to-end                        | Cloud (1Password)                | ✅ Yes                            |
+| Keeper (0.18+)                   | ✅ End-to-end                        | Cloud (Keeper)                   | ✅ Yes                            |
+| GCSM                             | ✅ Google-managed                    | Cloud (GCP)                      | ✅ Yes                            |
+| AWSSM                            | ✅ AWS KMS                           | Cloud (AWS)                      | ✅ Yes                            |
+| AWS Parameter Store (0.18+)      | ✅ AWS KMS (`SecureString`)          | Cloud (AWS)                      | ✅ Yes                            |
+| Scaleway (0.17+)                 | ✅ Scaleway-managed                  | Cloud (Scaleway)                 | ✅ Yes                            |
+| Vault                            | ✅ Vault encryption                  | Vault server                     | ✅ Yes                            |
+| OpenBao (0.17+)                  | ✅ OpenBao encryption                | OpenBao server                   | ✅ Yes                            |
+| BW (0.18+)                       | ✅ End-to-end                        | Cloud (Bitwarden) or self-hosted | ✅ Yes                            |
+| BWS                              | ✅ End-to-end                        | Cloud (Bitwarden)                | ✅ Yes                            |
+| AKV                              | ✅ Azure-managed                     | Cloud (Azure)                    | ✅ Yes                            |
+| Azure App Configuration (0.20+)  | ✅ Azure-managed                     | Cloud (Azure)                    | ✅ Yes                            |
+| Infisical                        | ✅ Infisical-managed                 | Cloud (Infisical) or self-hosted | ✅ Yes                            |
+| age (0.17+)                      | ✅ age encryption                    | Local filesystem                 | ❌ No                             |
+| SOPS (0.17+)                     | ✅ Configured SOPS encryption        | Local filesystem                 | Depends on configured key service |
+| Kubernetes (0.20+)               | ❌ ConfigMap ✅ Secret if configured | Kubernetes server                | ✅ Yes                            |

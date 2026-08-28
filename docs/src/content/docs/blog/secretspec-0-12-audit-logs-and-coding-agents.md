@@ -1,5 +1,5 @@
 ---
-title: "SecretSpec 0.12: audit logs and coding agents"
+title: "Monosecret 0.12: audit logs and coding agents"
 description: Require a human-readable reason whenever a coding agent reaches for your secrets.
 date: 2026-06-08
 authors:
@@ -7,7 +7,7 @@ authors:
 ---
 
 :::caution[Historical upstream article]
-This article is preserved from the upstream SecretSpec 0.12 release. For current
+This article is preserved from the upstream Monosecret 0.12 release. For current
 usage, use `monosecret`, `monosecret.toml`, and `MONOSECRET_*`; see the
 [Monosecret audit documentation](/concepts/audit/).
 :::
@@ -16,18 +16,18 @@ A coding agent reaches for the same secrets you do, but on its own initiative an
 many times a session: a read looks identical whether it came from you running a
 deploy or an agent exploring the codebase.
 
-[SecretSpec 0.12](https://github.com/cachix/secretspec/releases/tag/v0.12.0 "SecretSpec 0.12 release")
+[Monosecret 0.12](https://github.com/cachix/monosecret/releases/tag/v0.12.0 "Monosecret 0.12 release")
 makes that access accountable. It ships three things:
 
 - **Audit log** — every secret read and write is appended to a local,
   per-user JSONL log. On by default. Values are never recorded.
 - **Reason-on-access** — secret access can require a human-readable reason,
   enforced for coding agents by default.
-- **`secretspec audit` command** — filter and summarize the log, or pipe raw
+- **`monosecret audit` command** — filter and summarize the log, or pipe raw
   JSON Lines to `jq`.
 
 :::caution[Behavior change in 0.12]
-If you run SecretSpec inside a coding agent, secret access now **fails** until a
+If you run Monosecret inside a coding agent, secret access now **fails** until a
 reason is supplied. This is the new default (`require_reason = "agents"`). Opt
 out with `require_reason = false` in the `[project]` table. Existing providers
 and library callers keep working unchanged. See [Upgrading](#upgrading).
@@ -58,30 +58,30 @@ the reason, and who was asking, including the detected coding agent.
 ```
 
 The log lives in your per-user state directory
-(`~/.local/state/secretspec/audit.log`) and is created readable only by you. Read
-it with any tool, or use the new `secretspec audit` command for filtering and a
+(`~/.local/state/monosecret/audit.log`) and is created readable only by you. Read
+it with any tool, or use the new `monosecret audit` command for filtering and a
 readable summary:
 
 ```bash
 # Last 20 entries, formatted
-secretspec audit -n 20
+monosecret audit -n 20
 
 # Only `run` events for one project
-secretspec audit --project my-app --action run
+monosecret audit --project my-app --action run
 
 # Raw JSON Lines, piped to jq
-secretspec audit --json | jq 'select(.outcome == "missing")'
+monosecret audit --json | jq 'select(.outcome == "missing")'
 ```
 
 It is configured in your **user-global config**
-(`~/.config/secretspec/config.toml`), not the project's `secretspec.toml`, so a
+(`~/.config/monosecret/config.toml`), not the project's `monosecret.toml`, so a
 repository you clone can't quietly turn off or redirect your audit log. The log is
 a single file capped at 1 MiB, a size-bounded recent record rather than permanent
 compliance history; forward it to a central system if you need that. To turn it
 off entirely:
 
 ```toml
-# ~/.config/secretspec/config.toml
+# ~/.config/monosecret/config.toml
 [audit]
 enabled = false
 ```
@@ -94,18 +94,18 @@ When a coding agent like Claude Code reaches for a secret without a reason, the
 access is refused and the agent is told exactly what to do next:
 
 ```text
-$ secretspec run -- npm test
+$ monosecret run -- npm test
 Error: Accessing secrets requires a reason. Provide one with --reason
-"<why you are accessing these secrets>", the SECRETSPEC_REASON environment
+"<why you are accessing these secrets>", the MONOSECRET_REASON environment
 variable, or Secrets::with_reason() in the SDK. (Policy: require_reason in
-[project] of secretspec.toml — defaults to "agents"; set it to false to
+[project] of monosecret.toml — defaults to "agents"; set it to false to
 disable.)
 ```
 
 Claude Code reads that message, states why it needs the secret, and retries:
 
 ```bash
-secretspec run --reason "run the test suite before opening a PR" -- npm test
+monosecret run --reason "run the test suite before opening a PR" -- npm test
 ```
 
 Both the refusal and the successful retry land in the audit log, so the reason
@@ -115,11 +115,11 @@ is tied to the access. There are three ways to supply a reason:
 | ------------------------ | ------------------ | ------------- |
 | `--reason` flag          | CLI                | highest       |
 | `Secrets::with_reason()` | SDK                | overrides env |
-| `SECRETSPEC_REASON`      | CLI + SDK + derive | lowest        |
+| `MONOSECRET_REASON`      | CLI + SDK + derive | lowest        |
 
 ```bash
 # CLI: the most explicit option, overrides the others
-secretspec run --reason "deploying release 0.12" -- ./deploy.sh
+monosecret run --reason "deploying release 0.12" -- ./deploy.sh
 ```
 
 ```rust
@@ -129,11 +129,11 @@ let secrets = Secrets::load(/* ... */)?.with_reason("nightly backup job");
 
 ```bash
 # Env: lowest precedence, but honored everywhere
-export SECRETSPEC_REASON="nightly backup job"
+export MONOSECRET_REASON="nightly backup job"
 ```
 
-`SECRETSPEC_REASON` is resolved by `Secrets::load` / `load_from`, which means
-`secretspec-derive`-generated code and other library callers satisfy the policy
+`MONOSECRET_REASON` is resolved by `Secrets::load` / `load_from`, which means
+`monosecret_derive`-generated code and other library callers satisfy the policy
 and supply an audit reason **without any code changes**.
 
 Whichever path you use, blank or whitespace-only reasons are ignored, so they
@@ -156,17 +156,17 @@ require_reason = "agents" # require it from agents (default), or true / false
 - `true`: require it from every caller.
 - `false`: never require it.
 
-Because the policy lives in `secretspec.toml` and is enforced by SecretSpec, it
+Because the policy lives in `monosecret.toml` and is enforced by Monosecret, it
 applies to everyone and every CI runner, and is inherited through `extends`.
 Coding agents are spotted by the
 [`detect-coding-agent`](https://crates.io/crates/detect-coding-agent) crate
 (Claude Code, Cursor, Codex, Gemini CLI, Copilot, and more); set
-`SECRETSPEC_AGENT` for a harness it doesn't recognize.
+`MONOSECRET_AGENT` for a harness it doesn't recognize.
 
 ## Upgrading
 
 ```bash
-cargo install secretspec
+cargo install monosecret
 ```
 
 Remember the new default: agents must pass a reason: set `require_reason = false`

@@ -35,6 +35,7 @@ use std::sync::atomic::Ordering;
 use colored::Colorize;
 use serde::Serialize;
 
+use crate::CallerContext;
 use crate::config::AuditConfig;
 use crate::secrets::detect_agent_id;
 use crate::secrets::running_as_agent;
@@ -147,6 +148,7 @@ pub(crate) struct AuditContext<'a> {
 	pub outcome: AuditOutcome,
 	pub error_kind: Option<&'a str>,
 	pub reason: Option<&'a str>,
+	pub caller: Option<&'a CallerContext>,
 }
 
 /// One serialized audit record (one JSON Lines entry).
@@ -187,6 +189,9 @@ struct AuditEvent<'a> {
 	error_kind: Option<&'a str>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	reason: Option<&'a str>,
+	/// Caller-asserted software integration metadata (Monosecret 0.20+).
+	#[serde(skip_serializing_if = "Option::is_none")]
+	caller: Option<&'a CallerContext>,
 	actor: &'a Actor,
 	/// monosecret version that produced the event.
 	version: &'static str,
@@ -297,7 +302,10 @@ impl AuditSink for JsonlSink {
 	fn write_line(&self, line: &str) {
 		// A poisoned lock just means a previous writer panicked; the file handle is
 		// still usable for appending, so recover the guard rather than give up.
-		let mut guard = self.file.lock().unwrap_or_else(|e| e.into_inner());
+		let mut guard = self
+			.file
+			.lock()
+			.unwrap_or_else(std::sync::PoisonError::into_inner);
 
 		// Enforce the size cap with whole-line granularity: if appending this line
 		// would cross the cap, truncate and restart the file first so a line is
@@ -413,6 +421,7 @@ impl AuditLogger {
 			outcome: ctx.outcome,
 			error_kind: ctx.error_kind,
 			reason: ctx.reason,
+			caller: ctx.caller,
 			actor: &self.actor,
 			version: env!("CARGO_PKG_VERSION"),
 		};
@@ -423,7 +432,7 @@ impl AuditLogger {
 				eprintln!(
 					"{} failed to serialize audit event: {e}; skipping",
 					"warning:".yellow()
-				)
+				);
 			}
 		}
 	}
@@ -666,6 +675,12 @@ mod tests {
 				outcome: AuditOutcome::Found,
 				error_kind: None,
 				reason: Some("deploy web frontend"),
+				caller: Some(
+					&CallerContext::new("git")
+						.with_version("2.51.0")
+						.with_operation("credential_get")
+						.with_resource("github.com"),
+				),
 			},
 		);
 
@@ -680,6 +695,10 @@ mod tests {
 		assert_eq!(event["profile"], "production");
 		assert_eq!(event["key"], "DATABASE_URL");
 		assert_eq!(event["reason"], "deploy web frontend");
+		assert_eq!(event["caller"]["name"], "git");
+		assert_eq!(event["caller"]["version"], "2.51.0");
+		assert_eq!(event["caller"]["operation"], "credential_get");
+		assert_eq!(event["caller"]["resource"], "github.com");
 		assert_eq!(event["session_id"], "test-session");
 		assert_eq!(event["seq"], 0);
 		// Provider credentials (the `:password`) are redacted; the username,
@@ -709,6 +728,7 @@ mod tests {
 				outcome: AuditOutcome::Found,
 				error_kind: None,
 				reason: None,
+				caller: None,
 			},
 		);
 
@@ -742,6 +762,7 @@ mod tests {
 					outcome: AuditOutcome::Written,
 					error_kind: None,
 					reason: None,
+					caller: None,
 				},
 			);
 		}
@@ -900,6 +921,7 @@ mod tests {
 				outcome: AuditOutcome::Found,
 				error_kind: None,
 				reason: None,
+				caller: None,
 			},
 		);
 

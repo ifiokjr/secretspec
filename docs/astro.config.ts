@@ -139,11 +139,53 @@ $ monosecret import dotenv://.env.production
 
 ## Providers
 
-Values can be resolved from: keyring (default), KeePass KDBX (0.2+), dotenv files, plaintext file directories (0.2+), environment variables, systemd service credentials (0.2+), 1Password, Gopass (0.2+), LastPass, Dashlane (0.2+, read-only), Pass, Proton Pass, Passbolt (0.2+), Keeper Secrets Manager (0.2+), Google Cloud Secret Manager, AWS Secrets Manager, AWS Systems Manager Parameter Store (0.2+), Scaleway Secret Manager (0.2+), HashiCorp Vault, OpenBao (0.2+), Bitwarden Password Manager (0.2+), Bitwarden Secrets Manager, Azure Key Vault, Infisical (0.2+), age (0.2+), or SOPS (0.2+). The null provider (0.2+) uses manifest defaults, ephemeral generation, or ephemeral run prompts without storage.`,
+Values can be resolved from: keyring (default), KeePass KDBX (0.17+), dotenv files, plaintext file directories (0.19+), environment variables, systemd service credentials (0.17+), 1Password, Gopass (0.15+), LastPass, Dashlane (0.18+, read-only), Pass, Proton Pass, Passbolt (0.19+), Keeper Secrets Manager (0.18+), Google Cloud Secret Manager, AWS Secrets Manager, AWS Systems Manager Parameter Store (0.18+), Scaleway Secret Manager (0.17+), HashiCorp Vault, OpenBao (0.17+), Bitwarden Password Manager (0.18+), Bitwarden Secrets Manager, Azure Key Vault, Azure App Configuration (0.20+), Infisical (0.16+), age (0.17+), SOPS (0.17+), or Kubernetes (0.20+). Fly.io application secrets and Cloudflare Secrets Store entries can be published through the write-only fly and cloudflare providers (0.20+). The null provider (0.19+) uses manifest defaults, ephemeral generation, or ephemeral run prompts without storage.`,
         }),
       ],
       title: "Monosecret",
       favicon: "/favicon.ico",
+      head: [
+        {
+          tag: "meta",
+          attrs: {
+            property: "og:image",
+            content: "https://ifiokjr.github.io/monosecret/social-card.png",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            property: "og:image:alt",
+            content: "Monosecret — A declarative interface for every secret provider.",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: { property: "og:image:width", content: "1200" },
+        },
+        {
+          tag: "meta",
+          attrs: { property: "og:image:height", content: "630" },
+        },
+        {
+          tag: "meta",
+          attrs: { property: "og:image:type", content: "image/png" },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:image",
+            content: "https://ifiokjr.github.io/monosecret/social-card.png",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:image:alt",
+            content: "Monosecret — A declarative interface for every secret provider.",
+          },
+        },
+      ],
       components: {
         Hero: "./src/overrides/Hero.astro",
         SocialIcons: "./src/overrides/SocialIcons.astro",
@@ -258,6 +300,16 @@ Values can be resolved from: keyring (default), KeePass KDBX (0.2+), dotenv file
               slug: "providers/systemd-credential",
               badge: { text: "0.2+", variant: "note" },
             },
+            {
+              label: "Fly.io Secrets",
+              slug: "providers/fly",
+              badge: { text: "0.20+", variant: "note" },
+            },
+            {
+              label: "Cloudflare Secrets Store",
+              slug: "providers/cloudflare",
+              badge: { text: "0.20+", variant: "note" },
+            },
             { label: "Pass", slug: "providers/pass" },
             { label: "Proton Pass", slug: "providers/protonpass" },
             {
@@ -324,6 +376,11 @@ Values can be resolved from: keyring (default), KeePass KDBX (0.2+), dotenv file
               badge: { text: "0.2+", variant: "note" },
             },
             {
+              label: "Azure App Configuration",
+              slug: "providers/aac",
+              badge: { text: "0.20+", variant: "note" },
+            },
+            {
               label: "Infisical",
               slug: "providers/infisical",
               badge: { text: "0.2+", variant: "note" },
@@ -337,6 +394,26 @@ Values can be resolved from: keyring (default), KeePass KDBX (0.2+), dotenv file
               label: "SOPS",
               slug: "providers/sops",
               badge: { text: "0.2+", variant: "note" },
+            },
+            {
+              label: "Kubernetes",
+              slug: "providers/kubernetes",
+              badge: { text: "0.20+", variant: "note" },
+            },
+          ],
+        },
+        {
+          label: "Integrations",
+          items: [
+            {
+              label: "Git credentials",
+              slug: "integrations/git",
+              badge: { text: "0.20+", variant: "note" },
+            },
+            {
+              label: "Docker credentials",
+              slug: "integrations/docker",
+              badge: { text: "0.20+", variant: "note" },
             },
           ],
         },

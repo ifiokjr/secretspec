@@ -5,11 +5,27 @@ expression: snapshot
 success: true
 exit_code: 0
 ----- stdout -----
-
------ stderr -----
-note: monosecret is now recording secret access to [TMPDIR]/.local/state/monosecret/audit.log (disable with [audit] enabled = false in ~/.config/monosecret/config.toml)
 Checking secrets in object-provider-check-regression (profile: default)...
 
+✓ SECRET_1 - Required secret 1
+✓ SECRET_10 - Required secret 10
+✓ SECRET_11 - Required secret 11
+✓ SECRET_12 - Required secret 12
+✓ SECRET_13 - Required secret 13
+✓ SECRET_14 - Required secret 14
+✓ SECRET_15 - Required secret 15
+✓ SECRET_2 - Required secret 2
+✓ SECRET_3 - Required secret 3
+✓ SECRET_4 - Required secret 4
+✓ SECRET_5 - Required secret 5
+✓ SECRET_6 - Required secret 6
+✓ SECRET_7 - Required secret 7
+✓ SECRET_8 - Required secret 8
+✓ SECRET_9 - Required secret 9
+
+Summary: 15 found, 0 missing
+----- stderr -----
+note: monosecret is now recording secret access to [TMPDIR]/.local/state/monosecret/audit.log (disable with [audit] enabled = false in ~/.config/monosecret/config.toml)
 DEBUG monosecret::secrets: attempting provider lookup provider=dotenv:[TMPDIR]/provider.env secret=SECRET_1 profile=default path=Some(["Important Details", "Company Details"]) key=Some("STORED_SECRET_1")
 DEBUG monosecret::secrets: attempting provider lookup provider=dotenv:[TMPDIR]/provider.env secret=SECRET_10 profile=default path=Some(["Important Details", "Company Details"]) key=Some("STORED_SECRET_10")
 DEBUG monosecret::secrets: attempting provider lookup provider=dotenv:[TMPDIR]/provider.env secret=SECRET_11 profile=default path=Some(["Important Details", "Company Details"]) key=Some("STORED_SECRET_11")
@@ -70,20 +86,3 @@ DEBUG monosecret::secrets: resolved provider reference alias=detail_env provider
 DEBUG monosecret::secrets: resolved provider reference alias=detail_env provider=dotenv://[TMPDIR]/provider.env path=Some(["Important Details", "Company Details"]) key=Some("STORED_SECRET_8")
 DEBUG monosecret::secrets: resolved provider reference alias=detail_env provider=dotenv://[TMPDIR]/provider.env path=Some(["Important Details", "Company Details"]) key=Some("STORED_SECRET_9")
 DEBUG monosecret::secrets: resolved provider reference alias=detail_env provider=dotenv://[TMPDIR]/provider.env path=Some(["Important Details", "Company Details"]) key=Some("STORED_SECRET_9")
-✓ SECRET_1 - Required secret 1
-✓ SECRET_10 - Required secret 10
-✓ SECRET_11 - Required secret 11
-✓ SECRET_12 - Required secret 12
-✓ SECRET_13 - Required secret 13
-✓ SECRET_14 - Required secret 14
-✓ SECRET_15 - Required secret 15
-✓ SECRET_2 - Required secret 2
-✓ SECRET_3 - Required secret 3
-✓ SECRET_4 - Required secret 4
-✓ SECRET_5 - Required secret 5
-✓ SECRET_6 - Required secret 6
-✓ SECRET_7 - Required secret 7
-✓ SECRET_8 - Required secret 8
-✓ SECRET_9 - Required secret 9
-
-Summary: 15 found, 0 missing

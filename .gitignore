@@ -20,3 +20,9 @@ pubspec.lock
 # dotnet build artifacts
 dotnet/**/obj/
 dotnet/**/bin/
+
+# Swift SDK local native artifact and build output
+/.build/
+swift/**/Artifacts/
+
+.vscode/

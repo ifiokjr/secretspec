@@ -381,7 +381,7 @@ pub struct BitwardenConfig {
 	/// When set, the CLI will be configured to use the specified server
 	/// instead of the default bitwarden.com. Should include the full URL.
 	pub server: Option<String>,
-	/// Optional folder name prefix for organizing secrets in Bitwarden.
+	/// Optional convention item-title prefix for organizing secrets in Bitwarden.
 	///
 	/// Supports placeholders: {project} and {profile}.
 	/// Defaults to "monosecret/{project}/{profile}" if not specified.
@@ -467,8 +467,9 @@ impl TryFrom<&ProviderUrl> for BitwardenConfig {
 /// Provider implementation for Bitwarden password manager.
 ///
 /// This provider integrates with Bitwarden CLI (`bw`) to store and retrieve
-/// secrets. It organizes secrets in a hierarchical structure within Bitwarden
-/// items using a configurable format string that defaults to: `monosecret/{project}/{profile}`.
+/// secrets. Starting in Monosecret 0.20, it organizes convention secrets with
+/// item titles that default to `monosecret/{project}/{profile}/{key}`. The
+/// configurable `folder_prefix` is a title prefix, not a Bitwarden folder ID.
 ///
 /// # Authentication
 ///
@@ -480,11 +481,11 @@ impl TryFrom<&ProviderUrl> for BitwardenConfig {
 ///
 /// # Storage Structure
 ///
-/// Secrets are stored as Secure Note items in Bitwarden with:
-/// - Name: formatted according to folder_prefix configuration
-/// - Type: Secure Note (type 2)
-/// - Fields: project, profile, key, value
-/// - Notes: metadata about the secret
+/// Secrets are stored as Bitwarden items with:
+/// - Name: `{folder_prefix}/{key}` for convention addresses
+/// - Type: Login by default, or the type selected with `?type=`
+/// - Value: the item type's default field, or the field selected with `?field=`
+/// - Notes: Monosecret management metadata on newly created items
 ///
 /// # Example Usage
 ///
@@ -1114,16 +1115,36 @@ fn find_addressed_item<'a>(
 	}
 }
 
+/// Removes a prefix using the same Unicode-aware lowercasing as Bitwarden
+/// item lookup, while returning the suffix from the original title.
+///
+/// Calling `strip_prefix` after lowercasing would lose that original suffix,
+/// and lowercasing can change a character's byte length. Compare one source
+/// character at a time instead, then slice at its original byte boundary.
+fn strip_prefix_case_insensitive<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+	let mut source = value.char_indices();
+	for expected in prefix.chars() {
+		let (_, actual) = source.next()?;
+		if actual.to_lowercase().ne(expected.to_lowercase()) {
+			return None;
+		}
+	}
+	let suffix_start = source.next().map_or(value.len(), |(index, _)| index);
+	Some(&value[suffix_start..])
+}
+
 /// Builds declarations for the Bitwarden items the provider can address.
 ///
-/// Reflection uses the same optional type filter as reads and writes. Item
-/// names are otherwise direct convention addresses, so every reflected name
-/// must already be a valid Monosecret identifier. Bitwarden compares names
-/// case-insensitively and permits duplicates; reject either kind of collision
-/// instead of generating declarations that would be ambiguous at read time.
+/// Reflection uses the same optional type filter as reads and writes. Items in
+/// the requested project/profile title namespace become convention
+/// declarations; bare existing items become native refs, and items in another
+/// slash-delimited namespace are skipped. Bitwarden compares names
+/// case-insensitively and permits duplicates, so reject collisions instead of
+/// generating declarations that would be ambiguous at read time.
 fn declarations_from_items(
 	items: &[BitwardenItem],
 	required_type: Option<BitwardenItemType>,
+	convention_prefix: &str,
 ) -> Result<HashMap<String, Secret>> {
 	let mut declarations = HashMap::new();
 	let mut seen_names = HashMap::<String, &BitwardenItem>::new();
@@ -1132,7 +1153,21 @@ fn declarations_from_items(
 		.iter()
 		.filter(|item| required_type.is_none_or(|item_type| item.item_type == item_type))
 	{
-		if !crate::config::is_valid_identifier(&item.name) {
+		let (name, is_native_reference) =
+			match strip_prefix_case_insensitive(&item.name, convention_prefix) {
+				Some(key) if !key.is_empty() && !key.contains('/') => (key, false),
+				// Another project/profile's convention item is outside this
+				// discovery namespace. A slash cannot occur in a Monosecret key,
+				// so skipping it cannot hide a directly declarable legacy item.
+				Some(_) => continue,
+				None if item.name.contains('/') => continue,
+				// Preserve discovery of existing, externally managed Bitwarden
+				// items. They need a native ref because convention addressing is
+				// namespaced starting in 0.20.
+				None => (item.name.as_str(), true),
+			};
+
+		if !crate::config::is_valid_identifier(name) {
 			return Err(MonosecretError::ProviderOperationFailed(format!(
 				"Bitwarden item '{}' cannot become a Monosecret declaration: names must be \
                  alphanumeric and underscores and cannot start with a number. Rename the item \
@@ -1140,7 +1175,7 @@ fn declarations_from_items(
 				item.name
 			)));
 		}
-		if item.name == "defaults" {
+		if name == "defaults" {
 			return Err(MonosecretError::ProviderOperationFailed(
 				"Bitwarden item 'defaults' cannot become a Monosecret declaration because \
                  that name is reserved for profile defaults. Rename the item or narrow \
@@ -1149,7 +1184,7 @@ fn declarations_from_items(
 			));
 		}
 
-		let folded_name = item.name.to_lowercase();
+		let folded_name = name.to_lowercase();
 		if let Some(previous) = seen_names.insert(folded_name, item) {
 			return Err(MonosecretError::ProviderOperationFailed(format!(
 				"Bitwarden items '{}' ({}) and '{}' ({}) have names that collide \
@@ -1159,14 +1194,14 @@ fn declarations_from_items(
 			)));
 		}
 
-		declarations.insert(
-			item.name.clone(),
-			Secret {
-				description: Some(format!("{} Bitwarden secret", item.name)),
-				required: Some(true),
+		let mut declaration = Secret::required(format!("{name} Bitwarden secret"));
+		if is_native_reference {
+			declaration = declaration.reference(crate::config::NativeAddress {
+				item: item.name.clone(),
 				..Default::default()
-			},
-		);
+			});
+		}
+		declarations.insert(name.to_string(), declaration);
 	}
 
 	Ok(declarations)
@@ -1209,6 +1244,37 @@ impl BitwardenProvider {
 
 		#[cfg(not(test))]
 		Command::new("bw")
+	}
+
+	/// Renders the namespace shared by every convention item in one project
+	/// profile. Bitwarden folders are personal to each user, so this is an
+	/// item-title prefix rather than a `folderId`.
+	fn convention_folder(&self, project: &str, profile: &str) -> String {
+		// Escape both `%` and `/`: the latter is our namespace separator, and
+		// escaping `%` keeps a literal percent-encoded-looking name distinct
+		// from the component it might otherwise decode to.
+		fn encode_component(component: &str) -> String {
+			component.replace('%', "%25").replace('/', "%2F")
+		}
+
+		self.config
+			.folder_prefix
+			.as_deref()
+			.unwrap_or("monosecret/{project}/{profile}")
+			.replace("{project}", &encode_component(project))
+			.replace("{profile}", &encode_component(profile))
+	}
+
+	/// Compiles a convention key into the Bitwarden item title used by reads
+	/// and writes.
+	fn convention_item_name(&self, project: &str, profile: &str, key: &str) -> String {
+		format!("{}/{key}", self.convention_folder(project, profile))
+	}
+
+	/// Prefix used to recognize this project/profile's convention items while
+	/// discovering declarations.
+	fn convention_item_prefix(&self, project: &str, profile: &str) -> String {
+		format!("{}/", self.convention_folder(project, profile))
 	}
 
 	/// The organization the address asks for, before resolution.
@@ -2597,16 +2663,16 @@ impl BitwardenProvider {
 }
 
 impl Provider for BitwardenProvider {
-	/// Convention items are addressed by the secret key name directly,
-	/// leveraging Bitwarden's vault-wide search.
+	/// Convention items use a project/profile title prefix so one Bitwarden
+	/// scope can safely hold the same key for multiple projects and profiles.
 	fn convention_address(
 		&self,
-		_project: &str,
-		_profile: &str,
+		project: &str,
+		profile: &str,
 		key: &str,
 	) -> Result<crate::config::NativeAddress> {
 		Ok(crate::config::NativeAddress {
-			item: key.to_string(),
+			item: self.convention_item_name(project, profile, key),
 			..Default::default()
 		})
 	}
@@ -2760,7 +2826,7 @@ impl Provider for BitwardenProvider {
 		self.set_to_password_manager(item_name, target_field, value)
 	}
 
-	fn reflect(&self, _context: DiscoveryContext<'_>) -> Result<HashMap<String, Secret>> {
+	fn reflect(&self, context: DiscoveryContext<'_>) -> Result<HashMap<String, Secret>> {
 		if !self.is_authenticated()? {
 			return Err(MonosecretError::ProviderOperationFailed(
                 "Bitwarden authentication required. Please run 'bw login' and 'bw unlock', then set the BW_SESSION environment variable.".to_string(),
@@ -2768,7 +2834,11 @@ impl Provider for BitwardenProvider {
 		}
 
 		let items = self.list_items(None)?;
-		declarations_from_items(&items, self.resolved_item_type()?)
+		declarations_from_items(
+			&items,
+			self.resolved_item_type()?,
+			&self.convention_item_prefix(context.project, context.profile),
+		)
 	}
 }
 
@@ -4146,16 +4216,74 @@ mod tests {
 			named_item("token", "CARD_TOKEN", BitwardenItemType::Card),
 		];
 
-		let declarations = declarations_from_items(&items, Some(BitwardenItemType::Card))
-			.expect("the type filter makes every item addressable");
+		let declarations = declarations_from_items(
+			&items,
+			Some(BitwardenItemType::Card),
+			"monosecret/project/default/",
+		)
+		.expect("the type filter makes every item addressable");
 
 		assert_eq!(declarations.len(), 2);
 		assert_eq!(
-			declarations["API_KEY"].description.as_deref(),
-			Some("API_KEY Bitwarden secret")
+			declarations["API_KEY"].description(),
+			"API_KEY Bitwarden secret"
 		);
-		assert_eq!(declarations["API_KEY"].required, Some(true));
+		assert_eq!(declarations["API_KEY"].required_setting(), Some(true));
 		assert!(declarations.contains_key("CARD_TOKEN"));
+	}
+
+	#[test]
+	fn reflection_uses_the_current_namespace_and_preserves_legacy_items_as_refs() {
+		let items = [
+			named_item(
+				"current",
+				"monosecret/payments/production/API_KEY",
+				BitwardenItemType::Login,
+			),
+			named_item(
+				"other",
+				"monosecret/orders/production/API_KEY",
+				BitwardenItemType::Login,
+			),
+			named_item("legacy", "LEGACY_TOKEN", BitwardenItemType::Login),
+		];
+
+		let declarations =
+			declarations_from_items(&items, None, "monosecret/payments/production/").unwrap();
+
+		assert_eq!(declarations.len(), 2);
+		assert!(declarations.contains_key("API_KEY"));
+		assert_eq!(
+			declarations["LEGACY_TOKEN"]
+				.clone()
+				.into_config()
+				.reference
+				.as_ref()
+				.map(|reference| reference.item.as_str()),
+			Some("LEGACY_TOKEN"),
+			"a bare legacy item must be emitted with a native ref",
+		);
+	}
+
+	#[test]
+	fn reflection_recognizes_convention_prefixes_case_insensitively() {
+		let items = [named_item(
+			"current",
+			"Monosecret/payments/production/API_KEY",
+			BitwardenItemType::Login,
+		)];
+
+		let declarations =
+			declarations_from_items(&items, None, "monosecret/payments/production/").unwrap();
+
+		assert!(declarations.contains_key("API_KEY"));
+		assert!(
+			declarations["API_KEY"]
+				.clone()
+				.into_config()
+				.reference
+				.is_none()
+		);
 	}
 
 	#[test]
@@ -4166,7 +4294,7 @@ mod tests {
 			BitwardenItemType::Login,
 		)];
 
-		let err = declarations_from_items(&items, None)
+		let err = declarations_from_items(&items, None, "monosecret/project/default/")
 			.unwrap_err()
 			.to_string();
 
@@ -4186,7 +4314,7 @@ mod tests {
 			BitwardenItemType::SecureNote,
 		)];
 
-		let err = declarations_from_items(&items, None)
+		let err = declarations_from_items(&items, None, "monosecret/project/default/")
 			.unwrap_err()
 			.to_string();
 
@@ -4200,7 +4328,7 @@ mod tests {
 			named_item("second", "api_key", BitwardenItemType::Login),
 		];
 
-		let err = declarations_from_items(&items, None)
+		let err = declarations_from_items(&items, None, "monosecret/project/default/")
 			.unwrap_err()
 			.to_string();
 
@@ -4378,6 +4506,13 @@ mod tests {
 		fn with_items(self, items: serde_json::Value) -> Self {
 			std::fs::write(self.dir.join("items.json"), items.to_string())
 				.expect("write items fixture");
+			self
+		}
+
+		/// Persists created and edited items so one test can exercise a sequence
+		/// of provider operations against the same fake vault.
+		fn with_stateful_vault(self) -> Self {
+			std::fs::write(self.dir.join("stateful"), "").expect("enable stateful fake vault");
 			self
 		}
 
@@ -5010,12 +5145,20 @@ mod tests {
 				"name": "dev-secrets",
 				"organizationId": "org-id"
 			}]))
-			.with_items(json!([{
-				"id": "item-id",
-				"name": "API_KEY",
-				"type": 1,
-				"login": {"password": "must-not-appear"}
-			}]));
+			.with_items(json!([
+				{
+					"id": "item-id",
+					"name": "monosecret/payments/production/API_KEY",
+					"type": 1,
+					"login": {"password": "must-not-appear"}
+				},
+				{
+					"id": "other-item-id",
+					"name": "monosecret/orders/production/API_KEY",
+					"type": 1,
+					"login": {"password": "other-project"}
+				}
+			]));
 
 		fake.run(|| {
 			let provider = BitwardenProvider::new(BitwardenConfig {
@@ -5023,13 +5166,13 @@ mod tests {
 				..Default::default()
 			});
 			let declarations = provider
-				.reflect(DiscoveryContext::new("ignored", "ignored"))
+				.reflect(DiscoveryContext::new("payments", "production"))
 				.unwrap();
 
 			assert_eq!(declarations.len(), 1);
 			assert_eq!(
-				declarations["API_KEY"].description.as_deref(),
-				Some("API_KEY Bitwarden secret")
+				declarations["API_KEY"].description(),
+				"API_KEY Bitwarden secret"
 			);
 			assert!(!format!("{:?}", declarations["API_KEY"]).contains("must-not-appear"));
 
@@ -5130,6 +5273,52 @@ mod tests {
 		assert_eq!(sent["name"], "Vault");
 		assert_eq!(sent["type"], 1);
 		assert_eq!(sent["login"]["password"], "s3cret");
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn convention_sets_keep_same_named_secrets_separate_between_projects() {
+		let fake = FakeBw::new().with_stateful_vault();
+		fake.run(|| {
+			let provider = BitwardenProvider::new(BitwardenConfig::default());
+			let project_a = Address::convention("project-a", "default", "DATABASE_URL");
+			let project_b = Address::convention("project-b", "default", "DATABASE_URL");
+
+			provider
+				.set(project_a, &SecretString::new("postgres://a".into()))
+				.unwrap();
+			provider
+				.set(project_b, &SecretString::new("postgres://b".into()))
+				.unwrap();
+
+			assert_eq!(
+				provider
+					.get(project_a)
+					.unwrap()
+					.map(|value| value.expose_secret().to_string()),
+				Some("postgres://a".to_string())
+			);
+			assert_eq!(
+				provider
+					.get(project_b)
+					.unwrap()
+					.map(|value| value.expose_secret().to_string()),
+				Some("postgres://b".to_string())
+			);
+		});
+
+		let log = fake.invocations();
+		assert_eq!(
+			log.lines()
+				.filter(|line| line.contains("<create> <item>"))
+				.count(),
+			2,
+			"each project must create its own item: {log}"
+		);
+		assert!(
+			!log.contains("<edit> <item>"),
+			"project B must not overwrite project A: {log}"
+		);
 	}
 
 	#[cfg(unix)]
@@ -5295,7 +5484,7 @@ mod tests {
 		// The Provider trait entry point maps the convention address onto
 		// the item name and delegates to the password-manager read.
 		let fake = FakeBw::new().with_items(json!([{
-			"id": "it1", "name": "Vault", "type": 1,
+			"id": "it1", "name": "monosecret/myapp/production/Vault", "type": 1,
 			"login": {"password": "pw"}
 		}]));
 		fake.run(|| {
@@ -5349,6 +5538,10 @@ mod tests {
 				.contains("argv: <--nointeraction> <create> <item>"),
 			"{}",
 			fake.invocations()
+		);
+		assert_eq!(
+			decode_stdin_line(&fake, "create")["name"],
+			"monosecret/myapp/production/Vault"
 		);
 	}
 
@@ -5811,12 +6004,95 @@ mod tests {
 	// -- addressing and placement -------------------------------------------
 
 	#[test]
-	fn convention_address_names_the_secret_key_as_the_item() {
+	fn convention_addresses_isolate_projects_and_profiles() {
 		let provider = BitwardenProvider::new(BitwardenConfig::default());
-		let address = provider
+		let first = provider
 			.convention_address("project", "default", "DATABASE_URL")
 			.unwrap();
-		assert_eq!(address.item, "DATABASE_URL");
+		let other_project = provider
+			.convention_address("other", "default", "DATABASE_URL")
+			.unwrap();
+		let other_profile = provider
+			.convention_address("project", "production", "DATABASE_URL")
+			.unwrap();
+
+		assert_eq!(first.item, "monosecret/project/default/DATABASE_URL");
+		assert_eq!(other_project.item, "monosecret/other/default/DATABASE_URL");
+		assert_eq!(
+			other_profile.item,
+			"monosecret/project/production/DATABASE_URL"
+		);
+		assert_ne!(first.item, other_project.item);
+		assert_ne!(first.item, other_profile.item);
+	}
+
+	#[test]
+	fn convention_address_uses_the_configured_folder_prefix() {
+		let provider = BitwardenProvider::new(BitwardenConfig {
+			folder_prefix: Some("team/{profile}/{project}".to_string()),
+			..Default::default()
+		});
+
+		let address = provider
+			.convention_address("payments", "production", "DATABASE_URL")
+			.unwrap();
+
+		assert_eq!(address.item, "team/production/payments/DATABASE_URL");
+	}
+
+	#[test]
+	fn convention_address_escapes_namespace_component_separators() {
+		let provider = BitwardenProvider::default();
+
+		let project_slash = provider.convention_address("a/b", "c", "KEY").unwrap();
+		let profile_slash = provider.convention_address("a", "b/c", "KEY").unwrap();
+		let literal_escape = provider.convention_address("a%2Fb", "c", "KEY").unwrap();
+
+		assert_eq!(project_slash.item, "monosecret/a%2Fb/c/KEY");
+		assert_eq!(profile_slash.item, "monosecret/a/b%2Fc/KEY");
+		assert_eq!(literal_escape.item, "monosecret/a%252Fb/c/KEY");
+		assert_ne!(project_slash.item, profile_slash.item);
+		assert_ne!(project_slash.item, literal_escape.item);
+	}
+
+	#[test]
+	fn folder_prefix_does_not_rewrite_an_explicit_item_reference() {
+		let provider = BitwardenProvider::new(BitwardenConfig {
+			folder_prefix: Some("team/{project}/{profile}".to_string()),
+			..Default::default()
+		});
+		let native = crate::config::NativeAddress {
+			item: "Existing Login".to_string(),
+			..Default::default()
+		};
+
+		let resolved = provider.resolve_coords(Address::Native(&native)).unwrap();
+
+		assert_eq!(resolved.item, "Existing Login");
+	}
+
+	#[test]
+	fn different_folder_prefixes_are_different_convention_entries() {
+		with_clean_env(|| {
+			let left = BitwardenProvider::new(BitwardenConfig {
+				folder_prefix: Some("left/{project}/{profile}".to_string()),
+				..Default::default()
+			});
+			let right = BitwardenProvider::new(BitwardenConfig {
+				folder_prefix: Some("right/{project}/{profile}".to_string()),
+				..Default::default()
+			});
+
+			assert!(
+				!left
+					.same_entries(
+						Address::convention("project", "default", "TOKEN"),
+						&right,
+						Address::convention("project", "default", "TOKEN"),
+					)
+					.unwrap()
+			);
+		});
 	}
 
 	#[test]

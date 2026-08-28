@@ -155,21 +155,21 @@ it cannot see.
 
 Each secret variable is defined as a table with the following fields:
 
-| Field             | Type                                  | Required        | Description                                                                                                                                                          |
-| ----------------- | ------------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `description`     | string                                | Yes (see notes) | Human-readable description of the secret                                                                                                                             |
-| `required`        | boolean or table                      | No              | Whether absence is an error; the table form (0.2+) accepts `at_least_one`/`exactly_one` presence groups (defaults to true; false with `default` or a presence group) |
-| `default`         | string                                | No              | Default value if not provided                                                                                                                                        |
-| `composed` (0.2+) | string                                | No              | Derive a read-only value from other declared secrets using `${UPPERCASE_NAME}` references                                                                            |
-| `providers`       | array[string]                         | No              | List of provider aliases to use in fallback order                                                                                                                    |
-| `ref`             | table                                 | No              | Coordinates naming an externally managed secret in the provider's store (e.g. `ref = { item = "db", field = "password" }`)                                           |
-| `refs` (0.2+)     | table                                 | No              | Provider-alias-scoped coordinates, keyed by leaf alias (e.g. `refs = { source = { item = "old" }, target = { item = "new" } }`); mutually exclusive with `ref`       |
-| `as_path`         | boolean                               | No              | Write secret to temp file and return file path (default: false)                                                                                                      |
-| `encoding` (0.2+) | `"base64"`, `"base64url"`, or `"hex"` | No              | Encode logical values before storage writes and decode stored values after reads                                                                                     |
-| `extract` (0.2+)  | table                                 | No              | Select one logical value from stored structured data, for example `extract = { format = "json", pointer = "/database/password" }`                                    |
-| `type`            | string                                | No              | Secret type for generation: `password`, `hex`, `base64`, `uuid`, `command`, `rsa_private_key`                                                                        |
-| `generate`        | boolean or table                      | No              | Enable auto-generation when secret is missing                                                                                                                        |
-| `prompt` (0.2+)   | boolean                               | No              | Securely prompt for a missing value during `monosecret run`; the selected provider controls persistence                                                              |
+| Field              | Type                                  | Required        | Description                                                                                                                                                           |
+| ------------------ | ------------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description`      | string                                | Yes (see notes) | Human-readable description of the secret                                                                                                                              |
+| `required`         | boolean or table                      | No              | Whether absence is an error; the table form (0.17+) accepts `at_least_one`/`exactly_one` presence groups (defaults to true; false with `default` or a presence group) |
+| `default`          | string                                | No              | Default value if not provided                                                                                                                                         |
+| `composed` (0.16+) | string                                | No              | Derive a read-only value from other declared secrets using `${UPPERCASE_NAME}` references                                                                             |
+| `providers`        | array[string]                         | No              | List of provider aliases to use in fallback order                                                                                                                     |
+| `ref`              | table                                 | No              | Coordinates naming an externally managed secret in the provider's store (e.g. `ref = { item = "db", field = "password" }`)                                            |
+| `refs` (0.19+)     | table                                 | No              | Provider-alias-scoped coordinates, keyed by leaf alias (e.g. `refs = { source = { item = "old" }, target = { item = "new" } }`); mutually exclusive with `ref`        |
+| `as_path`          | boolean                               | No              | Write secret to temp file and return file path (default: false)                                                                                                       |
+| `encoding` (0.19+) | `"base64"`, `"base64url"`, or `"hex"` | No              | Encode logical values before storage writes and decode stored values after reads                                                                                      |
+| `extract` (0.19+)  | table                                 | No              | Select one logical value from stored JSON (0.19+) or INI (0.20+) data with a pointer                                                                                  |
+| `type`             | string                                | No              | Secret type for generation: `password`, `hex`, `base64`, `uuid`, `command`, `rsa_private_key`                                                                         |
+| `generate`         | boolean or table                      | No              | Enable auto-generation when secret is missing                                                                                                                         |
+| `prompt` (0.19+)   | boolean                               | No              | Securely prompt for a missing value during `monosecret run`; the selected provider controls persistence                                                               |
 
 Field notes:
 
@@ -584,12 +584,12 @@ Cached provider aliases are available starting with Monosecret 0.2.
 A cached fallback alias uses `fallback` and `cache` when more than one provider
 can answer:
 
-| Field            | Type          | Required | Description                                                                                                                                                                      |
-| ---------------- | ------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fallback`       | array[string] | Yes      | Non-empty authoritative provider route. Reads try entries in order; writes use the first entry.                                                                                  |
-| `cache`          | table         | Yes      | Local cache policy containing `provider` and `max_age`.                                                                                                                          |
-| `cache.provider` | string        | Yes      | Leaf provider spec used to store cache entries. Must support deletion (keyring, pass, gopass, dotenv, Vault/OpenBao KV v2) and be a different store from every `fallback` entry. |
-| `cache.max_age`  | string        | Yes      | Positive duration with `s`, `m`, `h`, `d`, or `w` units, such as `30m`, `8h`, or `1d`.                                                                                           |
+| Field            | Type          | Required | Description                                                                                                                                                                                                                       |
+| ---------------- | ------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fallback`       | array[string] | Yes      | Non-empty authoritative provider route. Reads try entries in order; writes use the first entry.                                                                                                                                   |
+| `cache`          | table         | Yes      | Local cache policy containing `provider` and `max_age`.                                                                                                                                                                           |
+| `cache.provider` | string        | Yes      | Leaf provider spec used to store cache entries. Must support deletion (keyring, pass, gopass, dotenv, age (0.20+), Azure App Configuration (0.20+), or Vault/OpenBao KV v2) and be a different store from every `fallback` entry. |
+| `cache.max_age`  | string        | Yes      | Positive duration with `s`, `m`, `h`, `d`, or `w` units, such as `30m`, `8h`, or `1d`.                                                                                                                                            |
 
 ```toml title="monosecret.toml"
 [providers]
@@ -611,9 +611,10 @@ accept aliases, provider names, and URIs, but must resolve to leaf providers;
 cached aliases cannot be nested, and the cache must resolve to a different
 store than the route's own authoritative providers, since it holds its entries
 at the same logical address. The cache provider must also be one Monosecret can
-delete from — keyring, pass, gopass, dotenv, or a Vault/OpenBao KV v2 mount —
-since every form of invalidation is a delete. Put credentials on leaf aliases
-rather than the cached fallback alias.
+delete from — keyring, pass, gopass, dotenv, age (0.20+), Azure App
+Configuration (0.20+), or a Vault/OpenBao KV v2 mount — since every form of
+invalidation is a delete. Put credentials on leaf aliases rather than the
+cached fallback alias.
 See [Provider caching](/concepts/providers/caching/)
 for freshness, failure, invalidation, and clearing behavior.
 
@@ -679,6 +680,143 @@ providers = [{ provider = "op", path = ["forges"] }]
 # Reads op://Development/dotfiles/forges/GITHUB_TOKEN
 ```
 
+### as_path Option
+
+When `as_path = true`, the secret value is written to a temporary file and the file path is returned instead of the value:
+
+```toml
+[profiles.default]
+TLS_CERT = { description = "TLS certificate", as_path = true }
+GOOGLE_APPLICATION_CREDENTIALS = { description = "GCP service account", as_path = true }
+```
+
+When combined with `encoding` (0.19+), the file contains the decoded bytes
+rather than the stored textual representation. When combined with `extract`
+(0.19+), it contains only the selected logical value.
+
+| Context                     | Behavior                                                                                |
+| --------------------------- | --------------------------------------------------------------------------------------- |
+| CLI (`get`, `check`, `run`) | Files are persisted (not deleted after command exits)                                   |
+| Rust SDK                    | Files cleaned up when `ValidatedSecrets` is dropped; use `keep_temp_files()` to persist |
+| Rust SDK types              | `PathBuf` or `Option<PathBuf>` instead of `String`                                      |
+
+### Secret Encoding (0.19+)
+
+:::caution[Version compatibility]
+Available starting in Monosecret 0.19.
+:::
+
+`encoding` (0.19+) defines the textual representation stored by providers and
+the cache. It is independent of `as_path`: decoded UTF-8 remains an ordinary
+environment or SDK value, while arbitrary decoded bytes can be materialized to
+a file.
+
+```toml
+[profiles.default]
+# encoding is available in Monosecret 0.19+
+TEXT_CONFIG = { description = "Encoded text", encoding = "base64" }
+KEYSTORE = { description = "Binary mTLS keystore", encoding = "base64", as_path = true }
+URL_SAFE_KEY = { description = "URL-safe encoded key", encoding = "base64url", as_path = true }
+HEX_KEY = { description = "Hex-encoded key", encoding = "hex", as_path = true }
+```
+
+| Encoding (0.19+) | Written representation                   | Accepted stored representation             |
+| ---------------- | ---------------------------------------- | ------------------------------------------ |
+| `base64`         | RFC 4648 standard Base64 with padding    | Padded or unpadded standard Base64         |
+| `base64url`      | RFC 4648 URL-safe Base64 without padding | Padded or unpadded URL-safe Base64         |
+| `hex`            | Lowercase RFC 4648 Base16                | Uppercase, lowercase, or mixed-case Base16 |
+
+Exactly one trailing LF or CRLF is accepted so command-captured values work
+without preprocessing. Other whitespace and non-alphabet characters are
+rejected. Without `as_path = true`, decoded bytes must be valid UTF-8.
+
+`monosecret set`, interactive prompts, and generated secrets provide logical
+text; Monosecret encodes it before writing to a provider or cache. Defaults and
+composed results are already logical and are not transformed. The
+`monosecret import` command copies the stored representation verbatim, avoiding
+double encoding.
+
+### Structured Extraction (0.19+)
+
+:::caution[Version compatibility]
+Available starting in Monosecret 0.19.
+INI extraction with `format = "ini"` is available starting in Monosecret 0.20.
+:::
+
+`extract` (0.19+) selects one logical secret from structured text read from a
+provider or cache. It supports JSON (0.19+) and INI (0.20+). JSON `pointer`
+values are [RFC 6901 JSON Pointers](https://www.rfc-editor.org/rfc/rfc6901):
+
+```toml
+[providers]
+documents = "file:./secrets"
+
+[profiles.default]
+# extract is available in Monosecret 0.19+
+DB_USER = {
+  description = "Database user",
+  providers = ["documents"],
+  ref = { item = "application.json" },
+  extract = { format = "json", pointer = "/database/user" }
+}
+DB_PASSWORD = {
+  description = "Database password",
+  providers = ["documents"],
+  ref = { item = "application.json" },
+  extract = { format = "json", pointer = "/database/password" }
+}
+```
+
+Both declarations read the same document. `/database/password` walks nested
+objects, `/hosts/0` selects an array element, and `/a~1b/~0key` selects the key
+`~key` beneath an `a/b` object. The empty pointer selects the complete document.
+
+JSON strings become their unquoted contents. Numbers, booleans, and `null` use
+their JSON spelling; objects and arrays become compact JSON. Invalid JSON or a
+pointer that does not match is a decoding error. Once a provider returns a
+document, extraction failure is not treated as a provider miss and does not
+continue along a fallback chain.
+
+INI extraction (0.20+) uses the same RFC 6901 escaping for pointer segments but
+accepts only value selectors. `/key` selects an unsectioned key, while
+`/section/key` selects a key in a named section:
+
+```toml
+[profiles.default]
+# format = "ini" requires Monosecret 0.20+
+DB_PASSWORD = {
+  description = "Database password",
+  providers = ["documents"],
+  ref = { item = "application.ini" },
+  extract = { format = "ini", pointer = "/database/password" }
+}
+```
+
+For example, that pointer reads `password` from `[database]`. An explicit
+`[DEFAULT]` section is selected as `/DEFAULT/key`; it is distinct from an
+unsectioned `/key`. Section and key matching is case-sensitive. `~1` selects a
+literal `/` and `~0` selects a literal `~`, just as in JSON Pointer. INI values
+always remain strings, and literal backslashes are preserved. Empty pointers,
+pointers deeper than `/section/key`, malformed INI, and unmatched pointers are
+decoding errors.
+
+Stored-value transforms run in this order:
+
+```text
+provider or cache → encoding decode → structured extraction → as_path
+```
+
+This makes a Base64-encoded JSON document valid input when a declaration sets
+both `encoding = "base64"` (0.19+) and `extract` (0.19+). A provider-native
+`ref.field` is also resolved first, so a field whose contents are JSON can be
+selected further. Defaults and composed values are already logical and are not
+extracted.
+
+Extracted secrets are read-only. `set`, `delete`, interactive prompting,
+generation, and `import` reject them rather than replacing or removing the
+containing document and its sibling values. Update the document through its
+owning system instead.
+
 ### Secret References
 
 The `ref` field names one externally managed secret by the store's own
@@ -703,13 +841,13 @@ store and replaces the whole convention path, including any `folder_prefix` or
 format string configured for the provider. A coordinate a store has no equivalent
 for is rejected with an error naming it, never silently ignored.
 
-| Coordinate | Required | Meaning                                                                                                       |
-| ---------- | -------- | ------------------------------------------------------------------------------------------------------------- |
-| `item`     | Yes      | The store's complete name for the secret; replaces the whole convention path                                  |
-| `field`    | No       | A named component inside the item; rejected by stores whose secrets hold a single value                       |
-| `vault`    | No       | The container holding the item; 1Password only, while other stores take their container from the provider URI |
-| `section`  | No       | A named group of fields inside the item; 1Password only and requires `field`                                  |
-| `version`  | No       | Which revision to read; Google Secret Manager only and defaults to the latest                                 |
+| Coordinate | Required | Meaning                                                                                                                                                                             |
+| ---------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `item`     | Yes      | The store's complete name for the secret. Replaces the whole convention path                                                                                                        |
+| `field`    | No       | A named component inside the item. Rejected by stores whose secrets hold a single value                                                                                             |
+| `vault`    | No       | The container holding the item. 1Password only; other stores take their container from the provider URI                                                                             |
+| `section`  | No       | A named group of fields inside the item. 1Password only; requires `field`                                                                                                           |
+| `version`  | No       | Which revision of the secret to read. Supported by versioned stores such as Google Secret Manager, AWS Parameter Store (0.18+), and Azure Key Vault (0.20+); defaults to the latest |
 
 Stores fall into two groups for `field`:
 
@@ -738,19 +876,33 @@ chain, and each provider is asked for the same coordinates.
 
 #### How providers interpret the coordinates
 
-| Provider                                                   | `item`                            | `field`                                  | Without `field`                          | Writes via ref                                             |
-| ---------------------------------------------------------- | --------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------------------------- |
-| [OnePassword](/providers/onepassword/#secret-references)   | Item title or UUID                | Field label; `vault` and `section` apply | Reads the item's value or password field | ✅ via `op item edit`; adds fields but never creates items |
-| [keyring](/providers/keyring/#secret-references)           | Service                           | Account                                  | Current user's entry                     | ✅                                                         |
-| [dotenv](/providers/dotenv/#secret-references)             | `.env` key                        | Rejected                                 | Reads the key                            | ✅                                                         |
-| [env](/providers/env/#secret-references)                   | Variable name                     | Rejected                                 | Reads the variable                       | — (read-only)                                              |
-| [pass](/providers/pass/#secret-references)                 | Entry path                        | Rejected                                 | Reads the entry                          | ✅                                                         |
-| [LastPass](/providers/lastpass/#secret-references)         | Item name                         | Rejected                                 | Reads the item                           | ✅                                                         |
-| [Proton Pass](/providers/protonpass/#secret-references)    | Item title                        | Rejected                                 | Reads the note                           | ✅                                                         |
-| [Vault / OpenBao](/providers/vault/#secret-references)     | KV path relative to the mount     | Required                                 | Error                                    | — (read-only)                                              |
-| [AWS Secrets Manager](/providers/awssm/#secret-references) | Secret name or ARN                | JSON key                                 | Whole secret string                      | — (read-only)                                              |
-| [GCSM](/providers/gcsm/#secret-references)                 | Secret id; `version` also applies | Rejected                                 | Reads latest or the pinned version       | — (read-only)                                              |
-| [Bitwarden (bws)](/providers/bws/#secret-references)       | BWS key name                      | Rejected                                 | Reads the key                            | ✅                                                         |
+| Provider                                                                                      | `item`                                                      | `field`                                           | Without `field`                                                                                      | Writes via ref                                                               |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [1Password](/providers/onepassword/#use-existing-secrets)                                     | Item title or UUID                                          | Field label; `vault` and `section` also apply     | Reads the item like a convention secret (its value or password field); writes edit the `value` field | ✅ via `op item edit` (adds a missing field, never creates items)            |
+| [Keeper (0.18+)](/providers/keeper/#use-existing-records)                                     | Record UID or exact title                                   | Standard field type/label or custom field label   | Reads `password`                                                                                     | ✅ for existing records and fields                                           |
+| [keyring](/providers/keyring/#use-existing-secrets)                                           | Service                                                     | Account (defaults to the current system username) | Current user's entry                                                                                 | ✅                                                                           |
+| [dotenv](/providers/dotenv/#use-existing-secrets)                                             | `.env` key                                                  | Rejected                                          | Reads the key                                                                                        | ✅                                                                           |
+| [file (0.19+)](/providers/file/#use-existing-files)                                           | Relative file path beneath the configured root              | Rejected                                          | Reads the complete UTF-8 file                                                                        | ✅                                                                           |
+| [env](/providers/env/#use-existing-secrets)                                                   | Variable name                                               | Rejected                                          | Reads the variable                                                                                   | — (read-only)                                                                |
+| [systemd credentials (0.17+)](/providers/systemd-credential/#use-an-existing-credential-name) | Credential filename                                         | Rejected                                          | Reads the credential                                                                                 | — (read-only)                                                                |
+| [Fly.io secrets (0.20+)](/providers/fly/#use-existing-secrets)                                | Fly app secret name                                         | Rejected                                          | Error: Fly.io does not expose plaintext values                                                       | ✅ write-only via `flyctl secrets set`                                       |
+| [Cloudflare Secrets Store (0.20+)](/providers/cloudflare/#use-existing-secrets-020)           | Account-secret name in the selected store                   | Rejected                                          | Error: Cloudflare's management API does not expose plaintext values                                  | ✅ write-only via the Cloudflare API                                         |
+| [pass](/providers/pass/#use-existing-secrets)                                                 | Entry path                                                  | Rejected                                          | Reads the entry                                                                                      | ✅                                                                           |
+| [Gopass (0.15+)](/providers/gopass/#use-existing-secrets)                                     | Entry path, including any mount-point prefix                | Rejected                                          | Reads the entry                                                                                      | ✅                                                                           |
+| [LastPass](/providers/lastpass/#use-existing-secrets)                                         | Item name                                                   | Rejected                                          | Reads the item                                                                                       | ✅                                                                           |
+| [Dashlane (0.18+)](/providers/dashlane/#use-existing-secrets)                                 | Item title or identifier                                    | Field name on the item                            | Reads the type's default field (`content`, or `password` for a login)                                | — (read-only)                                                                |
+| [Proton Pass](/providers/protonpass/#use-existing-secrets)                                    | Item title                                                  | Rejected                                          | Reads the note                                                                                       | ✅                                                                           |
+| [Passbolt (0.19+)](/providers/passbolt/#use-existing-resources)                               | Resource UUID or exact name                                 | `password`, `username`, `uri`, or `description`   | Reads `password`                                                                                     | ✅ for existing resources; never creates through `ref`                       |
+| [Vault](/providers/vault/#use-existing-secrets)                                               | KV path relative to the mount                               | Required (KV entries are maps)                    | Error                                                                                                | — (read-only)                                                                |
+| [OpenBao](/providers/openbao/#use-existing-secrets) (0.17+)                                   | KV path relative to the mount                               | Required (KV entries are maps)                    | Error                                                                                                | — (read-only)                                                                |
+| [AWS Secrets Manager](/providers/awssm/#use-existing-secrets)                                 | Secret name or ARN                                          | JSON key                                          | Whole secret string                                                                                  | — (read-only)                                                                |
+| [AWS Parameter Store (0.18+)](/providers/awsps/#use-existing-parameters)                      | Parameter name or ARN; `version` selects a version or label | Rejected                                          | Reads the decrypted value                                                                            | ✅ by unversioned parameter name; version, label, and ARN refs are read-only |
+| [GCSM](/providers/gcsm/#use-existing-secrets)                                                 | Secret id; `version` also applies                           | Rejected                                          | Reads latest or the pinned version                                                                   | — (read-only)                                                                |
+| [Bitwarden (bws)](/providers/bws/#use-existing-secrets)                                       | BWS key name                                                | Rejected                                          | Reads the key                                                                                        | ✅                                                                           |
+| [Azure Key Vault (0.15+)](/providers/akv/#use-existing-secrets)                               | Secret name; `version` pins a version (0.20+)               | Rejected                                          | Reads latest or the pinned version (0.20+)                                                           | — (read-only)                                                                |
+| [Azure App Configuration (0.20+)](/providers/aac/#use-existing-key-values)                    | App Configuration key                                       | Rejected                                          | Reads the direct value or resolves its canonical Key Vault reference                                 | — (read-only)                                                                |
+| [Infisical (0.16+)](/providers/infisical/#use-existing-secrets)                               | Folder and key; `version` also applies                      | Rejected                                          | Reads the latest version                                                                             | ✅ unless a version is pinned                                                |
+| [Kubernetes (0.20+)](/providers/kubernetes/#use-existing-secrets)                             | Secret key                                                  | Rejected                                          | Reads entry                                                                                          | ✅                                                                           |
 
 A provider rejects coordinates it has no equivalent for, with an error naming
 the coordinate (for example, `field` on the env provider).
@@ -827,3 +979,113 @@ Each entry under `depends_on` has:
 | -------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `secret` | string | Yes      | The Monosecret secret name that provides the value                                                                                               |
 | `as`     | string | No       | Environment variable name to inject the value as. Defaults to `secret` (e.g. inject a per-account keyring secret as `OP_SERVICE_ACCOUNT_TOKEN`). |
+
+### Prompt on missing during run (0.19+)
+
+:::caution[Version compatibility]
+`prompt = true` declarations require Monosecret 0.19 or newer.
+:::
+
+Use `prompt = true` when `monosecret run` should ask the operator after every
+configured provider has returned missing. Prompting is the value source;
+persistence remains a property of the selected provider.
+
+With a writable provider, the answer is saved and reused by later runs. The
+write destination and writability are checked before the hidden prompt opens,
+just as they are for `monosecret set`. Use the `null` provider when the answer
+must exist only for one child invocation:
+
+```toml
+[profiles.default]
+DEPLOY_PASSWORD = { description = "One-time deployment password", required = true, prompt = true, providers = [
+  "null",
+] }
+```
+
+Here `null` makes the operator the only possible value source and explicitly
+declines persistence, so the answer is injected into the child environment and
+discarded after it exits. It is not written to a provider or cache. The prompt
+uses the controlling terminal rather than the command's stdin, so a pipe or
+redirected file remains available to the child:
+
+```bash
+$ printf 'deployment input\n' | monosecret run -- ./deploy
+? Enter value for DEPLOY_PASSWORD (profile: default):
+```
+
+Only `run` interprets `prompt = true` as a missing-value policy. `get`, `export`,
+SDK resolution, and value-free reports do not prompt. Interactive `check`
+retains its existing setup behavior instead: it offers to store any missing
+required secret, independently of `prompt`, and therefore cannot satisfy a
+`null`-backed declaration. A `run` without a controlling terminal fails before
+starting the child. Explicit `set` and import operations remain governed by the
+provider, not by `prompt`.
+
+`prompt = true` is limited to individually required secrets and cannot be
+combined with `default`, enabled `generate`, `extract`, or `composed`. Profile
+overrides may set `prompt = false` to return to ordinary missing-value behavior.
+
+### Secret Generation
+
+:::note
+Secret generation is available since version 0.7.
+:::
+
+When `type` and `generate` are set, missing secrets are automatically generated during `check` or `run` and stored via the configured provider:
+
+```toml
+[profiles.default]
+# Simple: generate with type defaults
+DB_PASSWORD = { description = "Database password", type = "password", generate = true }
+REQUEST_ID = { description = "Request ID prefix", type = "uuid", generate = true }
+
+# Custom options
+API_TOKEN = { description = "API token", type = "hex", generate = { bytes = 32 } }
+SESSION_KEY = { description = "Session key", type = "base64", generate = { bytes = 64 } }
+
+# Shell command
+MONGO_KEY = { description = "MongoDB keyfile", type = "command", generate = { command = "openssl rand -base64 765" } }
+
+# RSA private key (PKCS1 PEM)
+JWT_SIGNING_KEY = { description = "JWT signing key", type = "rsa_private_key", generate = true }
+
+# Type without generate: informational only, no auto-generation
+MANUAL_SECRET = { description = "Manually managed", type = "password" }
+```
+
+#### Generation Types
+
+| Type              | Default Output                       | Options                                                   |
+| ----------------- | ------------------------------------ | --------------------------------------------------------- |
+| `password`        | 32 alphanumeric chars                | `length` (int), `charset` (`"alphanumeric"` or `"ascii"`) |
+| `hex`             | 64 hex chars (32 bytes)              | `bytes` (int)                                             |
+| `base64`          | 44 chars (32 bytes)                  | `bytes` (int)                                             |
+| `uuid`            | UUID v4 (36 chars)                   | none                                                      |
+| `command`         | stdout of command                    | `command` (string, required)                              |
+| `rsa_private_key` | 2048-bit RSA private key (PKCS1 PEM) | `bits` (int)                                              |
+
+#### Behavior
+
+- Generation only triggers when a secret is **missing** — existing secrets are never overwritten
+- Generated values are stored via the secret's configured provider (or the default provider)
+- With `providers = ["null"]` (0.19+), a fresh generated value is returned only for the current resolution and is not written to provider storage
+- Subsequent runs find the stored value and skip generation (idempotent)
+- `generate` and `default` cannot both be set on the same secret
+- `type = "command"` requires `generate = { command = "..." }` (not just `generate = true`)
+- The value-free preflights — [`check --json` / `check --explain`](/reference/cli/#resolution-report---json----explain)
+  and the SDKs' report/no-values resolutions — never mint a value. Since
+  Monosecret 0.20 a **required** generatable secret that no provider holds is
+  reported as `missing_required` there (and exits non-zero) until a `check` or
+  `run` provisions it; an optional one, or one stored in a provider that never
+  retains generated values such as `null`, is reported as _will generate_
+
+## Profile Inheritance
+
+- Non-default profiles inherit from `[profiles.default]` when it exists;
+  `profiles.<name>.defaults.inherit = false` makes a profile standalone in
+  Monosecret 0.19+
+- Profile-specific values override default values
+- `ref` and `refs` (0.19+) are alternative forms of one setting: declaring
+  either in a profile replaces the form inherited from `[profiles.default]`,
+  while declaring neither inherits it
+- Use the `extends` field in `[project]` to inherit from other monosecret.toml files

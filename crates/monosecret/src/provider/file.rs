@@ -393,18 +393,23 @@ impl Provider for FileProvider {
 		Ok(true)
 	}
 
+	fn supports_delete(&self) -> bool {
+		true
+	}
+
 	fn name(&self) -> &'static str {
 		Self::PROVIDER_NAME
 	}
 
 	fn uri(&self) -> String {
 		if self.config.directory.is_absolute() {
-			url::Url::from_file_path(&self.config.directory)
-				.map(|url| url.to_string())
-				.unwrap_or_else(|_| {
+			url::Url::from_file_path(&self.config.directory).map_or_else(
+				|()| {
 					let path = ProviderUrl::encode(&self.config.directory.display().to_string());
 					format!("file://{path}")
-				})
+				},
+				|url| url.to_string(),
+			)
 		} else {
 			let path = ProviderUrl::encode(&self.config.directory.display().to_string());
 			format!("file://./{path}")

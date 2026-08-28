@@ -48,6 +48,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use tempfile::NamedTempFile;
 
+use crate::compiled_spec::CompiledSpec;
 use crate::composition::Template;
 use crate::manifest::CompiledManifest;
 use crate::manifest::Manifest;
@@ -82,7 +83,7 @@ impl ProviderConfig {
 		}
 	}
 
-	pub(crate) fn to_alias(&self) -> std::result::Result<ProviderAlias, String> {
+	pub(crate) fn to_alias(&self) -> Result<ProviderAlias, String> {
 		match self {
 			Self::Alias(uri) => Ok(ProviderAlias::from_uri(uri)),
 			Self::Structured(config) => config.to_alias(),
@@ -147,7 +148,7 @@ pub struct ProviderConfigStructured {
 }
 
 impl ProviderConfigStructured {
-	fn to_alias(&self) -> std::result::Result<ProviderAlias, String> {
+	fn to_alias(&self) -> Result<ProviderAlias, String> {
 		if !self.fallback.is_empty() {
 			if !self.uri.is_empty() {
 				return Err("a provider alias cannot set both `uri` and `fallback`".to_string());
@@ -436,10 +437,7 @@ impl ProviderCache {
 	///
 	/// Returns the user-facing reason when the provider spec is blank or the
 	/// duration is not a value like `30m`, `8h`, or `1h30m`.
-	pub fn new(
-		provider: impl Into<String>,
-		max_age: impl Into<String>,
-	) -> std::result::Result<Self, String> {
+	pub fn new(provider: impl Into<String>, max_age: impl Into<String>) -> Result<Self, String> {
 		let provider = provider.into();
 		let max_age = max_age.into();
 		if provider.trim().is_empty() {
@@ -470,9 +468,7 @@ impl ProviderCache {
 }
 
 impl<'de> Deserialize<'de> for ProviderCache {
-	fn deserialize<D: serde::Deserializer<'de>>(
-		deserializer: D,
-	) -> std::result::Result<Self, D::Error> {
+	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
 		// Deserializing through the constructor is what keeps an unparseable
 		// duration from reaching planning: the config load reports it once,
 		// pointing at the alias that declared it.
@@ -488,7 +484,7 @@ impl<'de> Deserialize<'de> for ProviderCache {
 }
 
 /// Parse a cache duration without accepting ambiguous bare numbers.
-pub(crate) fn parse_cache_max_age(value: &str) -> std::result::Result<u64, String> {
+pub(crate) fn parse_cache_max_age(value: &str) -> Result<u64, String> {
 	let value = value.trim();
 	if value.is_empty() {
 		return Err("cache max_age must not be empty".to_string());
@@ -644,10 +640,7 @@ impl ProviderAlias {
 	///
 	/// Returns the user-facing reason when no source is named, so a cached
 	/// alias that exists always has a source to read from and write to.
-	pub fn cached(
-		fallback: Vec<String>,
-		cache: ProviderCache,
-	) -> std::result::Result<Self, String> {
+	pub fn cached(fallback: Vec<String>, cache: ProviderCache) -> Result<Self, String> {
 		if fallback.is_empty() || fallback.iter().any(|spec| spec.trim().is_empty()) {
 			return Err(
 				"a cached provider alias requires at least one non-empty fallback".to_string(),
@@ -709,7 +702,7 @@ impl ProviderAlias {
 	pub fn with_reference_template(
 		mut self,
 		template: NativeAddressTemplate,
-	) -> std::result::Result<Self, String> {
+	) -> Result<Self, String> {
 		if self.is_cached() {
 			return Err(
                 "a cached provider alias cannot declare a ref template; put templates on its leaf aliases"
@@ -754,7 +747,7 @@ impl std::fmt::Display for ProviderAlias {
 						f,
 						"{}, cached in {} for {}",
 						uri, cache.provider, cache.max_age
-					)?
+					)?;
 				}
 			}
 		} else {
@@ -762,7 +755,7 @@ impl std::fmt::Display for ProviderAlias {
 		}
 		if !self.credentials.is_empty() {
 			let mut names: Vec<&str> = self.credentials.keys().map(String::as_str).collect();
-			names.sort();
+			names.sort_unstable();
 			write!(f, " (credentials: {})", names.join(", "))?;
 		}
 		if let Some(template) = &self.reference_template {
@@ -776,23 +769,20 @@ impl Serialize for ProviderAlias {
 	fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
 		if let Some(cache) = &self.cache {
 			use serde::ser::SerializeStruct;
-			return match self.authoritative_uri() {
-				Some(uri) => {
-					let fields = if self.credentials.is_empty() { 2 } else { 3 };
-					let mut table = serializer.serialize_struct("ProviderAlias", fields)?;
-					table.serialize_field("uri", uri)?;
-					if !self.credentials.is_empty() {
-						table.serialize_field("credentials", &self.credentials)?;
-					}
-					table.serialize_field("cache", cache)?;
-					table.end()
+			return if let Some(uri) = self.authoritative_uri() {
+				let fields = if self.credentials.is_empty() { 2 } else { 3 };
+				let mut table = serializer.serialize_struct("ProviderAlias", fields)?;
+				table.serialize_field("uri", uri)?;
+				if !self.credentials.is_empty() {
+					table.serialize_field("credentials", &self.credentials)?;
 				}
-				None => {
-					let mut table = serializer.serialize_struct("ProviderAlias", 2)?;
-					table.serialize_field("fallback", &self.fallback)?;
-					table.serialize_field("cache", cache)?;
-					table.end()
-				}
+				table.serialize_field("cache", cache)?;
+				table.end()
+			} else {
+				let mut table = serializer.serialize_struct("ProviderAlias", 2)?;
+				table.serialize_field("fallback", &self.fallback)?;
+				table.serialize_field("cache", cache)?;
+				table.end()
 			};
 		}
 		if self.credentials.is_empty() && self.reference_template.is_none() {
@@ -980,7 +970,7 @@ impl Config {
 	/// Validate and return the compiled manifest, so callers that also need the
 	/// effective view (e.g. [`crate::Secrets::load_from`]) reuse the single
 	/// compile validation already performed instead of recompiling.
-	pub(crate) fn validate_and_compile(&self) -> Result<CompiledManifest, ParseError> {
+	pub(crate) fn validate_and_compile(&self) -> Result<CompiledSpec, ParseError> {
 		if self.project.name.is_empty() {
 			return Err(ParseError::Validation(
 				"Project name cannot be empty".into(),
@@ -997,12 +987,12 @@ impl Config {
 		// checks consume the same compiled manifest as runtime and codegen.
 		// Validate `default` first, then remaining profiles in name order so
 		// error attribution is deterministic.
-		let compiled = CompiledManifest::compile(self);
+		let compiled = CompiledSpec::compile(self);
 		let default_profile = self.profiles.get("default");
 		if let Some(default_profile) = default_profile {
 			default_profile
 				.validate_raw(false)
-				.map_err(|e| ParseError::Validation(format!("Profile 'default': {}", e)))?;
+				.map_err(|e| ParseError::Validation(format!("Profile 'default': {e}")))?;
 			validate_compiled_profile(&compiled, "default")?;
 		}
 
@@ -1016,9 +1006,9 @@ impl Config {
 		for profile_name in profile_names {
 			let profile = &self.profiles[profile_name];
 			let can_inherit_secrets = default_profile.is_some() && profile.inherits_default();
-			profile.validate_raw(can_inherit_secrets).map_err(|e| {
-				ParseError::Validation(format!("Profile '{}': {}", profile_name, e))
-			})?;
+			profile
+				.validate_raw(can_inherit_secrets)
+				.map_err(|e| ParseError::Validation(format!("Profile '{profile_name}': {e}")))?;
 			validate_compiled_profile(&compiled, profile_name)?;
 		}
 
@@ -1028,7 +1018,7 @@ impl Config {
 		Ok(compiled)
 	}
 
-	fn validate_filter_groups(&self, compiled: &CompiledManifest) -> Result<(), ParseError> {
+	fn validate_filter_groups(&self, compiled: &CompiledSpec) -> Result<(), ParseError> {
 		for (profile_name, profile) in &compiled.profiles {
 			for (secret_name, secret) in &profile.secrets {
 				let Some(groups) = &secret.config.groups else {
@@ -1066,7 +1056,7 @@ impl Config {
 	/// launches the command with every manifest secret scrubbed and none
 	/// injected — a green result that guarantees nothing. A blank or repeated
 	/// entry is likewise a typo with no meaning, not a subset worth resolving.
-	fn validate_scopes(&self, compiled: &CompiledManifest) -> Result<(), ParseError> {
+	fn validate_scopes(&self, compiled: &CompiledSpec) -> Result<(), ParseError> {
 		let Some(scopes) = &self.scopes else {
 			return Ok(());
 		};
@@ -1091,8 +1081,7 @@ impl Config {
 			let secrets = &scopes[scope_name].secrets;
 			if secrets.is_empty() {
 				return Err(ParseError::Validation(format!(
-					"Scope '{}' lists no secrets; a scope must name at least one",
-					scope_name
+					"Scope '{scope_name}' lists no secrets; a scope must name at least one"
 				)));
 			}
 
@@ -1100,20 +1089,17 @@ impl Config {
 			for secret in secrets {
 				if secret.trim().is_empty() {
 					return Err(ParseError::Validation(format!(
-						"Scope '{}' lists an empty secret name",
-						scope_name
+						"Scope '{scope_name}' lists an empty secret name"
 					)));
 				}
 				if !seen.insert(secret.as_str()) {
 					return Err(ParseError::Validation(format!(
-						"Scope '{}' lists secret '{}' more than once",
-						scope_name, secret
+						"Scope '{scope_name}' lists secret '{secret}' more than once"
 					)));
 				}
 				if !declared.contains(secret.as_str()) {
 					return Err(ParseError::Validation(format!(
-						"Scope '{}' references secret '{}', which is not declared in any profile",
-						scope_name, secret
+						"Scope '{scope_name}' references secret '{secret}', which is not declared in any profile"
 					)));
 				}
 			}
@@ -1184,7 +1170,7 @@ impl Config {
 }
 
 fn validate_compiled_profile(
-	manifest: &CompiledManifest,
+	manifest: &CompiledSpec,
 	profile_name: &str,
 ) -> Result<(), ParseError> {
 	let profile = manifest
@@ -1192,10 +1178,7 @@ fn validate_compiled_profile(
 		.expect("compiled profiles mirror parsed profiles");
 	for (name, secret) in &profile.secrets {
 		secret.config.validate_effective().map_err(|e| {
-			ParseError::Validation(format!(
-				"Profile '{}': Secret '{}': {}",
-				profile_name, name, e
-			))
+			ParseError::Validation(format!("Profile '{profile_name}': Secret '{name}': {e}"))
 		})?;
 	}
 	validate_profile_constraints(profile_name, profile)?;
@@ -1205,12 +1188,12 @@ fn validate_compiled_profile(
 
 fn validate_profile_constraints(
 	profile_name: &str,
-	profile: &crate::manifest::CompiledProfile,
+	profile: &crate::compiled_spec::CompiledProfile,
 ) -> Result<(), ParseError> {
 	fn validate_groups(
 		profile_name: &str,
 		kind: &str,
-		groups: &[crate::manifest::CompiledConstraintGroup],
+		groups: &[crate::compiled_spec::CompiledConstraintGroup],
 	) -> Result<(), ParseError> {
 		for group in groups {
 			if group.members.len() < 2 {
@@ -1257,7 +1240,7 @@ fn validate_profile_constraints(
 
 fn validate_composition_graph(
 	profile_name: &str,
-	profile: &crate::manifest::CompiledProfile,
+	profile: &crate::compiled_spec::CompiledProfile,
 ) -> Result<(), ParseError> {
 	// Templates were parsed during manifest compilation; a malformed one was
 	// already rejected by `validate_semantics` before this runs.
@@ -1269,8 +1252,7 @@ fn validate_composition_graph(
 		for dependency in template.dependencies() {
 			if !profile.secrets.contains_key(dependency) {
 				return Err(ParseError::Validation(format!(
-					"Profile '{}': Secret '{}': composed reference `${{{}}}` does not name a declared secret",
-					profile_name, name, dependency
+					"Profile '{profile_name}': Secret '{name}': composed reference `${{{dependency}}}` does not name a declared secret"
 				)));
 			}
 		}
@@ -1287,7 +1269,8 @@ fn validate_composition_graph(
 			Some(2) => return Ok(()),
 			Some(1) => {
 				let start = stack.iter().position(|item| *item == name).unwrap_or(0);
-				let mut cycle: Vec<String> = stack[start..].iter().map(|s| s.to_string()).collect();
+				let mut cycle: Vec<String> =
+					stack[start..].iter().map(ToString::to_string).collect();
 				cycle.push(name.to_string());
 				return Err(cycle);
 			}
@@ -1348,6 +1331,24 @@ impl ConfigGraphLoader {
 		Ok(merged)
 	}
 
+	fn visit_extends(&mut self, config: &Config, base_dir: &Path) -> Result<(), ParseError> {
+		for extend_path in config.project.extends.iter().flatten() {
+			let joined_path = base_dir.join(extend_path);
+			let full_path = if extend_path.ends_with(".toml") {
+				joined_path
+			} else {
+				joined_path.join("monosecret.toml")
+			};
+			if !full_path.exists() {
+				return Err(ParseError::ExtendedConfigNotFound(
+					full_path.display().to_string(),
+				));
+			}
+			self.visit(&full_path)?;
+		}
+		Ok(())
+	}
+
 	fn visit(&mut self, path: &Path) -> Result<(), ParseError> {
 		let canonical_path = path.canonicalize().map_err(|e| {
 			ParseError::Io(io::Error::new(
@@ -1373,20 +1374,7 @@ impl ConfigGraphLoader {
 		// relative to the symlink, not to the file it points at. Cycle detection
 		// and dedup still key on `canonical_path`.
 		let base_dir = path.parent().unwrap_or(Path::new("."));
-		for extend_path in config.project.extends.iter().flatten() {
-			let joined_path = base_dir.join(extend_path);
-			let full_path = if extend_path.ends_with(".toml") {
-				joined_path
-			} else {
-				joined_path.join("monosecret.toml")
-			};
-			if !full_path.exists() {
-				return Err(ParseError::ExtendedConfigNotFound(
-					full_path.display().to_string(),
-				));
-			}
-			self.visit(&full_path)?;
-		}
+		self.visit_extends(&config, base_dir)?;
 
 		self.active.remove(&canonical_path);
 		self.emitted.insert(canonical_path);
@@ -1418,11 +1406,34 @@ impl TryFrom<&Path> for Config {
 	}
 }
 
+impl Config {
+	/// Merge an already parsed root document with its `extends` from `base_dir`.
+	pub(crate) fn from_root_in(root: Self, base_dir: &Path) -> Result<Self, ParseError> {
+		let mut loader = ConfigGraphLoader {
+			active: HashSet::new(),
+			emitted: HashSet::new(),
+			documents: Vec::new(),
+		};
+		loader.visit_extends(&root, base_dir)?;
+
+		let mut documents = loader.documents.into_iter();
+		let Some(mut merged) = documents.next() else {
+			return Ok(root);
+		};
+		for document in documents {
+			merged.overlay_with(document);
+		}
+		merged.overlay_with(root);
+		Ok(merged)
+	}
+}
+
 /// When monosecret requires a reason for secret access.
 ///
 /// Parsed from `[project].require_reason`, which accepts a boolean or the string
 /// `"agents"`. Defaults to [`RequireReason::Agents`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum RequireReason {
 	/// Never require a reason.
 	Never,
@@ -1746,13 +1757,12 @@ impl Profile {
 			let secret = &self.secrets[&name];
 			if !is_valid_identifier(&name) {
 				return Err(format!(
-					"Invalid secret name '{}': must be a valid identifier (alphanumeric and underscores, not starting with a number)",
-					name
+					"Invalid secret name '{name}': must be a valid identifier (alphanumeric and underscores, not starting with a number)"
 				));
 			}
 			secret
 				.validate_required_default()
-				.map_err(|e| format!("Secret '{}': {}", name, e))?;
+				.map_err(|e| format!("Secret '{name}': {e}"))?;
 		}
 
 		Ok(())
@@ -1872,7 +1882,7 @@ pub struct GenerateOptions {
 ///
 /// - `item` (required) and `field` are shared vocabulary every relevant store
 ///   maps: a name, and an optional component within it.
-/// - `vault`, `section` (1Password), and `version` (GCSM) are coordinates only
+/// - `vault`, `section` (1Password), and `version` are coordinates only
 ///   some stores have an equivalent for. Each is named for the concept, not the
 ///   vendor, so another store can adopt one by adding it to its
 ///   [`supported_coords`](crate::provider::Provider::supported_coords); a store
@@ -1888,7 +1898,7 @@ pub struct GenerateOptions {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize)]
 pub struct NativeAddress {
 	/// The store's own name for the secret: item title (1Password, Proton
-	/// Pass, LastPass), entry path (pass), KV path (Vault), secret name/ARN
+	/// Pass, `LastPass`), entry path (pass), KV path (Vault), secret name/ARN
 	/// (AWS), secret id (GCSM), key name (BWS, dotenv), variable name (env),
 	/// service (keyring).
 	pub item: String,
@@ -1904,7 +1914,8 @@ pub struct NativeAddress {
 	/// 1Password only: the section containing the field.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub section: Option<String>,
-	/// GCSM only: the secret version to read; defaults to the latest.
+	/// The secret version to read on stores that support version-pinned reads;
+	/// defaults to the latest.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub version: Option<String>,
 }
@@ -1980,7 +1991,7 @@ impl NativeAddressTemplate {
 	}
 
 	/// Validate every coordinate and placeholder without provider I/O.
-	pub fn validate(&self) -> std::result::Result<(), String> {
+	pub fn validate(&self) -> Result<(), String> {
 		for (name, value) in self.coordinates() {
 			let Some(value) = value else {
 				continue;
@@ -1998,12 +2009,7 @@ impl NativeAddressTemplate {
 	}
 
 	/// Expand this alias template for one logical secret.
-	pub fn expand(
-		&self,
-		project: &str,
-		profile: &str,
-		key: &str,
-	) -> std::result::Result<NativeAddress, String> {
+	pub fn expand(&self, project: &str, profile: &str, key: &str) -> Result<NativeAddress, String> {
 		self.validate()?;
 		let expand = |value: &str| expand_address_template(value, project, profile, key);
 		Ok(NativeAddress {
@@ -2040,7 +2046,7 @@ fn expand_address_template(
 	project: &str,
 	profile: &str,
 	key: &str,
-) -> std::result::Result<String, String> {
+) -> Result<String, String> {
 	let mut out = String::with_capacity(template.len());
 	let mut rest = template;
 	loop {
@@ -2165,9 +2171,7 @@ fn ref_string_hint(s: &str) -> String {
 }
 
 /// Deserialize a group membership as either `"name"` or `["name", ...]`.
-fn deserialize_group_names<'de, D>(
-	deserializer: D,
-) -> std::result::Result<Option<Vec<String>>, D::Error>
+fn deserialize_group_names<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
 where
 	D: serde::Deserializer<'de>,
 {
@@ -2185,10 +2189,7 @@ where
 }
 
 /// Preserve the compact string form when a secret belongs to one group.
-fn serialize_group_names<S>(
-	groups: &Option<Vec<String>>,
-	serializer: S,
-) -> std::result::Result<S::Ok, S::Error>
+fn serialize_group_names<S>(groups: &Option<Vec<String>>, serializer: S) -> Result<S::Ok, S::Error>
 where
 	S: serde::Serializer,
 {
@@ -2200,7 +2201,7 @@ where
 }
 
 impl<'de> Deserialize<'de> for NativeAddress {
-	fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
 	where
 		D: serde::Deserializer<'de>,
 	{
@@ -2216,7 +2217,7 @@ impl<'de> Deserialize<'de> for NativeAddress {
 				)
 			}
 
-			fn visit_map<A>(self, map: A) -> std::result::Result<Self::Value, A::Error>
+			fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
 			where
 				A: serde::de::MapAccess<'de>,
 			{
@@ -2224,7 +2225,7 @@ impl<'de> Deserialize<'de> for NativeAddress {
 					.map(NativeAddress::from)
 			}
 
-			fn visit_str<E>(self, s: &str) -> std::result::Result<Self::Value, E>
+			fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
 			where
 				E: serde::de::Error,
 			{
@@ -2331,6 +2332,11 @@ impl SecretEncoding {
 pub enum ExtractFormat {
 	/// A JSON document selected with an RFC 6901 JSON Pointer.
 	Json,
+	/// An INI document selected with an RFC 6901-escaped `/key` or
+	/// `/section/key` pointer.
+	///
+	/// Available since Monosecret 0.20.
+	Ini,
 }
 
 impl ExtractFormat {
@@ -2338,6 +2344,7 @@ impl ExtractFormat {
 	pub(crate) const fn as_str(self) -> &'static str {
 		match self {
 			Self::Json => "json",
+			Self::Ini => "ini",
 		}
 	}
 }
@@ -2354,7 +2361,9 @@ impl ExtractFormat {
 pub struct SecretExtract {
 	/// The structured-data format of the stored value.
 	pub format: ExtractFormat,
-	/// RFC 6901 JSON Pointer selecting the logical value.
+	/// Slash-delimited pointer selecting the logical value. JSON accepts a
+	/// complete RFC 6901 JSON Pointer; INI accepts `/key` or `/section/key`
+	/// with RFC 6901 escaping for each segment.
 	pub pointer: String,
 }
 
@@ -2362,6 +2371,7 @@ impl SecretExtract {
 	fn validate(&self) -> Result<(), String> {
 		match self.format {
 			ExtractFormat::Json => validate_json_pointer(&self.pointer),
+			ExtractFormat::Ini => crate::ini_field::validate_pointer(&self.pointer),
 		}
 	}
 }
@@ -2369,7 +2379,7 @@ impl SecretExtract {
 /// Validate the JSON Pointer grammar independently of any particular document.
 /// An empty pointer selects the whole document; every non-empty pointer starts
 /// with `/`, and `~` escapes only `~0` and `~1`.
-fn validate_json_pointer(pointer: &str) -> Result<(), String> {
+pub(crate) fn validate_json_pointer(pointer: &str) -> Result<(), String> {
 	if pointer.is_empty() {
 		return Ok(());
 	}
@@ -2429,7 +2439,7 @@ pub struct Secret {
 	/// Optional list of provider aliases for retrieving this secret.
 	/// Providers are tried in order until one has the secret.
 	/// If not specified, uses the profile defaults.providers or global provider.
-	/// Each alias is resolved against the providers map in GlobalConfig.
+	/// Each alias is resolved against the providers map in `GlobalConfig`.
 	/// Example: providers = ["keyring", "env"] will try keyring first, then env.
 	pub providers: Option<Vec<ProviderRef>>,
 	/// Native coordinates naming one externally managed secret (see
@@ -2462,13 +2472,15 @@ pub struct Secret {
 	/// Available since Monosecret 0.19.
 	pub encoding: Option<SecretEncoding>,
 	/// Structured stored-value extraction applied after optional decoding.
-	/// JSON extraction uses an RFC 6901 pointer. Extracted secrets are
-	/// read-only because a selected value cannot reconstruct its containing
-	/// document for a storage write.
+	/// JSON extraction uses an RFC 6901 pointer. INI extraction (0.20+) uses
+	/// `/key` for an unsectioned key or `/section/key` for a named section,
+	/// with RFC 6901 segment escaping. Extracted secrets are read-only because
+	/// a selected value cannot reconstruct its containing document for a
+	/// storage write.
 	///
 	/// Available since Monosecret 0.19.
 	pub extract: Option<SecretExtract>,
-	/// The type of secret, used for generation (e.g., "password", "hex", "base64", "uuid", "command", "rsa_private_key")
+	/// The type of secret, used for generation (e.g., "password", "hex", "base64", "uuid", "command", "`rsa_private_key`")
 	pub secret_type: Option<String>,
 	/// Auto-generation configuration. Either `true` for defaults or a table with options.
 	pub generate: Option<GenerateConfig>,
@@ -2567,7 +2579,7 @@ impl Secret {
 		self.validate_semantics()
 	}
 
-	fn validate_description(&self) -> Result<(), String> {
+	pub(crate) fn validate_description(&self) -> Result<(), String> {
 		match self.description.as_deref() {
 			Some("") => Err("description cannot be empty".into()),
 			None => Err("missing description".into()),
@@ -2590,7 +2602,9 @@ impl Secret {
 	/// this without a provider", shared by manifest compilation and semantic
 	/// validation.
 	pub(crate) fn would_generate(&self) -> bool {
-		self.generate.as_ref().is_some_and(|g| g.is_enabled())
+		self.generate
+			.as_ref()
+			.is_some_and(GenerateConfig::is_enabled)
 	}
 
 	/// Whether this declaration supplies an individual or grouped requiredness
@@ -2695,8 +2709,7 @@ impl Secret {
 			for (name, value) in reference.coordinates() {
 				if value.is_some_and(|v| v.trim().is_empty()) {
 					return Err(format!(
-						"`ref` coordinate `{}` cannot be empty or whitespace",
-						name
+						"`ref` coordinate `{name}` cannot be empty or whitespace"
 					));
 				}
 			}
@@ -2761,7 +2774,7 @@ impl Secret {
 				match t.as_str() {
 					"password" | "hex" | "base64" | "uuid" | "command" | "rsa_private_key" => {}
 					unknown => {
-						return Err(format!("unknown secret type '{}'", unknown));
+						return Err(format!("unknown secret type '{unknown}'"));
 					}
 				}
 			}
@@ -2775,7 +2788,7 @@ impl Secret {
 			match t.as_str() {
 				"password" | "hex" | "base64" | "uuid" | "command" | "rsa_private_key" => {}
 				unknown => {
-					return Err(format!("unknown secret type '{}'", unknown));
+					return Err(format!("unknown secret type '{unknown}'"));
 				}
 			}
 		}
@@ -2964,7 +2977,7 @@ impl GlobalConfig {
 		if !config_path.try_exists().map_err(ParseError::Io)? {
 			return Ok(None);
 		}
-		let content = std::fs::read_to_string(&config_path).map_err(ParseError::Io)?;
+		let content = fs::read_to_string(&config_path).map_err(ParseError::Io)?;
 		toml::from_str(&content).map(Some).map_err(ParseError::Toml)
 	}
 
@@ -2976,6 +2989,7 @@ impl GlobalConfig {
 	/// - The config directory cannot be created
 	/// - The file cannot be written
 	/// - The configuration cannot be serialized
+	#[cfg(feature = "cli")]
 	pub fn save(&self) -> Result<(), io::Error> {
 		let config_path = Self::path()?;
 
@@ -3040,20 +3054,20 @@ impl GlobalConfig {
 		}
 
 		// Create parent directories for the new path
-		if let Some(parent) = new_path.parent() {
-			if let Err(err) = std::fs::create_dir_all(parent) {
-				eprintln!(
-					"Warning: failed to create config directory {} while migrating from {}: {}. Continuing to use legacy config path.",
-					parent.display(),
-					old_path.display(),
-					err
-				);
-				return Ok(old_path);
-			}
+		if let Some(parent) = new_path.parent()
+			&& let Err(err) = fs::create_dir_all(parent)
+		{
+			eprintln!(
+				"Warning: failed to create config directory {} while migrating from {}: {}. Continuing to use legacy config path.",
+				parent.display(),
+				old_path.display(),
+				err
+			);
+			return Ok(old_path);
 		}
 
 		// Copy old config to new location
-		if let Err(err) = std::fs::copy(&old_path, new_path) {
+		if let Err(err) = fs::copy(&old_path, new_path) {
 			eprintln!(
 				"Warning: failed to migrate config from {} to {}: {}. Continuing to use legacy config path.",
 				old_path.display(),
@@ -3065,7 +3079,7 @@ impl GlobalConfig {
 
 		// Rename old file to indicate it has been migrated
 		let old_backup = old_path.with_extension("toml.old");
-		if let Err(err) = std::fs::rename(&old_path, &old_backup) {
+		if let Err(err) = fs::rename(&old_path, &old_backup) {
 			eprintln!(
 				"Warning: migrated config to {}, but failed to back up {} to {}: {}",
 				new_path.display(),
@@ -3181,21 +3195,17 @@ pub enum ParseError {
 impl std::fmt::Display for ParseError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			ParseError::Io(e) => write!(f, "I/O error: {}", e),
-			ParseError::Toml(e) => write!(f, "TOML parsing error: {}", e),
+			ParseError::Io(e) => write!(f, "I/O error: {e}"),
+			ParseError::Toml(e) => write!(f, "TOML parsing error: {e}"),
 			ParseError::UnsupportedRevision(rev) => {
-				write!(
-					f,
-					"Unsupported revision '{}'. Only '1.0' is supported.",
-					rev
-				)
+				write!(f, "Unsupported revision '{rev}'. Only '1.0' is supported.")
 			}
 			ParseError::CircularDependency(msg) => {
-				write!(f, "Circular dependency detected: {}", msg)
+				write!(f, "Circular dependency detected: {msg}")
 			}
-			ParseError::Validation(msg) => write!(f, "Validation error: {}", msg),
+			ParseError::Validation(msg) => write!(f, "Validation error: {msg}"),
 			ParseError::ExtendedConfigNotFound(path) => {
-				write!(f, "Extended config file not found: {}", path)
+				write!(f, "Extended config file not found: {path}")
 			}
 		}
 	}
@@ -3635,7 +3645,7 @@ ACCESS_TOKEN = { description = "Access token", required = { at_least_one = ["aut
         .unwrap();
 
 		config.validate().unwrap();
-		let compiled = CompiledManifest::compile(&config);
+		let compiled = CompiledSpec::compile(&config);
 		let production = compiled.profile("production").unwrap();
 		assert_eq!(production.constraints.at_least_one[0].name, "auth");
 		assert_eq!(
@@ -3741,7 +3751,7 @@ ACCESS_TOKEN = { required = { at_least_one = "auth" } }
 		.unwrap();
 
 		config.validate().unwrap();
-		let compiled = CompiledManifest::compile(&config);
+		let compiled = CompiledSpec::compile(&config);
 		let password = &compiled.profile("production").unwrap().secrets["PASSWORD"];
 		assert!(!password.declared_required);
 		assert_eq!(password.config.required, None);
@@ -4403,11 +4413,7 @@ encoding = "rot13""#,
 
 	#[test]
 	fn secret_extract_parses_round_trips_and_inherits() {
-		let secret: Secret = toml::from_str(
-			r#"description = "selected"
-extract = { format = "json", pointer = "/database/password" }"#,
-		)
-		.unwrap();
+		let secret = extract_secret("json", "/database/password");
 		assert_eq!(
 			secret.extract,
 			Some(SecretExtract {
@@ -4436,16 +4442,30 @@ extract = { format = "json", pointer = "/database/password" }"#,
 		)
 		.unwrap();
 		assert_eq!(inherited.extract, secret.extract);
+
+		let ini = extract_secret("ini", "/database/password");
+		assert_eq!(
+			ini.extract,
+			Some(SecretExtract {
+				format: ExtractFormat::Ini,
+				pointer: "/database/password".to_string(),
+			})
+		);
+		assert!(toml::to_string(&ini).unwrap().contains("format = \"ini\""));
+	}
+
+	/// A secret declaring nothing but the extract table under test.
+	fn extract_secret(format: &str, pointer: &str) -> Secret {
+		toml::from_str(&format!(
+			"description = \"selected\"\nextract = {{ format = \"{format}\", pointer = \"{pointer}\" }}"
+		))
+		.unwrap()
 	}
 
 	#[test]
 	fn secret_extract_validates_json_pointer_and_table_shape() {
 		for pointer in ["database/password", "/bad~", "/bad~2escape"] {
-			let secret: Secret = toml::from_str(&format!(
-				"description = \"selected\"\nextract = {{ format = \"json\", pointer = \"{pointer}\" }}"
-			))
-			.unwrap();
-			let error = secret.validate().unwrap_err();
+			let error = extract_secret("json", pointer).validate().unwrap_err();
 			assert!(error.contains("`extract.pointer`"), "{error}");
 		}
 
@@ -4469,11 +4489,27 @@ extract = { format = "yaml", pointer = "/x" }"#,
 	#[test]
 	fn secret_extract_accepts_root_and_escaped_json_pointers() {
 		for pointer in ["", "/a~1b/~0key", "/items/0"] {
-			let secret: Secret = toml::from_str(&format!(
-				"description = \"selected\"\nextract = {{ format = \"json\", pointer = \"{pointer}\" }}"
-			))
-			.unwrap();
-			secret.validate().unwrap();
+			extract_secret("json", pointer).validate().unwrap();
+		}
+	}
+
+	#[test]
+	fn secret_extract_validates_ini_pointer_shape() {
+		for pointer in ["/token", "/database/password", "/a~1b/~0key"] {
+			extract_secret("ini", pointer).validate().unwrap();
+		}
+
+		for pointer in [
+			"",
+			"token",
+			"/",
+			"//password",
+			"/database/",
+			"/database/password/extra",
+			"/bad~2escape",
+		] {
+			let error = extract_secret("ini", pointer).validate().unwrap_err();
+			assert!(error.contains("`extract.pointer`"), "{pointer}: {error}");
 		}
 	}
 

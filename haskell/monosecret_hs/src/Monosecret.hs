@@ -19,12 +19,15 @@
 module Monosecret
   ( -- * Builder
     Builder
+  , CallerContext(..)
   , builder
   , withPath
+  , withInlineSpec
   , withProvider
   , withProfile
   , withScope
   , withReason
+  , withCaller
   , withNoValues
     -- * Resolve (value-carrying)
   , Resolved(..)
@@ -71,6 +74,9 @@ import qualified System.Environment.Blank as Env
 -- (1Password, LastPass), and a @safe@ call lets other Haskell threads run.
 foreign import ccall safe "monosecret_resolve"
   c_monosecret_resolve :: CString -> IO CString
+
+foreign import ccall safe "monosecret_call"
+  c_monosecret_call :: CString -> IO CString
 
 foreign import ccall safe "monosecret_free"
   c_monosecret_free :: CString -> IO ()
@@ -203,17 +209,34 @@ data Builder = Builder
   , bProfile  :: Maybe Text
   , bScope    :: Maybe Text
   , bReason   :: Maybe Text
+  , bCaller   :: Maybe CallerContext
   , bNoValues :: Bool
+  , bInline   :: Maybe (Value, Text)
   }
+
+-- | Caller-asserted software-integration context (Monosecret 0.20+). It is
+-- audit metadata and never supplies the user access reason.
+data CallerContext = CallerContext
+  { callerName      :: Text
+  , callerVersion   :: Maybe Text
+  , callerOperation :: Maybe Text
+  , callerResource  :: Maybe Text
+  } deriving (Show, Eq)
 
 -- | A builder with no options set.
 builder :: Builder
-builder = Builder Nothing Nothing Nothing Nothing Nothing False
+builder = Builder Nothing Nothing Nothing Nothing Nothing Nothing False Nothing
 
 -- | Resolve from a manifest at this path instead of walking up from the working
 -- directory.
 withPath :: Text -> Builder -> Builder
-withPath v b = b { bPath = Just v }
+withPath v b = b { bPath = Just v, bInline = Nothing }
+
+-- | Resolve strict inline-spec v1 at its logical base directory (0.20+).
+-- The static linker requires @monosecret_call@, so an older native archive
+-- fails at link time instead of falling back to a filesystem manifest.
+withInlineSpec :: Value -> Text -> Builder -> Builder
+withInlineSpec spec baseDir b = b { bPath = Nothing, bInline = Just (spec, baseDir) }
 
 -- | Override the provider (a @keyring:\/\/@-style URI or a configured alias).
 withProvider :: Text -> Builder -> Builder
@@ -230,6 +253,10 @@ withScope v b = b { bScope = Just v }
 -- | Set a human-readable reason for this access (for audited providers).
 withReason :: Text -> Builder -> Builder
 withReason v b = b { bReason = Just v }
+
+-- | Identify the invoking software integration (Monosecret 0.20+).
+withCaller :: CallerContext -> Builder -> Builder
+withCaller v b = b { bCaller = Just v }
 
 -- | Omit secret values, returning only structure and provenance.
 withNoValues :: Bool -> Builder -> Builder
@@ -287,7 +314,7 @@ abiVersion = do
 -- missing, and 'MonosecretError' for any other failure.
 load :: Builder -> IO Resolved
 load b = do
-  resp <- callNative (requestBytes b Nothing)
+  resp <- callNative (isInline b) (requestBytes b Nothing)
   value <- responseValue resp resolveSchemaVersion "resolve"
   (prov, prof, scope, secs, mreq, mopt) <- fromResult (parseEither pResolve value)
   case mreq of
@@ -309,7 +336,7 @@ load b = do
 -- status @"missing_required"@.
 report :: Builder -> IO Report
 report b = do
-  resp <- callNative (requestBytes b (Just "report"))
+  resp <- callNative (isInline b) (requestBytes b (Just "report"))
   value <- responseValue resp reportSchemaVersion "report"
   (prov, prof, scope, secs, violations) <- fromResult (parseEither pReport value)
   pure (Report prov prof scope secs violations)
@@ -326,16 +353,37 @@ report b = do
 -- (@mode = Just "report"@), omitting unset options.
 requestBytes :: Builder -> Maybe Text -> BL.ByteString
 requestBytes b mode =
-  encode . object $
-    catMaybes
-      [ ("path" .=) <$> bPath b
-      , ("provider" .=) <$> bProvider b
-      , ("profile" .=) <$> bProfile b
-      , ("scope" .=) <$> bScope b
-      , ("reason" .=) <$> bReason b
+  case bInline b of
+    Nothing -> encode options
+    Just (spec, baseDir) -> encode $ object
+      [ "request_version" .= (1 :: Int)
+      , "operation" .= ("resolve" :: Text)
+      , "source" .= object
+          [ "kind" .= ("inline" :: Text)
+          , "spec_version" .= (1 :: Int)
+          , "base_dir" .= baseDir
+          , "spec" .= spec
+          ]
+      , "options" .= options
       ]
-      ++ ["no_values" .= True | bNoValues b]
-      ++ ["mode" .= m | Just m <- [mode]]
+  where
+    options = object $
+      catMaybes
+        [ ("path" .=) <$> bPath b
+        , ("provider" .=) <$> bProvider b
+        , ("profile" .=) <$> bProfile b
+        , ("scope" .=) <$> bScope b
+        , ("reason" .=) <$> bReason b
+        , ("caller" .=) . callerValue <$> bCaller b
+        ]
+        ++ ["no_values" .= True | bNoValues b]
+        ++ ["mode" .= m | Just m <- [mode]]
+    callerValue caller = object . catMaybes $
+      [ Just ("name" .= callerName caller)
+      , ("version" .=) <$> callerVersion caller
+      , ("operation" .=) <$> callerOperation caller
+      , ("resource" .=) <$> callerResource caller
+      ]
 
 -- Marshal a request to monosecret_resolve and copy the response out before
 -- freeing the native allocation.
@@ -345,13 +393,16 @@ requestBytes b mode =
 -- around 'load') from landing between the call returning and the free being
 -- installed, and @finally@ guarantees the free runs whether @packCString@
 -- succeeds, throws, or is interrupted — so the secret-bearing buffer never leaks.
-callNative :: BL.ByteString -> IO BS.ByteString
-callNative reqLazy =
+isInline :: Builder -> Bool
+isInline = maybe False (const True) . bInline
+
+callNative :: Bool -> BL.ByteString -> IO BS.ByteString
+callNative versioned reqLazy =
   BS.useAsCString (BL.toStrict reqLazy) $ \creq ->
     mask $ \restore -> do
-      cresp <- c_monosecret_resolve creq
+      cresp <- (if versioned then c_monosecret_call else c_monosecret_resolve) creq
       if cresp == nullPtr
-        then throwIO (MonosecretError "ffi" "monosecret_resolve returned null")
+        then throwIO (MonosecretError "ffi" (if versioned then "monosecret_call returned null" else "monosecret_resolve returned null"))
         else restore (BS.packCString cresp) `finally` c_monosecret_free cresp
 
 -- Decode the envelope, unwrap @ok@/@error@, and check the schema version,

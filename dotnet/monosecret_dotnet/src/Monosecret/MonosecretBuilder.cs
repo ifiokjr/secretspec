@@ -7,12 +7,48 @@ namespace Monosecret;
 public sealed class MonosecretBuilder
 {
     private readonly ResolveRequest _request = new();
+    private bool _hasInlineSpec;
+    private JsonElement _inlineSpec;
+    private string? _inlineBaseDir;
 
     public MonosecretBuilder WithPath(string? path)
     {
+        _inlineSpec = default;
+        _inlineBaseDir = null;
+        _hasInlineSpec = false;
         _request.Path = path;
         return this;
     }
+
+    /// <summary>Resolve strict inline-spec v1 at <paramref name="baseDir"/> (Monosecret 0.20+).</summary>
+    public MonosecretBuilder WithInlineSpec(JsonElement spec, string baseDir)
+    {
+        if (spec.ValueKind == JsonValueKind.Undefined)
+            throw new ArgumentException("The inline specification must be a JSON value.", nameof(spec));
+
+        _request.Path = null;
+        _hasInlineSpec = true;
+        _inlineSpec = spec.Clone();
+        _inlineBaseDir = baseDir;
+        return this;
+    }
+
+    /// <summary>
+    /// Resolve a pre-serialized strict inline-spec v1 at <paramref name="baseDir"/>
+    /// (Monosecret 0.20+).
+    /// </summary>
+    public MonosecretBuilder WithInlineSpec(string specJson, string baseDir)
+    {
+        using var document = JsonDocument.Parse(specJson);
+        return WithInlineSpec(document.RootElement, baseDir);
+    }
+
+    /// <summary>
+    /// Resolve strict inline-spec v1 using source-generated JSON metadata
+    /// (Monosecret 0.20+).
+    /// </summary>
+    public MonosecretBuilder WithInlineSpec<T>(T spec, string baseDir, JsonTypeInfo<T> jsonTypeInfo)
+        => WithInlineSpec(JsonSerializer.SerializeToElement(spec, jsonTypeInfo), baseDir);
 
     public MonosecretBuilder WithProvider(string? provider)
     {
@@ -26,7 +62,7 @@ public sealed class MonosecretBuilder
         return this;
     }
 
-    /// <summary>Limits resolution to a named manifest scope (schema v2).</summary>
+    /// <summary>Limits resolution to a named manifest scope (Monosecret 0.17+).</summary>
     public MonosecretBuilder WithScope(string? scope)
     {
         _request.Scope = scope;
@@ -36,6 +72,13 @@ public sealed class MonosecretBuilder
     public MonosecretBuilder WithReason(string? reason)
     {
         _request.Reason = reason;
+        return this;
+    }
+
+    /// <summary>Identifies the invoking software integration (Monosecret 0.20+).</summary>
+    public MonosecretBuilder WithCaller(CallerContext? caller)
+    {
+        _request.Caller = caller;
         return this;
     }
 
@@ -99,16 +142,20 @@ public sealed class MonosecretBuilder
         _ => throw new MonosecretException("ffi", $"Unknown constraint violation kind: {kind}"),
     };
 
-    private static T Call<T>(
+    private T Call<T>(
         ResolveRequest request,
         string kind,
         JsonTypeInfo<Envelope<T>> envelopeTypeInfo)
         where T : class
     {
-        var payload = JsonSerializer.Serialize(
+        var versioned = _hasInlineSpec;
+        var options = JsonSerializer.SerializeToElement(
             request,
             MonosecretJsonContext.Default.ResolveRequest);
-        var raw = Native.Resolve(payload);
+        var payload = versioned
+            ? SerializeInlineRequest(options)
+            : JsonSerializer.Serialize(request, MonosecretJsonContext.Default.ResolveRequest);
+        var raw = versioned ? Native.Call(payload) : Native.Resolve(payload);
         Envelope<T>? envelope;
         try
         {
@@ -131,6 +178,29 @@ public sealed class MonosecretBuilder
             ?? throw new MonosecretException(
                 "ffi",
                 $"monosecret_resolve reported ok with no {kind} response");
+    }
+
+    private string SerializeInlineRequest(JsonElement options)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("request_version", 1);
+            writer.WriteString("operation", "resolve");
+            writer.WritePropertyName("source");
+            writer.WriteStartObject();
+            writer.WriteString("kind", "inline");
+            writer.WriteNumber("spec_version", 1);
+            writer.WriteString("base_dir", _inlineBaseDir);
+            writer.WritePropertyName("spec");
+            _inlineSpec.WriteTo(writer);
+            writer.WriteEndObject();
+            writer.WritePropertyName("options");
+            options.WriteTo(writer);
+            writer.WriteEndObject();
+        }
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static void EnsureSchemaVersion(int actual, int expected, string kind)

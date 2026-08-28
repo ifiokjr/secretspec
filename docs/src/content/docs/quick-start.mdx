@@ -17,6 +17,13 @@ $ npm install --global @monosecret/cli
 ```
 
 </TabItem>
+<TabItem label="WinGet">
+
+```powershell
+winget install --exact --id Cachix.Monosecret
+```
+
+</TabItem>
 <TabItem label="Devenv.sh">
 
 Add to your `devenv.nix`:
@@ -128,8 +135,10 @@ $ monosecret config global init  # 0.2+
   dotenv: Traditional .env files
   file: Plaintext files, one per secret (0.2+)
   env: Read-only environment variables
-  null: Use defaults, generation, or run prompts without storage (0.2+)
-  systemd-credential: Read-only systemd service credentials (0.2+)
+  null: Use defaults, generation, or run prompts without storage (0.19+)
+  systemd-credential: Read-only systemd service credentials (0.17+)
+  fly: Fly.io application secrets via flyctl, write-only (0.20+)
+  cloudflare: Cloudflare Secrets Store, write-only (0.20+)
   pass: Unix password manager with GPG encryption
   gopass: Gopass CLI password manager with GPG encryption (0.2+)
   protonpass: Proton Pass via official pass-cli
@@ -145,9 +154,11 @@ $ monosecret config global init  # 0.2+
   bw: Bitwarden Password Manager (0.2+)
   bws: Bitwarden Secrets Manager
   akv: Azure Key Vault
-  infisical: Infisical secret management (0.2+)
-  age: age-encrypted file (0.2+)
-  sops: SOPS encrypted files (0.2+)
+  aac: Azure App Configuration (0.20+)
+  infisical: Infisical secret management (0.16+)
+  age: age-encrypted file (0.17+)
+  sops: SOPS encrypted files (0.17+)
+  kubernetes: Kubernetes (0.20+)
 ? Select your default profile:
   development
 > default
