@@ -6,6 +6,7 @@
 //! # Features
 //!
 //! - **Declarative Configuration**: Define secrets in `monosecret.toml`
+//! - **Rust-first Declarations**: Build a [`Spec`] directly in Rust (0.20+)
 //! - **Multiple Providers**: Keyring, dotenv, environment variables, Keeper Secrets Manager (0.18+)
 //! - **Profile Support**: Different configurations for development, staging, production
 //! - **Type Safety**: Optional compile-time code generation for strongly-typed access
@@ -43,16 +44,23 @@
 // Internal modules
 mod audit;
 mod cache;
+mod caller;
 pub mod codegen;
+mod compiled_spec;
 mod composition;
 mod config;
 mod error;
 pub(crate) mod generator;
+pub(crate) mod ini_field;
+pub(crate) mod json_field;
 mod manifest;
+mod native;
 mod plan;
 mod report;
 mod resolve;
 mod secrets;
+mod spec;
+mod spec_edit;
 mod validation;
 
 pub(crate) mod provider;
@@ -61,6 +69,42 @@ pub(crate) mod provider;
 #[cfg(feature = "cli")]
 pub mod cli;
 
+#[cfg(feature = "cli")]
+#[doc(hidden)]
+pub mod integration;
+
+pub use caller::CallerContext;
+pub use config::Resolved;
+
+/// Implementation details shared with `monosecret_derive`.
+///
+/// These document types are not part of the supported Rust SDK. Use [`Spec`]
+/// and its builder API instead.
+#[doc(hidden)]
+pub mod __private {
+	// Generated code uses these re-exports so applications do not need to
+	// depend on the implementation crates just to compile the macro output.
+	pub use ::secrecy;
+	pub use ::serde;
+
+	pub mod codegen {
+		pub use crate::codegen::CodegenIr;
+		pub use crate::codegen::IrField;
+		pub use crate::codegen::IrProfile;
+		pub use crate::codegen::build_ir;
+		pub use crate::codegen::capitalize;
+	}
+
+	pub use crate::config::Config;
+	pub use crate::config::GenerateConfig;
+	pub use crate::config::GenerateOptions;
+	pub use crate::config::Profile;
+	pub use crate::config::ProfileDefaults;
+	pub use crate::config::Project;
+	pub use crate::config::Secret;
+	pub use crate::spec::load_for_codegen;
+}
+
 // Re-export only the types needed by users and generated code
 pub use config::NativeAddress;
 pub use config::ProviderConfig;
@@ -68,35 +112,34 @@ pub use config::ProviderConfigStructured;
 pub use config::ProviderDependency;
 pub use config::ProviderRef;
 pub use config::ProviderRefDetail;
-pub use config::Resolved;
 pub use config::SecretRequest;
 // Re-export config types for CLI usage only - these are marked #[doc(hidden)]
 #[doc(hidden)]
+pub use config::{AuditConfig, Config, GlobalConfig, GlobalDefaults, ProfileDefaults, Project};
+// Public API exports
 pub use config::{
-	AuditConfig,
-	Config,
-	GlobalConfig,
-	GlobalDefaults,
-	Profile,
-	ProfileDefaults,
-	Project,
-};
-// Re-export Secret and generation types for monosecret-derive
-#[doc(hidden)]
-pub use config::{
+	CredentialSource,
 	ExtractFormat,
-	GenerateConfig,
-	GenerateOptions,
-	Secret,
+	NativeAddressTemplate,
+	ProviderAlias,
+	ProviderCache,
+	RequireReason,
 	SecretEncoding,
 	SecretExtract,
 };
-// Public API exports
-pub use error::{MonosecretError, Result};
+// Re-export Secret and generation types for monosecret-derive
+// (ExtractFormat/SecretEncoding/SecretExtract live in the public API group below.)
+#[doc(hidden)]
+pub use config::{GenerateConfig, GenerateOptions};
+pub use error::MonosecretError;
+pub use error::Result;
 pub use manifest::Manifest;
 pub use manifest::ManifestProfile;
 pub use manifest::ManifestProject;
 pub use manifest::ManifestSecret;
+pub use native::INLINE_SPEC_SCHEMA_VERSION;
+pub use native::NATIVE_CALL_REQUEST_VERSION;
+pub use native::call_json;
 pub use provider::DiscoveryContext;
 pub use provider::ProducedValuePersistence;
 pub use provider::Provider;
@@ -112,6 +155,12 @@ pub use resolve::ResolvedSource;
 pub use resolve::resolve_json;
 pub use secrets::ExportFormat;
 pub use secrets::Secrets;
+pub use spec::Generation;
+pub use spec::PasswordCharset;
+pub use spec::Profile;
+pub use spec::Secret;
+pub use spec::Spec;
+pub use spec::SpecBuilder;
 pub use validation::ConstraintKind;
 pub use validation::ConstraintViolation;
 pub use validation::ValidatedSecrets;

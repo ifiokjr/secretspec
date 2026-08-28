@@ -48,6 +48,7 @@ use super::Provider;
 use super::ProviderCredentials;
 use super::ProviderUrl;
 use super::credential_or_envs;
+use super::join_slash_path;
 use super::preferred_env;
 use crate::MonosecretError;
 use crate::Result;
@@ -192,10 +193,8 @@ impl ScalewayProvider {
 				)));
 			}
 		}
-		// `base` is already normalized ("/" or "/prefix"); trim its slash so we
-		// never emit a double slash when composing the hierarchy.
-		let base = base.trim_end_matches('/');
-		Ok(format!("{base}/monosecret/{project}/{profile}/{key}"))
+		let convention_name = format!("monosecret/{project}/{profile}/{key}");
+		Ok(join_slash_path(base, &convention_name))
 	}
 
 	/// Splits an absolute item path into `(secret_path, secret_name)`. The path
@@ -276,11 +275,8 @@ impl ScalewayProvider {
 				"secret '{name}' is not JSON, cannot extract key '{json_key}': {e}"
 			))
 		})?;
-		match json.get(json_key) {
-			Some(serde_json::Value::String(s)) => Ok(Some(SecretString::new(s.clone().into()))),
-			Some(other) => Ok(Some(SecretString::new(other.to_string().into()))),
-			None => Ok(None),
-		}
+		// See the AWS provider: flat-key selection, shared rendering.
+		Ok(json.get(json_key).and_then(crate::json_field::render_field))
 	}
 
 	async fn get_async(
@@ -688,6 +684,17 @@ mod tests {
 		// cannot leak it regardless of config.
 		let p = ScalewayProvider::new(config("scaleway://fr-par?project_id=abc"));
 		assert!(!p.uri().contains("SCW_SECRET_KEY"));
+	}
+
+	#[test]
+	fn extract_json_key_null_is_none_not_the_string_null() {
+		// Mirrors the AWS provider: a null value is no value.
+		let v = r#"{"user": "admin", "password": null}"#;
+		assert!(
+			ScalewayProvider::extract_json_key("s", v, "password")
+				.unwrap()
+				.is_none()
+		);
 	}
 
 	#[test]

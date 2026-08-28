@@ -28,6 +28,13 @@ pub fn monosecret_native_resolve(request_json: &str) -> String {
 	monosecret::resolve_json(request_json)
 }
 
+/// Process a versioned native operation request. Exposed as
+/// `monosecret_native_call()` for inline-spec resolution.
+#[php_function]
+pub fn monosecret_native_call(request_json: &str) -> String {
+	monosecret::call_json(request_json)
+}
+
 /// The extension's version (tracks the crate version). Exposed to PHP as
 /// `monosecret_native_abi_version()`.
 #[php_function]
@@ -39,5 +46,6 @@ pub fn monosecret_native_abi_version() -> String {
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
 	module
 		.function(wrap_function!(monosecret_native_resolve))
+		.function(wrap_function!(monosecret_native_call))
 		.function(wrap_function!(monosecret_native_abi_version))
 }

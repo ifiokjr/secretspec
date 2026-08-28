@@ -1,6 +1,6 @@
 //! The Monosecret C ABI: a deliberately narrow, JSON-in/JSON-out boundary.
 //!
-//! The entire native surface is three functions. Richness lives in the
+//! The native surface is four functions. Richness lives in the
 //! versioned JSON contract, not in a wide C API, so that every consumer of
 //! this ABI (Go via purego, Ruby via ffi, Haskell via the GHC FFI) stays a
 //! thin shell: marshal a request string in, get a response string out, free it.
@@ -15,18 +15,24 @@
 //!   returns a heap-allocated, NUL-terminated JSON **response envelope**. The
 //!   caller owns the returned pointer and must free it with [`monosecret_free`].
 //! - [`monosecret_abi_version`] returns a static version string (do not free).
+//! - [`monosecret_call`] accepts the versioned operation envelope used by SDKs
+//!   that need an inline declaration source.
 //!
 //! ## Request JSON
 //!
 //! ```json
 //! { "path": "…/monosecret.toml", "provider": "keyring://",
 //!   "profile": "production", "scope": "api", "reason": "boot",
+//!   "caller": { "name": "git", "operation": "credential_get", "resource": "github.com" },
 //!   "no_values": false, "mode": "resolve" }
 //! ```
 //!
 //! All fields are optional. `path` omitted means "walk up from the working
 //! directory" like the CLI. `scope` selects a `[scopes]` subset of the active
 //! profile (Monosecret 0.17+).
+//! `caller` supplies structured, caller-asserted integration context and is
+//! available in Monosecret 0.20+; unlike `reason`, it never satisfies the
+//! `require_reason` policy.
 //!
 //! `mode` selects which shape comes back, and defaults to `"resolve"`:
 //!
@@ -97,7 +103,7 @@ pub extern "C" fn monosecret_abi_version() -> *const c_char {
 	ABI_VERSION.as_ptr().cast()
 }
 
-/// Frees a string previously returned by [`monosecret_resolve`].
+/// Frees a string previously returned by [`monosecret_resolve`] or [`monosecret_call`].
 ///
 /// # Safety
 /// `ptr` must be either null or a pointer returned by [`monosecret_resolve`]
@@ -135,7 +141,39 @@ pub unsafe extern "C" fn monosecret_resolve(request_json: *const c_char) -> *mut
 	}
 }
 
+/// Executes a versioned native operation described by a JSON request.
+///
+/// This is intentionally a separate symbol from [`monosecret_resolve`]. SDKs
+/// that require inline declarations can use its presence as a capability check:
+/// an older library fails while binding the symbol instead of silently ignoring
+/// an inline declaration and searching the filesystem.
+///
+/// # Safety
+/// `request_json` must be null or a valid pointer to a NUL-terminated C string.
+/// The returned pointer is owned by the caller and must be freed with
+/// [`monosecret_free`]. Returns null only on catastrophic allocation failure.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monosecret_call(request_json: *const c_char) -> *mut c_char {
+	let json = match catch_unwind(AssertUnwindSafe(|| call_inner(request_json))) {
+		Ok(json) => json,
+		Err(_) => input_error("internal panic during native call"),
+	};
+
+	match CString::new(json) {
+		Ok(c) => c.into_raw(),
+		Err(_) => std::ptr::null_mut(),
+	}
+}
+
 fn resolve_inner(request_json: *const c_char) -> String {
+	decode_input(request_json, monosecret::resolve_json)
+}
+
+fn call_inner(request_json: *const c_char) -> String {
+	decode_input(request_json, monosecret::call_json)
+}
+
+fn decode_input(request_json: *const c_char, dispatch: impl FnOnce(&str) -> String) -> String {
 	if request_json.is_null() {
 		return input_error("request_json was null");
 	}
@@ -143,7 +181,7 @@ fn resolve_inner(request_json: *const c_char) -> String {
 	// Safety: caller contract guarantees a NUL-terminated string when non-null.
 	let raw = unsafe { CStr::from_ptr(request_json) };
 	match raw.to_str() {
-		Ok(text) => monosecret::resolve_json(text),
+		Ok(text) => dispatch(text),
 		Err(_) => input_error("request_json was not valid UTF-8"),
 	}
 }

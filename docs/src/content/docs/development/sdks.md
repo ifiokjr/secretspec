@@ -57,17 +57,17 @@ artifact publication is deferred until Monosecret 0.2+.
 Platforms each released artifact covers. Windows support for the Python wheel,
 the Ruby gem, and the PHP extension binaries is added in Monosecret 0.2.
 
-| SDK                 | Linux x64          | Linux arm64        | macOS Intel | macOS Apple silicon | Windows x64          | Windows arm64 |
-| ------------------- | ------------------ | ------------------ | ----------- | ------------------- | -------------------- | ------------- |
-| Rust (source crate) | ✓                  | ✓                  | ✓           | ✓                   | ✓                    | ✓             |
-| Python              | ✓                  | ✓                  | —           | ✓                   | ✓ (0.2+)             | —             |
-| Node.js             | ✓                  | ✓                  | —           | ✓                   | ✓                    | —             |
-| Go                  | ✓                  | ✓                  | —           | ✓                   | ✓                    | —             |
-| Ruby                | ✓                  | ✓                  | —           | ✓                   | ✓ (0.2+)             | —             |
-| C#                  | ✓ (glibc and musl) | ✓ (glibc and musl) | ✓           | ✓                   | ✓                    | ✓             |
-| Swift (0.2+)        | —                  | —                  | ✓           | ✓                   | —                    | —             |
-| PHP                 | ✓                  | ✓                  | —           | ✓                   | ✓ (0.2+)             | —             |
-| Haskell (source)    | ✓ (CI-covered)     | —                  | —           | —                   | ✓ (CI-covered, 0.2+) | —             |
+| SDK                 | Linux x64                | Linux arm64              | macOS Intel | macOS Apple silicon | Windows x64           | Windows arm64 |
+| ------------------- | ------------------------ | ------------------------ | ----------- | ------------------- | --------------------- | ------------- |
+| Rust (source crate) | ✓                        | ✓                        | ✓           | ✓                   | ✓                     | ✓             |
+| Python              | ✓                        | ✓                        | —           | ✓                   | ✓ (0.17+)             | —             |
+| Node.js             | ✓ (glibc and musl 0.20+) | ✓ (glibc and musl 0.20+) | —           | ✓                   | ✓                     | —             |
+| Go                  | ✓                        | ✓                        | —           | ✓                   | ✓                     | —             |
+| Ruby                | ✓                        | ✓                        | —           | ✓                   | ✓ (0.17+)             | —             |
+| C#                  | ✓ (glibc and musl)       | ✓ (glibc and musl)       | ✓           | ✓                   | ✓                     | ✓             |
+| Swift (0.18+)       | —                        | —                        | ✓           | ✓                   | —                     | —             |
+| PHP                 | ✓                        | ✓                        | —           | ✓                   | ✓ (0.17+)             | —             |
+| Haskell (source)    | ✓ (CI-covered)           | —                        | —           | —                   | ✓ (CI-covered, 0.17+) | —             |
 
 Notes:
 
@@ -88,7 +88,7 @@ Notes:
 
 Swift interoperates with C directly through Clang modules, and SwiftPM
 distributes native Apple binaries as XCFramework binary targets. That fits the
-existing `monosecret_ffi` boundary exactly: three ownership-audited C functions
+existing `monosecret_ffi` boundary exactly: ownership-audited C functions
 carry one already-versioned JSON contract.
 
 [UniFFI](https://mozilla.github.io/uniffi-rs/latest/) is a good default for a
@@ -104,6 +104,26 @@ resolution remains entirely in Rust.
 Swift tests. A future 0.2+ release workflow must build both macOS architectures,
 archive the XCFramework, and replace the all-zero checksum in `Package.swift`
 before publication.
+
+## Versioned native calls (0.20+)
+
+`monosecret_resolve` remains the compatibility request for path and search
+resolution. SDKs that need a declaration held in application code call the new
+`monosecret_call` symbol with request version 1 instead. A separately versioned
+`source` is exactly one of `search`, `path`, or `inline`; an inline source also
+carries a logical `base_dir`, used for relative provider paths as
+`Secrets::from_spec_at` does.
+
+The inline specification is strict JSON, not the private Rust `Config` or a
+serialized compiled manifest. Its v1 shape contains `project`, `profiles`, and
+a `secrets` object per profile, with optional provider aliases, scopes, and
+the normal secret declaration fields. `project.extends` uses paths relative to
+the inline declaration's `base_dir`, so the full configuration model—including
+inheritance—is supported. Unknown request and declaration fields, unsupported
+versions, and unsupported operations are rejected. SDKs bind `monosecret_call`
+only when using inline specs: an older library therefore reports the missing
+capability instead of silently ignoring an unknown field and loading a
+filesystem manifest.
 
 ## Windows toolchains
 

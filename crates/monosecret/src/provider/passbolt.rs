@@ -606,18 +606,17 @@ impl Provider for PassboltProvider {
 					.ok_or_else(|| Self::missing_reference(&coords.item))?
 			}
 			Address::Convention { .. } => {
-				match self.find_id_by_name(&coords.item)? {
-					Some(id) => id,
-					None => {
-						let mut args =
-							vec!["create", "resource", "--name", &coords.item, &flag, secret];
-						if let Some(folder) = &self.config.folder_id {
-							args.push("--folderParentID");
-							args.push(folder);
-						}
-						self.run(&args)?;
-						return Ok(());
+				if let Some(id) = self.find_id_by_name(&coords.item)? {
+					id
+				} else {
+					let mut args =
+						vec!["create", "resource", "--name", &coords.item, &flag, secret];
+					if let Some(folder) = &self.config.folder_id {
+						args.push("--folderParentID");
+						args.push(folder);
 					}
+					self.run(&args)?;
+					return Ok(());
 				}
 			}
 		};
@@ -716,14 +715,7 @@ impl Provider for PassboltProvider {
 				continue;
 			};
 			if declarations
-				.insert(
-					key.to_string(),
-					Secret {
-						description: Some(format!("{key} secret")),
-						required: Some(true),
-						..Default::default()
-					},
-				)
+				.insert(key.to_string(), Secret::required(format!("{key} secret")))
 				.is_some()
 			{
 				return Err(MonosecretError::ProviderOperationFailed(format!(

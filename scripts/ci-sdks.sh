@@ -10,14 +10,33 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-echo "==> Building cdylib + staticlib + CLI"
-cargo build -p monosecret_ffi -p monosecret
+# Static-link consumers otherwise spend minutes processing a ~1.4 GB archive
+# whose size is mostly debug information. Keep dev's unoptimized code but omit
+# symbols: these suites validate SDK behavior and linking, not Rust backtraces.
+export CARGO_PROFILE_DEV_DEBUG=0
+
+echo "==> Building shared Rust SDK artifacts"
+# Build every Rust-backed SDK in one Cargo invocation. Cargo can then unify the
+# resolver dependency graph instead of serially rebuilding it for the FFI,
+# Node, and PHP packages after the language suites have started.
+cargo build \
+	-p monosecret_ffi \
+	-p monosecret \
+	-p monosecret_client_native \
+	-p monosecret-php-native \
+	-p monosecret_py_native
 
 target_dir="$(cargo metadata --no-deps --format-version 1 |
 	grep -o '"target_directory":"[^"]*"' | head -1 | sed 's/.*:"\(.*\)"/\1/')"
 case "$(uname -s)" in
-Darwin) lib_name="libmonosecret_ffi.dylib" ;;
-*) lib_name="libmonosecret_ffi.so" ;;
+Darwin)
+	lib_name="libmonosecret_ffi.dylib"
+	client_native_name="libmonosecret_client_native.dylib"
+	;;
+*)
+	lib_name="libmonosecret_ffi.so"
+	client_native_name="libmonosecret_client_native.so"
+	;;
 esac
 # Runtime-dlopen contract (SDKs not yet migrated to static linking still use it).
 export MONOSECRET_FFI_LIB="$target_dir/debug/$lib_name"

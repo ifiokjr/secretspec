@@ -17,6 +17,7 @@
 
 use std::collections::HashMap;
 
+use crate::compiled_spec::CompiledSecret;
 use crate::composition::Template;
 use crate::config::NativeAddress;
 use crate::config::Secret;
@@ -24,7 +25,6 @@ use crate::config::SecretEncoding;
 use crate::config::SecretExtract;
 use crate::error::MonosecretError;
 use crate::error::Result;
-use crate::manifest::CompiledSecret;
 use crate::provider::OwnedAddress;
 use crate::secrets::Secrets;
 
@@ -251,12 +251,11 @@ impl ResolutionPlan {
 				continue;
 			};
 			let primary = route.group_key();
-			match group_index.get(&primary) {
-				Some(&idx) => groups[idx].1.push(secret),
-				None => {
-					group_index.insert(primary, groups.len());
-					groups.push((primary, vec![secret]));
-				}
+			if let Some(&idx) = group_index.get(&primary) {
+				groups[idx].1.push(secret)
+			} else {
+				group_index.insert(primary, groups.len());
+				groups.push((primary, vec![secret]));
 			}
 		}
 		groups
@@ -550,56 +549,53 @@ impl Secrets {
 				cache: None,
 			});
 		}
-		match config.providers.as_deref() {
-			Some([first, fallback @ ..]) => {
-				// A cached alias expands into a whole route — sources, order,
-				// and cache — so it cannot also be one link of a chain, in any
-				// position. Were a later position accepted, the chain walk would
-				// fail to resolve it, warn, and silently continue without the
-				// cache or its sources, and writes would go to the wrong store.
-				if let Some(spec) = std::iter::once(first)
-					.chain(fallback)
-					.find(|spec| self.cached_alias(spec).is_some())
-				{
-					if !fallback.is_empty() {
-						return Err(MonosecretError::ProviderOperationFailed(format!(
-							"cached provider alias '{spec}' is a complete route and cannot be \
-                             combined with additional entries in a secret's providers list"
-						)));
-					}
-					let alias = self
-						.cached_alias(spec)
-						.expect("the spec was just found to be a cached alias");
-					return self.cached_route(spec, &alias);
+		if let Some([first, fallback @ ..]) = config.providers.as_deref() {
+			// A cached alias expands into a whole route — sources, order,
+			// and cache — so it cannot also be one link of a chain, in any
+			// position. Were a later position accepted, the chain walk would
+			// fail to resolve it, warn, and silently continue without the
+			// cache or its sources, and writes would go to the wrong store.
+			if let Some(spec) = std::iter::once(first)
+				.chain(fallback)
+				.find(|spec| self.cached_alias(spec).is_some())
+			{
+				if !fallback.is_empty() {
+					return Err(MonosecretError::ProviderOperationFailed(format!(
+						"cached provider alias '{spec}' is a complete route and cannot be \
+                               combined with additional entries in a secret's providers list"
+					)));
 				}
-				// Unlike an override, an undefined alias as chain primary is a
-				// hard error here (`resolve_one_provider` fails fast).
-				let uri = self.resolve_one_provider(first)?;
-				self.validate_credential_sources(first)?;
-				Ok(Route {
-					primary: Some(ResolvedPrimary {
-						spec: first.provider_alias().to_string(),
-						uri,
-					}),
-					fallback: fallback
-						.iter()
-						.map(|reference| reference.provider_alias().to_string())
-						.collect(),
-					cache: None,
-				})
+				let alias = self
+					.cached_alias(spec)
+					.expect("the spec was just found to be a cached alias");
+				return self.cached_route(spec, &alias);
 			}
-			_ => {
-				if let Some(spec) = self.configured_default_provider_spec()
-					&& let Some(alias) = self.cached_alias(&spec)
-				{
-					return self.cached_route(&spec, &alias);
-				}
-				Ok(Route {
-					primary: None,
-					fallback: Vec::new(),
-					cache: None,
-				})
+			// Unlike an override, an undefined alias as chain primary is a
+			// hard error here (`resolve_one_provider` fails fast).
+			let uri = self.resolve_one_provider(first)?;
+			self.validate_credential_sources(first)?;
+			Ok(Route {
+				primary: Some(ResolvedPrimary {
+					spec: first.provider_alias().to_string(),
+					uri,
+				}),
+				fallback: fallback
+					.iter()
+					.map(|reference| reference.provider_alias().to_string())
+					.collect(),
+				cache: None,
+			})
+		} else {
+			if let Some(spec) = self.configured_default_provider_spec()
+				&& let Some(alias) = self.cached_alias(&spec)
+			{
+				return self.cached_route(&spec, &alias);
 			}
+			Ok(Route {
+				primary: None,
+				fallback: Vec::new(),
+				cache: None,
+			})
 		}
 	}
 
@@ -680,8 +676,10 @@ impl Secrets {
 				let template = self
 					.lookup_provider_alias_entry(spec)
 					.and_then(|alias| alias.reference_template().cloned())
-					.map(|template| coordinate_fingerprint("ref-template", template.coordinates()))
-					.unwrap_or_else(|| "convention".to_string());
+					.map_or_else(
+						|| "convention".to_string(),
+						|template| coordinate_fingerprint("ref-template", template.coordinates()),
+					);
 				stable_fingerprint(["source-route", spec, uri, template.as_str()])
 			})
 			.collect::<Vec<_>>();

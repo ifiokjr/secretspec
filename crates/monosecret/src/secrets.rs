@@ -3,16 +3,20 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::convert::TryFrom;
 use std::env;
+use std::hash::Hash;
 use std::io::IsTerminal;
 use std::io::Read;
+use std::io::Write;
 use std::io::{self};
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use std::process::ExitStatus;
 use std::sync::Arc;
 use std::sync::Mutex;
+#[cfg(unix)]
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use colored::Colorize;
@@ -26,7 +30,18 @@ use data_encoding::HEXLOWER_PERMISSIVE;
 use secrecy::ExposeSecret;
 use secrecy::SecretSlice;
 use secrecy::SecretString;
+#[cfg(unix)]
+use signal_hook::consts::signal::SIGHUP;
+#[cfg(unix)]
+use signal_hook::consts::signal::SIGINT;
+#[cfg(unix)]
+use signal_hook::consts::signal::SIGTERM;
+#[cfg(unix)]
+use signal_hook::iterator::Handle as SignalHandle;
+#[cfg(unix)]
+use signal_hook::iterator::Signals;
 
+use crate::CallerContext;
 use crate::audit::AuditAction;
 use crate::audit::AuditContext;
 use crate::audit::AuditLogger;
@@ -34,6 +49,8 @@ use crate::audit::AuditOutcome;
 use crate::cache::CacheEntryStatus;
 use crate::cache::CacheOwnership;
 use crate::cache::{self};
+use crate::compiled_spec::CompiledSpec;
+use crate::compiled_spec::MissingPolicy;
 use crate::config::Config;
 use crate::config::CredentialSource;
 use crate::config::ExtractFormat;
@@ -48,8 +65,6 @@ use crate::config::SecretExtract;
 use crate::config::SecretRequest;
 use crate::error::MonosecretError;
 use crate::error::Result;
-use crate::manifest::CompiledManifest;
-use crate::manifest::MissingPolicy;
 use crate::plan::PlannedSecret;
 use crate::plan::ResolutionPlan;
 use crate::plan::ResolvedCache;
@@ -68,10 +83,76 @@ use crate::resolve::RESOLVE_SCHEMA_VERSION;
 use crate::resolve::ResolveResponse;
 use crate::resolve::ResolvedSecret;
 use crate::resolve::ResolvedSource;
+use crate::spec::Spec;
 use crate::validation::ConstraintKind;
 use crate::validation::ConstraintViolation;
 use crate::validation::ValidatedSecrets;
 use crate::validation::ValidationErrors;
+
+#[cfg(unix)]
+struct ChildSignalForwarder {
+	signals: Option<Signals>,
+	handle: SignalHandle,
+	thread: Option<JoinHandle<()>>,
+}
+
+#[cfg(unix)]
+impl ChildSignalForwarder {
+	/// Install handlers before spawning the child so a signal cannot slip
+	/// through while Monosecret is becoming the child's supervisor.
+	fn prepare() -> io::Result<Self> {
+		let signals = Signals::new([SIGTERM, SIGINT, SIGHUP])?;
+		let handle = signals.handle();
+		Ok(Self {
+			signals: Some(signals),
+			handle,
+			thread: None,
+		})
+	}
+
+	fn start(&mut self, child_pid: u32) {
+		let mut signals = self
+			.signals
+			.take()
+			.expect("signal forwarder can only be started once");
+		self.thread = Some(std::thread::spawn(move || {
+			for signal in signals.forever() {
+				// `kill` is async-signal-safe, and this call runs on an ordinary
+				// thread rather than inside the installed signal handler. The
+				// child may already have exited, in which case ESRCH is benign.
+				unsafe {
+					libc::kill(child_pid as libc::pid_t, signal);
+				}
+			}
+		}));
+	}
+}
+
+#[cfg(unix)]
+impl Drop for ChildSignalForwarder {
+	fn drop(&mut self) {
+		self.handle.close();
+		if let Some(thread) = self.thread.take() {
+			let _ = thread.join();
+		}
+	}
+}
+
+fn command_exit_code(status: ExitStatus) -> i32 {
+	if let Some(code) = status.code() {
+		return code;
+	}
+
+	#[cfg(unix)]
+	{
+		use std::os::unix::process::ExitStatusExt;
+		if let Some(signal) = status.signal() {
+			return 128 + signal;
+		}
+	}
+
+	1
+}
 
 /// Format the human-facing name and optional description used by status output.
 ///
@@ -288,7 +369,7 @@ fn cached_entry(
 }
 
 /// Convention-path profile segment for provider credentials. A provider's
-/// authentication (an access token, an AppRole id) is a property of the alias,
+/// authentication (an access token, an `AppRole` id) is a property of the alias,
 /// not of any one profile, so a convention-path credential is stored under one
 /// fixed segment rather than the active profile. Scoping it by profile would
 /// make a credential stored via `config provider login` (which runs under the
@@ -330,9 +411,7 @@ impl CredentialSource {
 }
 
 type ProviderCredentialsKey = (String, String);
-type ProviderCredentialsSlot = Arc<Mutex<Option<ProviderCredentials>>>;
 type ProviderKey = (String, String);
-type ProviderSlot = Arc<Mutex<Option<Arc<dyn ProviderTrait>>>>;
 type GroupFetch<'a> = (
 	Option<&'a str>,
 	Vec<&'a PlannedSecret>,
@@ -358,24 +437,469 @@ struct ImportAliasDivergence {
 	affected_secrets: Vec<String>,
 }
 
-/// Memoized provider credentials with single-flight population per key.
-///
-/// The outer mutex protects only the key-to-slot map. Resolution runs while
-/// holding the selected slot, so callers for the same alias/profile wait for
-/// its first fetch while unrelated keys can populate concurrently.
 #[derive(Default)]
-struct ProviderCredentialsCache {
-	entries: Mutex<HashMap<ProviderCredentialsKey, ProviderCredentialsSlot>>,
+struct ImportSummary {
+	imported: usize,
+	already_exists: usize,
+	not_found: usize,
+	deleted_from_source: usize,
+	kept_in_source: usize,
 }
 
-impl ProviderCredentialsCache {
-	fn get_or_try_init<F>(
-		&self,
-		key: ProviderCredentialsKey,
-		resolve: F,
-	) -> Result<ProviderCredentials>
+impl ImportSummary {
+	fn audit_outcome(&self) -> AuditOutcome {
+		if self.imported > 0 {
+			AuditOutcome::Written
+		} else if self.already_exists > 0 {
+			AuditOutcome::Found
+		} else {
+			AuditOutcome::Missing
+		}
+	}
+}
+
+/// Stateful import operation whose methods mirror the mutation boundary:
+/// prepare first, copy second, verify third, and only then delete sources.
+struct ImportPlan<'a> {
+	secrets: &'a Secrets,
+	from_provider: &'a str,
+	profile: String,
+	delete_source: bool,
+	source_provider: Option<Arc<dyn ProviderTrait>>,
+	source_uri: Option<String>,
+	source_display: Option<String>,
+	entries: Vec<PreparedImport>,
+	read_names: Vec<String>,
+	summary: ImportSummary,
+}
+
+impl<'a> ImportPlan<'a> {
+	fn new(
+		secrets: &'a Secrets,
+		from_provider: &'a str,
+		profile: String,
+		delete_source: bool,
+	) -> Self {
+		Self {
+			secrets,
+			from_provider,
+			profile,
+			delete_source,
+			source_provider: None,
+			source_uri: None,
+			source_display: None,
+			entries: Vec::new(),
+			read_names: Vec::new(),
+			summary: ImportSummary::default(),
+		}
+	}
+
+	fn run(&mut self) -> Result<()> {
+		self.prepare_source()?;
+		self.prepare_entries()?;
+		self.validate_target_collisions()?;
+		if self.delete_source {
+			self.validate_cleanup_collisions()?;
+		}
+		self.copy_missing_targets()?;
+		if self.delete_source {
+			self.verify_copied_targets()?;
+			self.delete_matching_sources()?;
+		}
+		self.report_entries();
+		Ok(())
+	}
+
+	fn prepare_source(&mut self) -> Result<()> {
+		let source = self
+			.secrets
+			.build_provider(self.from_provider.to_string(), Some(&self.profile))?;
+		let provider_uri = source.uri();
+		self.source_uri = Some(provider_uri.clone());
+		self.source_display = Some(
+			if self
+				.secrets
+				.lookup_provider_alias_entry(self.from_provider)
+				.is_some()
+			{
+				format!("provider alias '{}' ({provider_uri})", self.from_provider)
+			} else {
+				provider_uri.clone()
+			},
+		);
+
+		if self.delete_source
+			&& !crate::provider::spec_provider_deletes(
+				&self
+					.secrets
+					.resolve_provider_spec(self.from_provider.to_string()),
+			) {
+			return Err(MonosecretError::ProviderOperationFailed(format!(
+				"provider '{}' does not support deleting secrets and cannot be used with import --delete-source",
+				source.name()
+			)));
+		}
+
+		eprintln!(
+			"Importing secrets from {} (profile: {})...\n",
+			self.source_display
+				.as_deref()
+				.expect("source display is set with the provider URI")
+				.blue(),
+			self.profile.cyan()
+		);
+		self.source_provider = Some(Arc::from(source));
+		Ok(())
+	}
+
+	fn prepare_entries(&mut self) -> Result<()> {
+		let source_provider = Arc::clone(
+			self.source_provider
+				.as_ref()
+				.expect("the source provider is prepared first"),
+		);
+		let import_names = self
+			.secrets
+			.profile_secret_names_unscoped(Some(&self.profile))?;
+		let mut planned_imports = Vec::new();
+
+		for name in import_names {
+			let planned = self
+				.secrets
+				.plan_secret(&name, &self.profile, None)?
+				.expect("Secret should exist since we're iterating over it");
+			if planned.route.is_none() {
+				continue;
+			}
+			if planned.extract().is_some() {
+				return Err(MonosecretError::ExtractedSecretReadOnly(
+					planned.name.clone(),
+				));
+			}
+			planned_imports.push(planned);
+		}
+
+		let divergences = self.secrets.literal_import_alias_divergences(
+			self.from_provider,
+			source_provider.as_ref(),
+			&planned_imports,
+			&self.profile,
+		);
+		Secrets::warn_literal_import_alias_divergences(
+			self.source_uri
+				.as_deref()
+				.expect("the source URI is prepared first"),
+			&divergences,
+		);
+
+		for planned in planned_imports {
+			let route = planned
+				.route
+				.as_ref()
+				.expect("planned imports are provider-backed");
+
+			self.read_names.push(planned.name.clone());
+			let source_address = self.secrets.address_for_spec(
+				&planned,
+				Some(self.from_provider),
+				&self.secrets.config.project.name,
+				&self.profile,
+			)?;
+			let target_address = self.secrets.address_for_spec(
+				&planned,
+				route.group_key(),
+				&self.secrets.config.project.name,
+				&self.profile,
+			)?;
+			let target_provider = self
+				.secrets
+				.write_provider_for_route(route, Some(&self.profile))?;
+
+			if self.delete_source
+				&& source_provider.same_entries(
+					source_address.as_address(),
+					target_provider.as_ref(),
+					target_address.as_address(),
+				)? {
+				return Err(MonosecretError::ProviderOperationFailed(format!(
+					"refusing to delete '{}' from the import source because source and destination resolve to the same provider entry ({})",
+					planned.name,
+					source_provider.uri()
+				)));
+			}
+
+			let source_value = source_provider.get(source_address.as_address())?;
+			let target_value = target_provider.get(target_address.as_address())?;
+			if let Some(value) = &source_value {
+				Secrets::validate_import_value(&planned, &planned.name, value)?;
+				if target_value.is_none() {
+					target_provider.check_writable(target_address.as_address())?;
+				}
+				let target_will_match = target_value
+					.as_ref()
+					.is_none_or(|existing| existing.expose_secret() == value.expose_secret());
+				if self.delete_source && target_will_match {
+					source_provider.check_deletable(source_address.as_address())?;
+				}
+			}
+
+			self.entries.push(PreparedImport {
+				planned,
+				target_provider,
+				source_address,
+				target_address,
+				source_value,
+				target_value,
+				copied: false,
+				source_deleted: false,
+			});
+		}
+		Ok(())
+	}
+
+	fn validate_target_collisions(&self) -> Result<()> {
+		for left_index in 0..self.entries.len() {
+			let left = &self.entries[left_index];
+			for right in &self.entries[left_index + 1..] {
+				if left.target_provider.same_entries(
+					left.target_address.as_address(),
+					right.target_provider.as_ref(),
+					right.target_address.as_address(),
+				)? {
+					return Err(MonosecretError::ProviderOperationFailed(format!(
+						"refusing to import '{}' and '{}' because they resolve to the same destination provider entry ({})",
+						left.planned.name,
+						right.planned.name,
+						left.target_provider.uri()
+					)));
+				}
+			}
+		}
+		Ok(())
+	}
+
+	fn validate_cleanup_collisions(&self) -> Result<()> {
+		let source_provider = self
+			.source_provider
+			.as_ref()
+			.expect("the source provider is prepared first");
+		for (source_index, source) in self.entries.iter().enumerate() {
+			let Some(source_value) = &source.source_value else {
+				continue;
+			};
+			let source_will_be_deleted = source.target_value.as_ref().is_none_or(|target_value| {
+				source_value.expose_secret() == target_value.expose_secret()
+			});
+			if !source_will_be_deleted {
+				continue;
+			}
+
+			for (target_index, target) in self.entries.iter().enumerate() {
+				if source_index == target_index {
+					continue;
+				}
+				if source_provider.same_entries(
+					source.source_address.as_address(),
+					target.target_provider.as_ref(),
+					target.target_address.as_address(),
+				)? {
+					return Err(MonosecretError::ProviderOperationFailed(format!(
+						"refusing to delete '{}' from the import source because it resolves to the destination provider entry for '{}' ({})",
+						source.planned.name,
+						target.planned.name,
+						target.target_provider.uri()
+					)));
+				}
+			}
+		}
+		Ok(())
+	}
+
+	fn copy_missing_targets(&mut self) -> Result<()> {
+		for entry in &mut self.entries {
+			let (Some(value), None) = (&entry.source_value, &entry.target_value) else {
+				continue;
+			};
+			let route = entry
+				.planned
+				.route
+				.as_ref()
+				.expect("prepared imports are provider-backed");
+			let set_result = entry
+				.target_provider
+				.set(entry.target_address.as_address(), value);
+			self.secrets.audit_write_result(
+				&set_result,
+				&entry.planned.name,
+				&self.profile,
+				Some(entry.target_provider.uri()),
+				entry.target_address.native(),
+				None,
+			);
+			set_result?;
+			self.secrets
+				.sync_cache_after_write(&entry.planned, route, &self.profile, value);
+			entry.copied = true;
+			self.summary.imported += 1;
+		}
+		Ok(())
+	}
+
+	fn verify_copied_targets(&mut self) -> Result<()> {
+		for entry in self.entries.iter_mut().filter(|entry| entry.copied) {
+			let expected = entry
+				.source_value
+				.as_ref()
+				.expect("copied entries have source values");
+			let stored = entry
+				.target_provider
+				.get(entry.target_address.as_address())?
+				.ok_or_else(|| {
+					MonosecretError::ProviderOperationFailed(format!(
+						"destination verification failed for '{}'; the source value was retained",
+						entry.planned.name
+					))
+				})?;
+			if stored.expose_secret() != expected.expose_secret() {
+				return Err(MonosecretError::ProviderOperationFailed(format!(
+					"destination verification failed for '{}'; the source value was retained",
+					entry.planned.name
+				)));
+			}
+			Secrets::validate_import_value(&entry.planned, &entry.planned.name, &stored)?;
+			entry.target_value = Some(stored);
+		}
+		Ok(())
+	}
+
+	fn delete_matching_sources(&mut self) -> Result<()> {
+		let source_provider = Arc::clone(
+			self.source_provider
+				.as_ref()
+				.expect("the source provider is prepared first"),
+		);
+		for entry in &mut self.entries {
+			let (Some(source), Some(target)) = (&entry.source_value, &entry.target_value) else {
+				continue;
+			};
+			if source.expose_secret() != target.expose_secret() {
+				continue;
+			}
+			let delete_result = source_provider.delete(entry.source_address.as_address());
+			self.secrets.audit_delete_result(
+				&delete_result,
+				&entry.planned.name,
+				&self.profile,
+				Some(source_provider.uri()),
+				entry.source_address.native(),
+			);
+			entry.source_deleted = delete_result?;
+			self.summary.deleted_from_source += usize::from(entry.source_deleted);
+		}
+		Ok(())
+	}
+
+	fn report_entries(&mut self) {
+		for entry in &self.entries {
+			let name = &entry.planned.name;
+			let label = format_secret_label(name, entry.planned.config().description.as_deref());
+			let target_name = entry.target_provider.name().blue();
+
+			if entry.copied {
+				if self.delete_source && entry.source_deleted {
+					eprintln!(
+						"{} {} (→ {}; deleted from source)",
+						"✓".green(),
+						label,
+						target_name
+					);
+				} else {
+					eprintln!("{} {} (→ {})", "✓".green(), label, target_name);
+				}
+				continue;
+			}
+
+			match (&entry.source_value, &entry.target_value) {
+				(Some(source), Some(target)) => {
+					self.summary.already_exists += 1;
+					if self.delete_source && source.expose_secret() != target.expose_secret() {
+						self.summary.kept_in_source += 1;
+						eprintln!(
+							"{} {} {} (→ {}; source retained)",
+							"○".yellow(),
+							label,
+							"(target value differs)".yellow(),
+							target_name
+						);
+					} else if self.delete_source && entry.source_deleted {
+						eprintln!(
+							"{} {} {} (→ {}; deleted from source)",
+							"✓".green(),
+							label,
+							"(already exists in target)".yellow(),
+							target_name
+						);
+					} else {
+						eprintln!(
+							"{} {} {} (→ {})",
+							"○".yellow(),
+							label,
+							"(already exists in target)".yellow(),
+							target_name
+						);
+					}
+				}
+				(None, Some(_)) => {
+					self.summary.already_exists += 1;
+					eprintln!(
+						"{} {} {} (→ {})",
+						"○".blue(),
+						label,
+						"(already in target, not in source)".blue(),
+						target_name
+					);
+				}
+				(None, None) => {
+					self.summary.not_found += 1;
+					eprintln!("{} {} {}", "✗".red(), label, "(not found in source)".red());
+				}
+				(Some(_), None) => {
+					unreachable!("a prepared missing target was copied or returned an error")
+				}
+			}
+		}
+	}
+}
+
+type SingleFlightSlot<V> = Arc<Mutex<Option<V>>>;
+
+/// A retry-on-error, single-flight value cache.
+///
+/// Population for one key runs while holding that key's slot, so concurrent
+/// callers share the first successful value. Different keys initialize
+/// independently because the outer map lock is released before initialization.
+/// Failed attempts remove their slot instead of being memoized, allowing a
+/// later call to retry after an external dependency becomes available.
+struct RetryingOnceMap<K, V> {
+	entries: Mutex<HashMap<K, SingleFlightSlot<V>>>,
+}
+
+impl<K, V> Default for RetryingOnceMap<K, V> {
+	fn default() -> Self {
+		Self {
+			entries: Mutex::new(HashMap::new()),
+		}
+	}
+}
+
+impl<K, V> RetryingOnceMap<K, V>
+where
+	K: Clone + Eq + Hash,
+	V: Clone,
+{
+	fn get_or_try_init<E, F>(&self, key: K, initialize: F) -> std::result::Result<V, E>
 	where
-		F: FnOnce() -> Result<ProviderCredentials>,
+		F: FnOnce() -> std::result::Result<V, E>,
 	{
 		let slot = {
 			let mut entries = self.entries.lock().unwrap();
@@ -387,18 +911,16 @@ impl ProviderCredentialsCache {
 		};
 
 		let mut cached = slot.lock().unwrap();
-		if let Some(credentials) = cached.as_ref() {
-			return Ok(credentials.clone());
+		if let Some(value) = cached.as_ref() {
+			return Ok(value.clone());
 		}
 
-		match resolve() {
-			Ok(credentials) => {
-				*cached = Some(credentials.clone());
-				Ok(credentials)
+		match initialize() {
+			Ok(value) => {
+				*cached = Some(value.clone());
+				Ok(value)
 			}
-			Err(err) => {
-				// Do not memoize failures: a later operation may succeed after
-				// credentials or provider availability change.
+			Err(error) => {
 				drop(cached);
 				let mut entries = self.entries.lock().unwrap();
 				if entries
@@ -407,7 +929,7 @@ impl ProviderCredentialsCache {
 				{
 					entries.remove(&key);
 				}
-				Err(err)
+				Err(error)
 			}
 		}
 	}
@@ -415,6 +937,34 @@ impl ProviderCredentialsCache {
 	#[cfg(any(feature = "cli", test))]
 	fn clear(&self) {
 		self.entries.lock().unwrap().clear();
+	}
+}
+
+/// Memoized provider credentials with single-flight population per key.
+///
+/// The outer mutex protects only the key-to-slot map. Resolution runs while
+/// holding the selected slot, so callers for the same alias/profile wait for
+/// its first fetch while unrelated keys can populate concurrently.
+#[derive(Default)]
+struct ProviderCredentialsCache {
+	entries: RetryingOnceMap<ProviderCredentialsKey, ProviderCredentials>,
+}
+
+impl ProviderCredentialsCache {
+	fn get_or_try_init<F>(
+		&self,
+		key: ProviderCredentialsKey,
+		resolve: F,
+	) -> Result<ProviderCredentials>
+	where
+		F: FnOnce() -> Result<ProviderCredentials>,
+	{
+		self.entries.get_or_try_init(key, resolve)
+	}
+
+	#[cfg(any(feature = "cli", test))]
+	fn clear(&self) {
+		self.entries.clear();
 	}
 }
 
@@ -429,7 +979,7 @@ impl ProviderCredentialsCache {
 /// provider-local snapshots cannot leak into a later operation.
 #[derive(Default)]
 struct ProviderCache {
-	entries: Mutex<HashMap<ProviderKey, ProviderSlot>>,
+	entries: RetryingOnceMap<ProviderKey, Arc<dyn ProviderTrait>>,
 }
 
 impl ProviderCache {
@@ -437,41 +987,7 @@ impl ProviderCache {
 	where
 		F: FnOnce() -> Result<Box<dyn ProviderTrait>>,
 	{
-		let slot = {
-			let mut entries = self.entries.lock().unwrap();
-			Arc::clone(
-				entries
-					.entry(key.clone())
-					.or_insert_with(|| Arc::new(Mutex::new(None))),
-			)
-		};
-
-		let mut cached = slot.lock().unwrap();
-		if let Some(provider) = cached.as_ref() {
-			return Ok(Arc::clone(provider));
-		}
-
-		match build() {
-			Ok(provider) => {
-				let provider: Arc<dyn ProviderTrait> = Arc::from(provider);
-				*cached = Some(Arc::clone(&provider));
-				Ok(provider)
-			}
-			Err(err) => {
-				// Do not memoize failures, for the same reason the credentials
-				// cache does not: a later operation may succeed once provider
-				// availability or credentials change.
-				drop(cached);
-				let mut entries = self.entries.lock().unwrap();
-				if entries
-					.get(&key)
-					.is_some_and(|current| Arc::ptr_eq(current, &slot))
-				{
-					entries.remove(&key);
-				}
-				Err(err)
-			}
-		}
+		self.entries.get_or_try_init(key, || build().map(Arc::from))
 	}
 }
 
@@ -511,9 +1027,11 @@ enum Materialize {
 	/// controlling-terminal input for declarations with `prompt = true`.
 	Run,
 	/// Value-free pass: never write a generated secret back to a provider and
-	/// never persist a secret to disk. A generatable-but-absent secret is still
-	/// reported as it *would* resolve, without minting it. Backs `report()` and
-	/// `resolve_without_values()`.
+	/// never persist a secret to disk. A generatable-but-absent secret is
+	/// reported as it *would* resolve, without minting it — unless it is
+	/// required and its store would keep the minted value, in which case the
+	/// value is simply not provisioned yet and is reported missing. Backs
+	/// `report()` and `resolve_without_values()`.
 	None,
 }
 
@@ -548,7 +1066,7 @@ enum ResolvedRepresentation {
 
 /// Walks up from the current directory looking for `monosecret.toml`.
 pub(crate) fn find_config_file() -> Result<PathBuf> {
-	find_config_file_from(std::env::current_dir()?)
+	find_config_file_from(env::current_dir()?)
 }
 
 /// Walks up from `start` looking for `monosecret.toml`, returning the path to the
@@ -587,7 +1105,7 @@ pub struct Secrets {
 	config: Config,
 	/// Effective profile semantics compiled once from `config` and shared by
 	/// planning, runtime resolution, and inventory surfaces.
-	pub(crate) manifest: CompiledManifest,
+	pub(crate) manifest: CompiledSpec,
 	/// Directory containing the loaded `monosecret.toml`. Relative filesystem
 	/// paths held by file-backed providers (e.g. `dotenv`) are resolved against
 	/// this rather than the process's current working directory, so running
@@ -614,6 +1132,9 @@ pub struct Secrets {
 	/// Reason for this session's secret access, forwarded to providers that
 	/// support audit logging (set via [`Secrets::with_reason`]).
 	reason: Option<String>,
+	/// Software integration that invoked Monosecret. This is audit context, not
+	/// a user-supplied reason, and never satisfies `require_reason`.
+	caller: Option<CallerContext>,
 	/// Project policy (`[project].require_reason` in monosecret.toml) controlling
 	/// when secret access requires an explicit reason.
 	require_reason: RequireReason,
@@ -665,14 +1186,14 @@ const LEGACY_AGENT_OPT_IN_ENV: &str = "SECRETSPEC_AGENT";
 /// non-UTF-8 var cannot abort an otherwise-fine monosecret command. Feeds the
 /// crate's `*_with_env` variants, which take the map instead of reading the
 /// environment directly.
-fn utf8_env() -> std::collections::HashMap<String, String> {
-	utf8_env_from(std::env::vars_os())
+fn utf8_env() -> HashMap<String, String> {
+	utf8_env_from(env::vars_os())
 }
 
 /// [`utf8_env`] over an explicit iterator, so the non-UTF-8 filtering can be tested
 /// without mutating the process environment (which is global and racy under `cargo
 /// test`).
-fn utf8_env_from<I>(vars: I) -> std::collections::HashMap<String, String>
+fn utf8_env_from<I>(vars: I) -> HashMap<String, String>
 where
 	I: IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
 {
@@ -689,16 +1210,12 @@ where
 /// Unix). Unlike agent detection ([`utf8_env`]), which may safely *drop*
 /// non-UTF-8 entries, `run` must stay transparent: the child inherits every
 /// parent variable untouched, UTF-8 or not. Secrets overwrite same-named vars.
-fn child_env_from<I, S>(
-	vars: I,
-	secrets: S,
-) -> std::collections::HashMap<std::ffi::OsString, std::ffi::OsString>
+fn child_env_from<I, S>(vars: I, secrets: S) -> HashMap<std::ffi::OsString, std::ffi::OsString>
 where
 	I: IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
 	S: IntoIterator<Item = (String, String)>,
 {
-	let mut env: std::collections::HashMap<std::ffi::OsString, std::ffi::OsString> =
-		vars.into_iter().collect();
+	let mut env: HashMap<std::ffi::OsString, std::ffi::OsString> = vars.into_iter().collect();
 	env.extend(secrets.into_iter().map(|(k, v)| (k.into(), v.into())));
 	env
 }
@@ -723,8 +1240,8 @@ pub(crate) fn detect_agent_id() -> Option<&'static str> {
 ///
 /// [`detect-coding-agent`]: https://crates.io/crates/detect-coding-agent
 pub(crate) fn running_as_agent() -> bool {
-	std::env::var_os(AGENT_OPT_IN_ENV)
-		.or_else(|| std::env::var_os(LEGACY_AGENT_OPT_IN_ENV))
+	env::var_os(AGENT_OPT_IN_ENV)
+		.or_else(|| env::var_os(LEGACY_AGENT_OPT_IN_ENV))
 		.is_some_and(|v| !v.is_empty())
 		|| detect_coding_agent::detect_with_env(utf8_env())
 			.is_some_and(|a| a.is_agent() || a.is_hybrid())
@@ -774,8 +1291,8 @@ pub(crate) fn normalize_reason(reason: &str) -> Option<String> {
 /// normalized via [`normalize_reason`]. An explicit [`Secrets::with_reason`] takes
 /// precedence over this.
 fn env_reason() -> Option<String> {
-	std::env::var(REASON_ENV)
-		.or_else(|_| std::env::var(LEGACY_REASON_ENV))
+	env::var(REASON_ENV)
+		.or_else(|_| env::var(LEGACY_REASON_ENV))
 		.ok()
 		.as_deref()
 		.and_then(normalize_reason)
@@ -822,7 +1339,7 @@ impl Secrets {
 		provider: Option<String>,
 		profile: Option<String>,
 	) -> Self {
-		let manifest = CompiledManifest::compile(&config);
+		let manifest = CompiledSpec::compile(&config);
 		Self {
 			config,
 			manifest,
@@ -833,6 +1350,7 @@ impl Secrets {
 			scope: None,
 			ignore_ambient_scope: false,
 			reason: None,
+			caller: None,
 			require_reason: RequireReason::Never,
 			audit: None,
 			provider_credentials_cache: ProviderCredentialsCache::default(),
@@ -879,13 +1397,35 @@ impl Secrets {
 	///
 	/// * `path` - Path to the `monosecret.toml` file
 	pub fn load_from(path: &Path) -> Result<Self> {
-		let project_config = Config::try_from(path)?;
-		// Semantic validation (required vs default, ref coordinate rules,
-		// generate consistency) runs here so every CLI and SDK entry point
-		// enforces the same rules the config documents. The compiled manifest it
-		// produces is the one stored below, so the effective view is compiled
-		// exactly once per load.
-		let manifest = project_config.validate_and_compile()?;
+		let spec = Spec::try_from(path)?;
+		Self::from_spec(spec)
+	}
+
+	/// Creates a resolver from a Rust-built or parsed [`Spec`].
+	///
+	/// A spec loaded from a path with [`Spec::try_from`] retains the manifest's
+	/// directory for relative provider paths. Rust-built specs and TOML strings
+	/// use the process's current working directory. [`Self::from_spec_at`]
+	/// explicitly overrides either behavior.
+	///
+	/// Available starting with Monosecret 0.20.
+	pub fn from_spec(spec: Spec) -> Result<Self> {
+		let base_dir = spec.base_dir.clone().unwrap_or_else(|| PathBuf::from("."));
+		Self::from_spec_at(spec, base_dir)
+	}
+
+	/// Creates a resolver from a [`Spec`] with an explicit logical base directory.
+	///
+	/// `base_dir` resolves relative paths held by providers, just as
+	/// [`Self::load_from`] uses the directory containing `monosecret.toml`. The
+	/// path is not canonicalized and does not need to exist at construction
+	/// time.
+	///
+	/// Available starting with Monosecret 0.20.
+	pub fn from_spec_at(spec: Spec, base_dir: impl Into<PathBuf>) -> Result<Self> {
+		// A Spec already owns the exact compiled view produced by validation,
+		// so file and Rust frontends both arrive here without recompiling.
+		let (config, manifest) = spec.into_parts();
 		let global_config = GlobalConfig::load()?;
 		// Auditing is a per-machine concern configured in the user-global config
 		// (`[audit]` in ~/.config/monosecret/config.toml), not the project. It is
@@ -896,32 +1436,28 @@ impl Secrets {
 				.and_then(|g| g.audit.clone())
 				.unwrap_or_default(),
 		);
-		// Directory the config lives in, used to resolve relative provider
-		// paths (e.g. `dotenv:.config/.env`) against the project root instead
-		// of the current working directory. Kept logical (not canonicalized) so
-		// a relative `--file` stays relative to the CWD and Windows extended
-		// (`\\?\`) prefixes are never introduced.
-		let config_dir = path
-			.parent()
-			.map(Path::to_path_buf)
-			.unwrap_or_else(|| PathBuf::from("."));
-
 		Ok(Self {
-			require_reason: project_config.project.require_reason.unwrap_or_default(),
-			config: project_config,
+			require_reason: config.project.require_reason.unwrap_or_default(),
+			config,
 			manifest,
-			config_dir,
+			config_dir: base_dir.into(),
 			global_config,
 			provider: None,
 			profile: None,
 			scope: None,
 			ignore_ambient_scope: false,
 			reason: env_reason(),
+			caller: None,
 			audit,
 			provider_credentials_cache: ProviderCredentialsCache::default(),
 			write_target_reporter: None,
 			prompt_reader: None,
 		})
+	}
+
+	pub(crate) fn load_config(config: Config, config_dir: PathBuf) -> Result<Self> {
+		let spec = Spec::from_config_document(config)?;
+		Self::from_spec_at(spec, config_dir)
 	}
 
 	/// Installs the CLI's write-target observer. The provider and core library
@@ -955,7 +1491,7 @@ impl Secrets {
 	///
 	/// # Arguments
 	///
-	/// * `provider` - The provider name or URI (e.g., "keyring", "dotenv:/path/to/.env")
+	/// * `provider` - The provider name or URI (e.g., "keyring", "<dotenv:/path/to/.env>")
 	///
 	/// # Example
 	///
@@ -998,7 +1534,7 @@ impl Secrets {
 
 	/// Returns a secret-value-free manifest for SDK code generation.
 	pub fn manifest(&self) -> crate::manifest::Manifest {
-		self.manifest.public_manifest(&self.config)
+		crate::manifest::CompiledManifest::compile(&self.config).public_manifest(&self.config)
 	}
 
 	/// Sets the active secret scope for resolution.
@@ -1066,6 +1602,38 @@ impl Secrets {
 		self
 	}
 
+	/// Records the software integration that invoked Monosecret.
+	///
+	/// Caller context describes *what* is requesting secrets, while
+	/// [`Secrets::with_reason`] records the user-supplied explanation of *why*.
+	/// It is included in audit events and forwarded to providers, but it never
+	/// satisfies the project's `require_reason` policy.
+	///
+	/// Blank names are ignored. Optional fields are trimmed and blank values are
+	/// dropped. The context is caller-asserted metadata rather than an
+	/// authenticated identity; it must not contain credentials or secret values.
+	///
+	/// Available since Monosecret 0.20.
+	///
+	/// # Example
+	///
+	/// ```no_run
+	/// use monosecret::{CallerContext, Secrets};
+	///
+	/// let spec = Secrets::load().unwrap().with_caller(
+	///     CallerContext::new("git")
+	///         .with_operation("credential_get")
+	///         .with_resource("github.com"),
+	/// );
+	/// spec.check(false).unwrap();
+	/// ```
+	pub fn with_caller(mut self, caller: CallerContext) -> Self {
+		if let Some(caller) = caller.normalized() {
+			self.caller = Some(caller);
+		}
+		self
+	}
+
 	/// Sets a session reason only when none is already in effect.
 	///
 	/// This is the "supply a fallback" form of [`Secrets::with_reason`]: an
@@ -1079,6 +1647,9 @@ impl Secrets {
 	/// whitespace-only argument still leaves the session without a reason rather
 	/// than storing an empty one. Precedence is therefore: an explicit
 	/// [`Secrets::with_reason`], then `MONOSECRET_REASON`, then this default.
+	/// A default reason still counts as a reason for policy purposes. An
+	/// integration that only wants to identify itself should use
+	/// [`Secrets::with_caller`] instead.
 	///
 	/// Available since Monosecret 0.19.
 	///
@@ -1132,7 +1703,7 @@ impl Secrets {
 	/// convention-path credentials live at `{project}/{profile}/{credential}`,
 	/// so the provider must be built for the same profile its secrets are
 	/// addressed under.
-	fn build_provider(
+	pub(crate) fn build_provider(
 		&self,
 		spec: String,
 		profile: Option<&str>,
@@ -1178,13 +1749,19 @@ impl Secrets {
 		let credentials = self
 			.provider_credentials_cache
 			.get_or_try_init(key, || self.resolve_provider_credentials(&spec, &profile))?;
-		let mut provider =
-			self.build_provider_with_credentials(&spec, credentials, allow_inline_cached)?;
+		let mut provider = self.build_provider_with_credentials(
+			&spec,
+			credentials,
+			allow_inline_cached,
+			Some(&profile),
+		)?;
 		let dependencies = self.resolve_legacy_provider_dependencies(&spec)?;
 		provider.configure_dependency_secrets(&dependencies)?;
 		Ok(provider)
 	}
 
+	/// Resolves the `depends_on` bootstrap secrets declared by a legacy
+	/// provider entry and hands them to the provider before first use.
 	fn resolve_legacy_provider_dependencies(
 		&self,
 		spec: &str,
@@ -1254,18 +1831,32 @@ impl Secrets {
 	/// credential source, so credential-source chains are at most one hop and
 	/// cannot recurse, and for cache remediation, where the credential source
 	/// itself may be what failed.
-	fn build_source_provider(&self, spec: &str) -> Result<Box<dyn ProviderTrait>> {
-		self.build_provider_with_credentials(spec, ProviderCredentials::new(), false)
+	///
+	/// Deliberately hands the provider no profile: a credential belongs to the
+	/// alias rather than to any one profile ([`PROVIDER_CREDENTIAL_SCOPE`]), and
+	/// [`CredentialSource::address`] must round-trip whichever profile stores and
+	/// reads it. A `ref`-addressed credential would otherwise resolve in the
+	/// storing profile's Infisical environment and read from the reading
+	/// profile's, so a credential stored under `prod` would be missing under
+	/// `dev`. Such a ref keeps needing an explicit `?env=`, which is
+	/// profile-independent by construction.
+	///
+	/// Cache remediation is the other caller and needs no profile either: it
+	/// addresses through [`Self::cache_address`], which is a convention address
+	/// carrying its own.
+	pub(crate) fn build_source_provider(&self, spec: &str) -> Result<Box<dyn ProviderTrait>> {
+		self.build_provider_with_credentials(spec, ProviderCredentials::new(), false, None)
 	}
 
 	/// The shared construction body behind generic, routed, and credential
 	/// source providers: alias expansion, error enrichment, and the
-	/// base-dir/reason hooks live only here, so those paths cannot drift.
+	/// base-dir/reason/caller hooks live only here, so those paths cannot drift.
 	fn build_provider_with_credentials(
 		&self,
 		spec: &str,
 		credentials: ProviderCredentials,
 		allow_inline_cached: bool,
+		profile: Option<&str>,
 	) -> Result<Box<dyn ProviderTrait>> {
 		// `build_source_provider` calls this body directly, so retain the guard
 		// here as well as before credential initialization in the generic path.
@@ -1280,6 +1871,18 @@ impl Secrets {
 			.map_err(|err| self.explain_unknown_provider(err, &resolved))?;
 		provider.with_base_dir(&self.config_dir);
 		provider.set_reason(self.reason.clone());
+		provider.set_caller(self.caller.clone());
+		// Context a native address cannot carry: a `ref` names coordinates only,
+		// so a provider whose store is partitioned by something outside them
+		// (Infisical's environment) reads the operation's profile here. It is
+		// the profile the caller already resolved, so a provider and the
+		// addresses handed to it never disagree about which profile is running.
+		// `None` is for a credential source, which is profile-independent by
+		// contract. Naming stays with the address; this never reaches
+		// `uri`/`storage_identity`.
+		if let Some(profile) = profile {
+			provider.set_profile(profile);
+		}
 		Ok(provider)
 	}
 
@@ -1408,10 +2011,11 @@ impl Secrets {
 		value: &SecretString,
 	) -> Result<String> {
 		self.ensure_reason_for(AuditAction::Set, Some(name))?;
-		let provider = self.build_source_provider(&source.provider)?;
 		// The store location is profile-independent (see `PROVIDER_CREDENTIAL_SCOPE`);
-		// the session profile is used only to attribute the audit event.
+		// the session profile attributes the audit event, and is the session
+		// context handed to the provider.
 		let profile = self.resolve_profile_name(None);
+		let provider = self.build_source_provider(&source.provider)?;
 		let project = self.config.project.name.clone();
 		let address = source.address(&project, name);
 		let result = provider
@@ -1524,9 +2128,9 @@ impl Secrets {
 	}
 
 	/// Records one audit event with the given variable fields, if auditing is
-	/// enabled (a no-op otherwise). Session-constant fields — project, the session
-	/// reason, and whether auditing is on — are filled here so call sites specify
-	/// only what varies. Single-secret (`get`/`set`/`delete`) and bulk
+	/// enabled (a no-op otherwise). Session-constant fields — project, caller,
+	/// session reason, and whether auditing is on — are filled here so call sites
+	/// specify only what varies. Single-secret (`get`/`set`/`delete`) and bulk
 	/// (`check`/`run`/`import`) events go through this one method.
 	fn record(
 		&self,
@@ -1564,6 +2168,7 @@ impl Secrets {
 					outcome,
 					error_kind: fields.error_kind,
 					reason: self.reason.as_deref(),
+					caller: self.caller.as_ref(),
 				},
 			);
 		}
@@ -1789,32 +2394,37 @@ impl Secrets {
 		diagnostic_name: &str,
 		value: &str,
 	) -> Result<SecretString> {
+		let failed = |reason: String| {
+			MonosecretError::DecodeFailed {
+				name: diagnostic_name.to_string(),
+				encoding: extract.format.as_str(),
+				reason,
+			}
+		};
 		match extract.format {
 			ExtractFormat::Json => {
-				let document: serde_json::Value = serde_json::from_str(value).map_err(|error| {
-					MonosecretError::DecodeFailed {
-						name: diagnostic_name.to_string(),
-						encoding: extract.format.as_str(),
-						reason: format!("stored value is not valid JSON: {error}"),
-					}
-				})?;
+				let document: serde_json::Value = serde_json::from_str(value)
+					.map_err(|error| failed(format!("stored value is not valid JSON: {error}")))?;
 				let selected = document.pointer(&extract.pointer).ok_or_else(|| {
-					MonosecretError::DecodeFailed {
-						name: diagnostic_name.to_string(),
-						encoding: extract.format.as_str(),
-						reason: format!(
-							"JSON Pointer '{}' did not match the stored document",
-							extract.pointer
-						),
-					}
+					failed(format!(
+						"JSON Pointer '{}' did not match the stored document",
+						extract.pointer
+					))
 				})?;
-				let selected = match selected {
-					serde_json::Value::String(value) => value.clone(),
-					value => {
-						serde_json::to_string(value).expect("serializing JSON value cannot fail")
-					}
-				};
-				Ok(SecretString::new(selected.into()))
+				// Rendering is shared with the awssm and scaleway providers.
+				// A null renders as "null" here: this caller was asked for one
+				// pointer and reports what the document holds, unlike a
+				// provider `field`, where a null means "not set" and the chain
+				// continues. See crate::json_field.
+				Ok(crate::json_field::render(selected))
+			}
+			// The pointer grammar and the lookup that follows it live together
+			// in crate::ini_field, next to the validation that rejects every
+			// other shape at config time.
+			ExtractFormat::Ini => {
+				crate::ini_field::select(value, &extract.pointer)
+					.map(|selected| SecretString::new(selected.into()))
+					.map_err(failed)
 			}
 		}
 	}
@@ -1945,8 +2555,8 @@ impl Secrets {
 	///
 	/// Profile resolution order:
 	/// 1. Provided profile argument
-	/// 2. Profile set via set_profile()
-	/// 3. MONOSECRET_PROFILE environment variable
+	/// 2. Profile set via `set_profile()`
+	/// 3. `MONOSECRET_PROFILE` environment variable
 	/// 4. Global configuration default profile
 	/// 5. "default" profile
 	///
@@ -1959,7 +2569,7 @@ impl Secrets {
 	/// The resolved profile name
 	pub(crate) fn resolve_profile_name(&self, profile: Option<&str>) -> String {
 		profile
-			.map(|p| p.to_string())
+			.map(ToString::to_string)
 			.or_else(|| self.profile.clone())
 			.or_else(|| {
 				env::var("MONOSECRET_PROFILE")
@@ -2030,15 +2640,14 @@ impl Secrets {
 					.flat_map(|scopes| scopes.keys())
 					.map(String::as_str)
 					.collect();
-				available.sort();
+				available.sort_unstable();
 				let available = if available.is_empty() {
 					"none defined".to_string()
 				} else {
 					available.join(", ")
 				};
 				MonosecretError::InvalidScope(format!(
-					"'{}' is not defined in monosecret.toml. Available scopes: {}",
-					scope_name, available
+					"'{scope_name}' is not defined in monosecret.toml. Available scopes: {available}"
 				))
 			})?;
 		Ok(Some(scope.secrets.iter().map(String::as_str).collect()))
@@ -2094,7 +2703,7 @@ impl Secrets {
 		self.config.profiles.get(profile_name).ok_or_else(|| {
 			let mut available: Vec<&str> =
 				self.config.profiles.keys().map(String::as_str).collect();
-			available.sort();
+			available.sort_unstable();
 			MonosecretError::InvalidProfile(format!(
 				"'{}' is not defined in monosecret.toml. Available profiles: {}",
 				profile_name,
@@ -2140,9 +2749,7 @@ impl Secrets {
 		&self,
 		profile: Option<&str>,
 	) -> Result<Vec<String>> {
-		let profile_name = profile
-			.map(str::to_string)
-			.unwrap_or_else(|| self.resolve_profile_name(None));
+		let profile_name = profile.map_or_else(|| self.resolve_profile_name(None), str::to_string);
 		self.require_profile(&profile_name)?;
 		let compiled = self
 			.manifest
@@ -2247,7 +2854,7 @@ impl Secrets {
 	fn accessed_names(&self, profile_name: &str, visible: &[String]) -> Vec<String> {
 		fn visit(
 			name: &str,
-			profile: &crate::manifest::CompiledProfile,
+			profile: &crate::compiled_spec::CompiledProfile,
 			acc: &mut HashSet<String>,
 		) {
 			if !acc.insert(name.to_string()) {
@@ -2355,7 +2962,7 @@ impl Secrets {
 	/// keeps that one question in one place.
 	pub(crate) fn cached_alias(&self, spec: &str) -> Option<ProviderAlias> {
 		self.lookup_provider_alias_entry(spec)
-			.filter(|alias| alias.is_cached())
+			.filter(ProviderAlias::is_cached)
 	}
 
 	pub(crate) fn resolve_provider_spec(&self, spec: String) -> String {
@@ -2419,8 +3026,7 @@ impl Secrets {
 		let known = self.known_provider_aliases();
 		let msg = if known.is_empty() {
 			format!(
-				"Provider alias '{}' is not defined. Declare it in [providers] in monosecret.toml or in the global config.",
-				spec
+				"Provider alias '{spec}' is not defined. Declare it in [providers] in monosecret.toml or in the global config."
 			)
 		} else {
 			format!(
@@ -2440,7 +3046,7 @@ impl Secrets {
 	/// `MONOSECRET_PROVIDER` env var stays consistent across resolvers.
 	pub(crate) fn explicit_provider_spec(&self, override_arg: Option<&str>) -> Option<String> {
 		override_arg
-			.map(|spec| spec.to_string())
+			.map(ToString::to_string)
 			.or_else(|| self.provider.clone())
 			.or_else(|| {
 				env::var("MONOSECRET_PROVIDER")
@@ -2575,7 +3181,7 @@ impl Secrets {
 						cached.insert(planned.name.clone(), (value, uri.clone()));
 					}
 					CachedEntry::Stale => {
-						self.evict_cache_entry(provider.as_ref(), &planned.name, profile)
+						self.evict_cache_entry(provider.as_ref(), &planned.name, profile);
 					}
 					CachedEntry::Foreign => {}
 				}
@@ -2803,7 +3409,7 @@ impl Secrets {
 						provider_uri: Some(provider.uri()),
 						..Default::default()
 					},
-				)
+				);
 			}
 			Ok(false) => {}
 			Err(error) => {
@@ -2814,7 +3420,7 @@ impl Secrets {
 					Some(provider.uri()),
 					None,
 					error,
-				)
+				);
 			}
 		}
 		result
@@ -2863,7 +3469,7 @@ impl Secrets {
 			.as_deref()
 			.unwrap_or_default()
 			.iter()
-			.map(|reference| reference.provider_alias())
+			.map(super::config::ProviderRef::provider_alias)
 			.chain(default_spec.as_deref())
 			.any(|spec| self.cached_alias(spec).is_some());
 		if !names_cache {
@@ -2916,7 +3522,7 @@ impl Secrets {
 			.as_deref()
 			.unwrap_or_default()
 			.iter()
-			.map(|reference| reference.provider_alias())
+			.map(super::config::ProviderRef::provider_alias)
 			.chain(default_spec.as_deref())
 			.any(|spec| self.cached_alias(spec).is_some());
 		if !names_cache {
@@ -2991,7 +3597,7 @@ impl Secrets {
 	/// Provider resolution order:
 	/// 1. Provided provider argument
 	/// 2. Provider set via builder (used by the CLI to forward `--provider`)
-	/// 3. Environment variable (MONOSECRET_PROVIDER)
+	/// 3. Environment variable (`MONOSECRET_PROVIDER`)
 	/// 4. Global configuration default provider
 	/// 5. Error if no provider is configured
 	///
@@ -3746,7 +4352,7 @@ impl Secrets {
 							}
 
 							let prompt_msg =
-								format!("[{}/{}] Enter value for {}:", i + 1, total, secret_name,);
+								format!("[{}/{}] Enter value for {}:", i + 1, total, secret_name);
 							let prompt = inquire::Password::new(&prompt_msg).without_confirmation();
 
 							let value = SecretString::new(prompt.prompt()?.into());
@@ -3832,25 +4438,40 @@ impl Secrets {
 	/// let validated = spec.check(false).unwrap();
 	/// ```
 	pub fn check(&self, no_prompt: bool) -> Result<ValidatedSecrets> {
+		self.check_with_writer(no_prompt, &mut io::stderr())
+	}
+
+	/// Checks the status of all secrets, writing the human-readable report to `out`.
+	///
+	/// This is the writer-based counterpart to [`Self::check`]. Prompts and
+	/// diagnostics still use their standard streams; only the report containing
+	/// the header, per-secret statuses, constraint violations, and summary is
+	/// written to `out`.
+	pub fn check_with_writer(
+		&self,
+		no_prompt: bool,
+		out: &mut dyn Write,
+	) -> Result<ValidatedSecrets> {
 		self.ensure_reason_for(AuditAction::Check, None)?;
 		let profile_display = self.resolve_profile_name(None);
 
-		eprintln!(
+		writeln!(
+			out,
 			"Checking secrets in {} (profile: {})...\n",
 			self.config.project.name.bold(),
 			profile_display.cyan()
-		);
+		)?;
 
 		// Validate and display results
 		// The read is audited inside `validate()`, so no bulk event here.
 		match self.validate()? {
 			Ok(valid) => {
-				self.display_validation_success(&valid)?;
+				self.display_validation_success(out, &valid)?;
 				// All secrets present - return early without re-validating
 				Ok(valid)
 			}
 			Err(errors) => {
-				self.display_validation_errors(&errors)?;
+				self.display_validation_errors(out, &errors)?;
 				// Missing secrets - prompt if interactive (and not no_prompt) and re-validate
 				self.ensure_secrets(None, None, !no_prompt)
 			}
@@ -3858,7 +4479,11 @@ impl Secrets {
 	}
 
 	/// Display validation success results
-	fn display_validation_success(&self, valid: &ValidatedSecrets) -> Result<()> {
+	fn display_validation_success(
+		&self,
+		out: &mut dyn Write,
+		valid: &ValidatedSecrets,
+	) -> Result<()> {
 		let mut found_count = 0;
 		let mut optional_count = 0;
 		let default_names = valid
@@ -3872,23 +4497,37 @@ impl Secrets {
 			let label = format_secret_label(name, config.description.as_deref());
 			if missing_optional.contains(&name) {
 				optional_count += 1;
-				eprintln!("{} {} {}", "○".blue(), label, "(optional)".blue());
+				writeln!(out, "{} {} {}", "○".blue(), label, "(optional)".blue())?;
 			} else if config.default.is_some() && default_names.contains(&name) {
 				found_count += 1;
-				eprintln!("{} {} {}", "○".yellow(), label, "(has default)".yellow());
+				writeln!(
+					out,
+					"{} {} {}",
+					"○".yellow(),
+					label,
+					"(has default)".yellow()
+				)?;
 			} else {
 				found_count += 1;
-				eprintln!("{} {}", "✓".green(), label);
+				writeln!(out, "{} {}", "✓".green(), label)?;
 			}
 		}
 
-		eprintln!("\n{}", Self::format_summary(found_count, 0, optional_count));
+		writeln!(
+			out,
+			"\n{}",
+			Self::format_summary(found_count, 0, optional_count)
+		)?;
 
 		Ok(())
 	}
 
 	/// Display validation error results
-	fn display_validation_errors(&self, errors: &ValidationErrors) -> Result<()> {
+	fn display_validation_errors(
+		&self,
+		out: &mut dyn Write,
+		errors: &ValidationErrors,
+	) -> Result<()> {
 		let mut found_count = 0;
 		let mut missing_count = 0;
 		let mut optional_count = 0;
@@ -3902,26 +4541,33 @@ impl Secrets {
 			let label = format_secret_label(name, config.description.as_deref());
 			if errors.missing_required.contains(name) {
 				missing_count += 1;
-				eprintln!("{} {} {}", "✗".red(), label, "(required)".red());
+				writeln!(out, "{} {} {}", "✗".red(), label, "(required)".red())?;
 			} else if errors.missing_optional.contains(name) {
 				optional_count += 1;
-				eprintln!("{} {} {}", "○".blue(), label, "(optional)".blue());
+				writeln!(out, "{} {} {}", "○".blue(), label, "(optional)".blue())?;
 			} else {
 				found_count += 1;
 				if default_names.contains(name) {
-					eprintln!("{} {} {}", "○".yellow(), label, "(has default)".yellow());
+					writeln!(
+						out,
+						"{} {} {}",
+						"○".yellow(),
+						label,
+						"(has default)".yellow()
+					)?;
 				} else {
-					eprintln!("{} {}", "✓".green(), label);
+					writeln!(out, "{} {}", "✓".green(), label)?;
 				}
 			}
 		}
 
-		eprintln!(
+		writeln!(
+			out,
 			"\n{}",
 			Self::format_summary(found_count, missing_count, optional_count)
-		);
+		)?;
 		for violation in &errors.constraint_violations {
-			eprintln!("{} {}", "Constraint failed:".red().bold(), violation);
+			writeln!(out, "{} {}", "Constraint failed:".red().bold(), violation)?;
 		}
 
 		Ok(())
@@ -4103,413 +4749,86 @@ impl Secrets {
 
 	fn import_internal(&self, from_provider: &str, delete_source: bool) -> Result<()> {
 		self.ensure_reason_for(AuditAction::Import, None)?;
-		let profile_display = self.resolve_profile_name(None);
 
-		let mut imported = 0;
-		let mut already_exists = 0;
-		let mut not_found = 0;
-		let mut deleted_from_source = 0;
-		let mut kept_in_source = 0;
-		let mut read_names: Vec<String> = Vec::new();
-		let mut source_uri: Option<String> = None;
-		let mut source_display: Option<String> = None;
-
-		let copy_result = (|| -> Result<()> {
-			let from_provider_instance =
-				self.build_provider(from_provider.to_string(), Some(&profile_display))?;
-			let provider_uri = from_provider_instance.uri();
-			source_uri = Some(provider_uri.clone());
-			source_display = Some(
-				if self.lookup_provider_alias_entry(from_provider).is_some() {
-					format!("provider alias '{from_provider}' ({provider_uri})")
-				} else {
-					provider_uri.clone()
-				},
-			);
-
-			if delete_source
-				&& !crate::provider::spec_provider_deletes(
-					&self.resolve_provider_spec(from_provider.to_string()),
-				) {
-				return Err(MonosecretError::ProviderOperationFailed(format!(
-					"provider '{}' does not support deleting secrets and cannot be used with import --delete-source",
-					from_provider_instance.name()
-				)));
-			}
-
-			eprintln!(
-				"Importing secrets from {} (profile: {})...\n",
-				source_display
-					.as_deref()
-					.expect("source display is set with the provider URI")
-					.blue(),
-				profile_display.cyan()
-			);
-
-			let import_names = self.profile_secret_names_unscoped(Some(&profile_display))?;
-			let mut planned_imports = Vec::new();
-
-			// Resolve every effective secret before looking in either store so
-			// the literal-vs-alias diagnostic reflects the complete import and
-			// can be emitted before the first provider read.
-			for name in import_names {
-				let planned = self
-					.plan_secret(&name, &profile_display, None)?
-					.expect("Secret should exist since we're iterating over it");
-				if planned.route.is_none() {
-					continue;
-				}
-
-				if planned.extract().is_some() {
-					return Err(MonosecretError::ExtractedSecretReadOnly(
-						planned.name.clone(),
-					));
-				}
-				planned_imports.push(planned);
-			}
-
-			let divergences = self.literal_import_alias_divergences(
-				from_provider,
-				from_provider_instance.as_ref(),
-				&planned_imports,
-				&profile_display,
-			);
-			Self::warn_literal_import_alias_divergences(&provider_uri, &divergences);
-
-			// Resolve and read every endpoint before mutating either store.
-			// This makes failures in a later secret harmless to earlier source
-			// entries and gives --delete-source one destructive preflight.
-			let mut prepared = Vec::new();
-			for planned in planned_imports {
-				let route = planned
-					.route
-					.as_ref()
-					.expect("planned imports are provider-backed");
-
-				read_names.push(planned.name.clone());
-				let source_address = self.address_for_spec(
-					&planned,
-					Some(from_provider),
-					&self.config.project.name,
-					&profile_display,
-				)?;
-				let target_address = self.address_for_spec(
-					&planned,
-					route.group_key(),
-					&self.config.project.name,
-					&profile_display,
-				)?;
-				let target_provider =
-					self.write_provider_for_route(route, Some(&profile_display))?;
-
-				if delete_source
-					&& from_provider_instance.same_entries(
-						source_address.as_address(),
-						target_provider.as_ref(),
-						target_address.as_address(),
-					)? {
-					return Err(MonosecretError::ProviderOperationFailed(format!(
-						"refusing to delete '{}' from the import source because source and destination resolve to the same provider entry ({})",
-						planned.name,
-						from_provider_instance.uri()
-					)));
-				}
-				let source_value = from_provider_instance.get(source_address.as_address())?;
-				let target_value = target_provider.get(target_address.as_address())?;
-
-				if let Some(value) = &source_value {
-					Self::validate_import_value(&planned, &planned.name, value)?;
-					if target_value.is_none() {
-						target_provider.check_writable(target_address.as_address())?;
-					}
-					let target_will_match = target_value
-						.as_ref()
-						.is_none_or(|existing| existing.expose_secret() == value.expose_secret());
-					if delete_source && target_will_match {
-						from_provider_instance.check_deletable(source_address.as_address())?;
-					}
-				}
-
-				prepared.push(PreparedImport {
-					planned,
-					target_provider,
-					source_address,
-					target_address,
-					source_value,
-					target_value,
-					copied: false,
-					source_deleted: false,
-				});
-			}
-
-			// A destination is one physical entry, even when aliases, URI
-			// spellings, or templates make the configured endpoints look
-			// different. Reject collisions before copying so two logical
-			// secrets cannot both act on the same stale target snapshot.
-			for left_index in 0..prepared.len() {
-				let left = &prepared[left_index];
-				for right in &prepared[left_index + 1..] {
-					if left.target_provider.same_entries(
-						left.target_address.as_address(),
-						right.target_provider.as_ref(),
-						right.target_address.as_address(),
-					)? {
-						return Err(MonosecretError::ProviderOperationFailed(format!(
-							"refusing to import '{}' and '{}' because they resolve to the same destination provider entry ({})",
-							left.planned.name,
-							right.planned.name,
-							left.target_provider.uri()
-						)));
-					}
-				}
-			}
-
-			if delete_source {
-				// Cleanup must not remove any destination in this import. The
-				// per-secret check above protects each source from its own
-				// destination; this cross-product protects it from every other
-				// secret's destination before the first write or deletion.
-				for (source_index, source) in prepared.iter().enumerate() {
-					let Some(source_value) = &source.source_value else {
-						continue;
-					};
-					let source_will_be_deleted =
-						source.target_value.as_ref().is_none_or(|target_value| {
-							source_value.expose_secret() == target_value.expose_secret()
-						});
-					if !source_will_be_deleted {
-						continue;
-					}
-
-					for (target_index, target) in prepared.iter().enumerate() {
-						if source_index == target_index {
-							continue;
-						}
-						if from_provider_instance.same_entries(
-							source.source_address.as_address(),
-							target.target_provider.as_ref(),
-							target.target_address.as_address(),
-						)? {
-							return Err(MonosecretError::ProviderOperationFailed(format!(
-								"refusing to delete '{}' from the import source because it resolves to the destination provider entry for '{}' ({})",
-								source.planned.name,
-								target.planned.name,
-								target.target_provider.uri()
-							)));
-						}
-					}
-				}
-			}
-
-			// Copy every missing target. No source is deleted in this phase.
-			for entry in &mut prepared {
-				let (Some(value), None) = (&entry.source_value, &entry.target_value) else {
-					continue;
-				};
-				let route = entry
-					.planned
-					.route
-					.as_ref()
-					.expect("prepared imports are provider-backed");
-				let set_result = entry
-					.target_provider
-					.set(entry.target_address.as_address(), value);
-				self.audit_write_result(
-					&set_result,
-					&entry.planned.name,
-					&profile_display,
-					Some(entry.target_provider.uri()),
-					entry.target_address.native(),
-					None,
-				);
-				set_result?;
-				self.sync_cache_after_write(&entry.planned, route, &profile_display, value);
-				entry.copied = true;
-				imported += 1;
-			}
-
-			// Verify all writes and validate their readable representation
-			// before beginning source cleanup.
-			if delete_source {
-				for entry in prepared.iter_mut().filter(|entry| entry.copied) {
-					let expected = entry
-						.source_value
-						.as_ref()
-						.expect("copied entries have source values");
-					let stored = entry
-						.target_provider
-						.get(entry.target_address.as_address())?
-						.ok_or_else(|| {
-							MonosecretError::ProviderOperationFailed(format!(
-								"destination verification failed for '{}'; the source value was retained",
-								entry.planned.name
-							))
-						})?;
-					if stored.expose_secret() != expected.expose_secret() {
-						return Err(MonosecretError::ProviderOperationFailed(format!(
-							"destination verification failed for '{}'; the source value was retained",
-							entry.planned.name
-						)));
-					}
-					Self::validate_import_value(&entry.planned, &entry.planned.name, &stored)?;
-					entry.target_value = Some(stored);
-				}
-
-				// Deletion is last: every planned target write has succeeded and
-				// every copied value has been read back successfully.
-				for entry in &mut prepared {
-					let (Some(source), Some(target)) = (&entry.source_value, &entry.target_value)
-					else {
-						continue;
-					};
-					if source.expose_secret() != target.expose_secret() {
-						continue;
-					}
-					let delete_result =
-						from_provider_instance.delete(entry.source_address.as_address());
-					self.audit_delete_result(
-						&delete_result,
-						&entry.planned.name,
-						&profile_display,
-						Some(from_provider_instance.uri()),
-						entry.source_address.native(),
-					);
-					entry.source_deleted = delete_result?;
-					deleted_from_source += usize::from(entry.source_deleted);
-				}
-			}
-
-			// Emit stable per-secret results only after the operation phases
-			// above have completed.
-			for entry in &prepared {
-				let name = &entry.planned.name;
-				let label =
-					format_secret_label(name, entry.planned.config().description.as_deref());
-				let target_name = entry.target_provider.name().blue();
-
-				if entry.copied {
-					if delete_source && entry.source_deleted {
-						eprintln!(
-							"{} {} (→ {}; deleted from source)",
-							"✓".green(),
-							label,
-							target_name
-						);
-					} else {
-						eprintln!("{} {} (→ {})", "✓".green(), label, target_name);
-					}
-					continue;
-				}
-
-				match (&entry.source_value, &entry.target_value) {
-					(Some(source), Some(target)) => {
-						already_exists += 1;
-						if delete_source && source.expose_secret() != target.expose_secret() {
-							kept_in_source += 1;
-							eprintln!(
-								"{} {} {} (→ {}; source retained)",
-								"○".yellow(),
-								label,
-								"(target value differs)".yellow(),
-								target_name
-							);
-						} else if delete_source && entry.source_deleted {
-							eprintln!(
-								"{} {} {} (→ {}; deleted from source)",
-								"✓".green(),
-								label,
-								"(already exists in target)".yellow(),
-								target_name
-							);
-						} else {
-							eprintln!(
-								"{} {} {} (→ {})",
-								"○".yellow(),
-								label,
-								"(already exists in target)".yellow(),
-								target_name
-							);
-						}
-					}
-					(None, Some(_)) => {
-						already_exists += 1;
-						eprintln!(
-							"{} {} {} (→ {})",
-							"○".blue(),
-							label,
-							"(already in target, not in source)".blue(),
-							target_name
-						);
-					}
-					(None, None) => {
-						not_found += 1;
-						eprintln!("{} {} {}", "✗".red(), label, "(not found in source)".red());
-					}
-					(Some(_), None) => {
-						unreachable!("a prepared missing target was copied or returned an error")
-					}
-				}
-			}
-			Ok(())
-		})();
-
-		if let Err(e) = copy_result {
+		let mut plan = ImportPlan::new(
+			self,
+			from_provider,
+			self.resolve_profile_name(None),
+			delete_source,
+		);
+		if let Err(error) = plan.run() {
 			self.record(
 				AuditAction::Import,
-				&profile_display,
+				&plan.profile,
 				AuditOutcome::Error,
 				AuditFields {
-					keys: &read_names,
-					provider_uri: source_uri,
-					error_kind: Some(e.kind()),
+					keys: &plan.read_names,
+					provider_uri: plan.source_uri.clone(),
+					error_kind: Some(error.kind()),
 					..Default::default()
 				},
 			);
-			return Err(e);
+			return Err(error);
 		}
 
 		eprintln!(
 			"\nSummary: {} imported, {} already exists, {} not found in source",
-			imported.to_string().green(),
-			already_exists.to_string().yellow(),
-			not_found.to_string().red()
+			plan.summary.imported.to_string().green(),
+			plan.summary.already_exists.to_string().yellow(),
+			plan.summary.not_found.to_string().red()
 		);
 		if delete_source {
 			eprintln!(
 				"Source cleanup: {} deleted, {} retained because the target differs",
-				deleted_from_source.to_string().green(),
-				kept_in_source.to_string().yellow()
+				plan.summary.deleted_from_source.to_string().green(),
+				plan.summary.kept_in_source.to_string().yellow()
 			);
 		}
 
-		if imported > 0 {
+		if plan.summary.imported > 0 {
 			eprintln!(
 				"\n{} Successfully imported {} secrets from {}",
 				"✓".green(),
-				imported,
-				source_display.as_deref().unwrap_or("configured provider"),
+				plan.summary.imported,
+				plan.source_display
+					.as_deref()
+					.unwrap_or("configured provider"),
 			);
 		}
 
-		let outcome = if imported > 0 {
-			AuditOutcome::Written
-		} else if already_exists > 0 {
-			AuditOutcome::Found
-		} else {
-			AuditOutcome::Missing
-		};
 		self.record(
 			AuditAction::Import,
-			&profile_display,
-			outcome,
+			&plan.profile,
+			plan.summary.audit_outcome(),
 			AuditFields {
-				keys: &read_names,
-				provider_uri: source_uri,
+				keys: &plan.read_names,
+				provider_uri: plan.source_uri.clone(),
 				..Default::default()
 			},
 		);
 
 		Ok(())
+	}
+
+	/// Whether a generated value for this secret would outlive the resolution
+	/// that mints it, i.e. whether its write route actually stores it.
+	///
+	/// Capability inspection only: `generated_value_persistence` is documented
+	/// as pure, so this asks the store nothing over the wire and mints nothing.
+	/// A store that cannot even be built cannot be shown to be ephemeral, so it
+	/// counts as storing — the answer that reports a required secret as missing
+	/// rather than promising a value that may never materialize.
+	fn generated_value_is_stored(&self, planned: &PlannedSecret, profile_name: &str) -> bool {
+		planned
+			.route
+			.as_ref()
+			.and_then(|route| {
+				self.write_provider_for_route(route, Some(profile_name))
+					.ok()
+			})
+			.is_none_or(|backend| {
+				backend.generated_value_persistence() == ProducedValuePersistence::Persist
+			})
 	}
 
 	/// Attempts to generate a secret if it has generation config.
@@ -4537,8 +4856,7 @@ impl Secrets {
 			Some(t) => t.as_str(),
 			None => {
 				return Err(MonosecretError::GenerationFailed(format!(
-					"Secret '{}' has generate config but no type",
-					name
+					"Secret '{name}' has generate config but no type"
 				)));
 			}
 		};
@@ -5101,9 +5419,7 @@ impl Secrets {
 					let source = resolved_source(entry);
 					// Only copy the secret value out when the caller wants it;
 					// otherwise the bytes never enter the response.
-					let (value, path) = if !include_values {
-						(None, None)
-					} else {
+					let (value, path) = if include_values {
 						let raw = validated
 							.resolved
 							.secrets
@@ -5116,6 +5432,8 @@ impl Secrets {
 						} else {
 							(Some(raw), None)
 						}
+					} else {
+						(None, None)
 					};
 					secrets.insert(
 						entry.name.clone(),
@@ -5175,8 +5493,11 @@ impl Secrets {
 	/// This pass is value-free and side-effect-free: it never mints or stores a
 	/// generatable secret and never writes an `as_path` temp file. A secret that
 	/// *would* be generated on a real resolve is reported as resolved
-	/// (`generated`), so the report still answers "would this resolve" without
-	/// mutating any provider or touching disk.
+	/// (`generated`) when generation is how its value is meant to appear — an
+	/// optional secret, or a store that never retains a generated value. A
+	/// required secret whose store keeps what it mints is reported
+	/// `MissingRequired` until a pass actually provisions it, so this preflight
+	/// never reports a value the store does not hold.
 	pub fn report(&self) -> Result<ResolutionReport> {
 		self.report_impl(None)
 	}
@@ -5320,7 +5641,7 @@ impl Secrets {
 	fn composed_dependency_names(&self, target: &str, profile_name: &str) -> Vec<String> {
 		fn visit(
 			name: &str,
-			profile: &crate::manifest::CompiledProfile,
+			profile: &crate::compiled_spec::CompiledProfile,
 			names: &mut HashSet<String>,
 		) {
 			if !names.insert(name.to_string()) {
@@ -5364,7 +5685,7 @@ impl Secrets {
 
 		fn visit(
 			name: &str,
-			profile: &crate::manifest::CompiledProfile,
+			profile: &crate::compiled_spec::CompiledProfile,
 			statuses: &HashMap<&str, &ResolutionStatus>,
 			promptable: &mut HashSet<String>,
 		) {
@@ -5720,29 +6041,98 @@ impl Secrets {
 			let mut default_applied = false;
 			let mut generated = false;
 
-			match fetched_values.remove(name.as_str()) {
-				Some(value) => {
-					let was_cached = cached_uris.contains_key(name);
-					source_provider = cached_uris
-						.remove(name)
-						.or_else(|| group_uris.get(&primary_uri).cloned());
-					if !was_cached && let Some(addresses) = read_addresses.as_deref_mut() {
-						// The primary answered, so it was addressed with the
-						// coordinates the group fetch computed for this spec.
-						if let Ok(address) =
-							self.address_for_spec(planned, primary_uri, project, profile)
-							&& let Some(native) = address.native()
-						{
-							addresses.insert(name.clone(), native.clone());
+			if let Some(value) = fetched_values.remove(name.as_str()) {
+				let was_cached = cached_uris.contains_key(name);
+				source_provider = cached_uris
+					.remove(name)
+					.or_else(|| group_uris.get(&primary_uri).cloned());
+				if !was_cached && let Some(addresses) = read_addresses.as_deref_mut() {
+					// The primary answered, so it was addressed with the
+					// coordinates the group fetch computed for this spec.
+					if let Ok(address) =
+						self.address_for_spec(planned, primary_uri, project, profile)
+						&& let Some(native) = address.native()
+					{
+						addresses.insert(name.clone(), native.clone());
+					}
+				}
+				if !was_cached && materialize.values() {
+					self.write_cached_secret(planned, route, profile, &value);
+				}
+				// Copy the value into the response only on a full pass; a
+				// value-free pass has the status it needs and never
+				// materializes a value or writes a temp file.
+				if materialize.values() {
+					self.insert_resolved(
+						&mut secrets,
+						&mut temp_files,
+						planned,
+						diagnostic_name,
+						value,
+						ResolvedRepresentation::Stored,
+					)?;
+				}
+				status = ResolutionStatus::Resolved;
+			} else {
+				let primary_failed = failed_primary_uris.contains_key(&primary_uri);
+
+				// The primary was addressed even though it did not answer.
+				// An audited failed read has to name the coordinates it
+				// attempted, so record them before the error paths below
+				// return. A fallback that answers overwrites this with the
+				// address that did.
+				if let Some(addresses) = read_addresses.as_deref_mut()
+					&& let Ok(address) =
+						self.address_for_spec(planned, primary_uri, project, profile)
+					&& let Some(native) = address.native()
+				{
+					addresses.insert(name.clone(), native.clone());
+				}
+
+				// The primary missed, so consume the fallback result fetched
+				// concurrently above. Each chain was still tried in order
+				// and received the diagnostic label rather than a hidden
+				// composition input's raw name.
+				let (fallback_value, fallback_uri, fallback_reference) =
+					match route.fallback_specs() {
+						Some(_) => {
+							let resolved = fallback_results
+								.remove(name)
+								.expect("primary miss with fallback was prefetched")?;
+							// A primary that errored plus an exhausted fallback
+							// chain is not "missing": the authoritative provider
+							// is unreachable and might hold the value. Surface the
+							// primary error, exactly as the no-fallback arm below.
+							if resolved.0.is_none() && primary_failed {
+								let err = failed_primary_uris
+									.remove(&primary_uri)
+									.expect("primary_failed implies entry present");
+								return Err(err);
+							}
+							resolved
 						}
-					}
-					if !was_cached && materialize.values() {
-						self.write_cached_secret(planned, route, profile, &value);
-					}
-					// Copy the value into the response only on a full pass; a
-					// value-free pass has the status it needs and never
-					// materializes a value or writes a temp file.
+						// No alternative chain and the primary failed: surface the
+						// original error rather than reporting a spurious missing.
+						None if primary_failed => {
+							let err = failed_primary_uris
+								.remove(&primary_uri)
+								.expect("primary_failed implies entry present");
+							return Err(err);
+						}
+						None => (None, None, None),
+					};
+
+				if let Some(addresses) = read_addresses.as_deref_mut()
+					&& let Some(reference) = fallback_reference
+				{
+					// Recorded for a miss too: the attempted coordinates are
+					// what an audited failed read has to name.
+					addresses.insert(name.clone(), reference);
+				}
+				if let Some(value) = fallback_value {
+					source_provider = fallback_uri;
 					if materialize.values() {
+						self.write_cached_secret(planned, route, profile, &value);
 						self.insert_resolved(
 							&mut secrets,
 							&mut temp_files,
@@ -5753,153 +6143,97 @@ impl Secrets {
 						)?;
 					}
 					status = ResolutionStatus::Resolved;
-				}
-				None => {
-					let primary_failed = failed_primary_uris.contains_key(&primary_uri);
-
-					// The primary was addressed even though it did not answer.
-					// An audited failed read has to name the coordinates it
-					// attempted, so record them before the error paths below
-					// return. A fallback that answers overwrites this with the
-					// address that did.
-					if let Some(addresses) = read_addresses.as_deref_mut()
-						&& let Ok(address) =
-							self.address_for_spec(planned, primary_uri, project, profile)
-						&& let Some(native) = address.native()
-					{
-						addresses.insert(name.clone(), native.clone());
-					}
-
-					// The primary missed, so consume the fallback result fetched
-					// concurrently above. Each chain was still tried in order
-					// and received the diagnostic label rather than a hidden
-					// composition input's raw name.
-					let (fallback_value, fallback_uri, fallback_reference) =
-						match route.fallback_specs() {
-							Some(_) => {
-								let resolved = fallback_results
-									.remove(name)
-									.expect("primary miss with fallback was prefetched")?;
-								// A primary that errored plus an exhausted fallback
-								// chain is not "missing": the authoritative provider
-								// is unreachable and might hold the value. Surface the
-								// primary error, exactly as the no-fallback arm below.
-								if resolved.0.is_none() && primary_failed {
-									let err = failed_primary_uris
-										.remove(&primary_uri)
-										.expect("primary_failed implies entry present");
-									return Err(err);
-								}
-								resolved
-							}
-							// No alternative chain and the primary failed: surface the
-							// original error rather than reporting a spurious missing.
-							None if primary_failed => {
-								let err = failed_primary_uris
-									.remove(&primary_uri)
-									.expect("primary_failed implies entry present");
-								return Err(err);
-							}
-							None => (None, None, None),
-						};
-
-					if let Some(addresses) = read_addresses.as_deref_mut()
-						&& let Some(reference) = fallback_reference
-					{
-						// Recorded for a miss too: the attempted coordinates are
-						// what an audited failed read has to name.
-						addresses.insert(name.clone(), reference);
-					}
-					if let Some(value) = fallback_value {
-						source_provider = fallback_uri;
-						if materialize.values() {
-							self.write_cached_secret(planned, route, profile, &value);
-							self.insert_resolved(
-								&mut secrets,
-								&mut temp_files,
-								planned,
-								diagnostic_name,
-								value,
-								ResolvedRepresentation::Stored,
-							)?;
-						}
-						status = ResolutionStatus::Resolved;
-					} else {
-						match planned.secret.missing {
-							MissingPolicy::Prompt => {
-								// Prompt only for names the active scope exposes.
-								// A hidden composition dependency must never be
-								// disclosed merely because a visible derived
-								// secret depends on it.
-								if materialize.prompts()
-									&& output_filter.is_none_or(|filter| filter.contains(name))
-								{
-									let prompted = self.try_prompt_secret(planned, profile)?;
-									self.insert_resolved(
-										&mut secrets,
-										&mut temp_files,
-										planned,
-										diagnostic_name,
-										prompted,
-										ResolvedRepresentation::Logical,
-									)?;
-									status = ResolutionStatus::Resolved;
-								} else if required {
-									missing_required.push(name.clone());
-									status = ResolutionStatus::MissingRequired;
-								} else {
-									missing_optional.push(name.clone());
-									status = ResolutionStatus::MissingOptional;
-								}
-							}
-							MissingPolicy::Generate => {
-								// A full pass mints and stores; a value-free pass
-								// reports that generation would resolve without
-								// performing that side effect.
-								generated = true;
-								if materialize.values() {
-									let generated_value = self
-										.try_generate_secret(planned, profile)?
-										.expect("compiled Generate policy has a generator");
-									self.insert_resolved(
-										&mut secrets,
-										&mut temp_files,
-										planned,
-										diagnostic_name,
-										generated_value,
-										ResolvedRepresentation::Logical,
-									)?;
-								}
+				} else {
+					match planned.secret.missing {
+						MissingPolicy::Prompt => {
+							// Prompt only for names the active scope exposes.
+							// A hidden composition dependency must never be
+							// disclosed merely because a visible derived
+							// secret depends on it.
+							if materialize.prompts()
+								&& output_filter.is_none_or(|filter| filter.contains(name))
+							{
+								let prompted = self.try_prompt_secret(planned, profile)?;
+								self.insert_resolved(
+									&mut secrets,
+									&mut temp_files,
+									planned,
+									diagnostic_name,
+									prompted,
+									ResolvedRepresentation::Logical,
+								)?;
 								status = ResolutionStatus::Resolved;
-							}
-							MissingPolicy::UseDefault => {
-								let default_value = planned
-									.config()
-									.default
-									.as_ref()
-									.expect("compiled UseDefault policy has a default");
-								default_applied = true;
-								if materialize.values() {
-									self.insert_resolved(
-										&mut secrets,
-										&mut temp_files,
-										planned,
-										diagnostic_name,
-										SecretString::new(default_value.clone().into()),
-										ResolvedRepresentation::Logical,
-									)?;
-									with_defaults.push((name.clone(), default_value.clone()));
-								}
-								status = ResolutionStatus::Resolved;
-							}
-							MissingPolicy::Error => {
+							} else if required {
 								missing_required.push(name.clone());
 								status = ResolutionStatus::MissingRequired;
-							}
-							MissingPolicy::Omit => {
+							} else {
 								missing_optional.push(name.clone());
 								status = ResolutionStatus::MissingOptional;
 							}
+						}
+						MissingPolicy::Generate => {
+							// A full pass mints and stores.
+							//
+							// A value-free pass must not answer for a value
+							// nobody has provisioned. A required secret whose
+							// store keeps what it mints has no value until
+							// some pass writes one, so the preflight reports
+							// it missing instead of promising it resolves —
+							// otherwise `check --no-prompt` passes while the
+							// store is still empty. Where generation *is* how
+							// the value is meant to appear — an optional
+							// secret, or a store that never retains a
+							// generated value — resolution genuinely succeeds
+							// and the report says so.
+							if materialize.values() {
+								generated = true;
+								let generated_value = self
+									.try_generate_secret(planned, profile)?
+									.expect("compiled Generate policy has a generator");
+								self.insert_resolved(
+									&mut secrets,
+									&mut temp_files,
+									planned,
+									diagnostic_name,
+									generated_value,
+									ResolvedRepresentation::Logical,
+								)?;
+								status = ResolutionStatus::Resolved;
+							} else if required && self.generated_value_is_stored(planned, profile) {
+								missing_required.push(name.clone());
+								status = ResolutionStatus::MissingRequired;
+							} else {
+								generated = true;
+								status = ResolutionStatus::Resolved;
+							}
+						}
+						MissingPolicy::UseDefault => {
+							let default_value = planned
+								.config()
+								.default
+								.as_ref()
+								.expect("compiled UseDefault policy has a default");
+							default_applied = true;
+							if materialize.values() {
+								self.insert_resolved(
+									&mut secrets,
+									&mut temp_files,
+									planned,
+									diagnostic_name,
+									SecretString::new(default_value.clone().into()),
+									ResolvedRepresentation::Logical,
+								)?;
+								with_defaults.push((name.clone(), default_value.clone()));
+							}
+							status = ResolutionStatus::Resolved;
+						}
+						MissingPolicy::Error => {
+							missing_required.push(name.clone());
+							status = ResolutionStatus::MissingRequired;
+						}
+						MissingPolicy::Omit => {
+							missing_optional.push(name.clone());
+							status = ResolutionStatus::MissingOptional;
 						}
 					}
 				}
@@ -5972,7 +6306,7 @@ impl Secrets {
 					if materialize.values() {
 						let rendered = template
 							.render(|dependency| {
-								secrets.get(dependency).map(|value| value.expose_secret())
+								secrets.get(dependency).map(ExposeSecret::expose_secret)
 							})
 							.map_err(MonosecretError::CompositionFailed)?;
 						self.insert_resolved(
@@ -6311,6 +6645,12 @@ impl Secrets {
 			cmd.env_remove(key);
 		}
 
+		// Set up Unix signal handling before `spawn`: when Monosecret is PID 1,
+		// the kernel ignores terminating signals with their default disposition,
+		// and any signal received in a post-spawn setup window would be lost.
+		#[cfg(unix)]
+		let mut signal_forwarder = ChildSignalForwarder::prepare()?;
+
 		// Spawn (rather than `status`) so the Run event is recorded the moment the
 		// child starts, before the potentially long-running wait. A long-lived
 		// command (e.g. a dev server) would otherwise not be logged until it exits,
@@ -6337,8 +6677,12 @@ impl Secrets {
 			},
 		);
 
-		let status = child?.wait()?;
-		Ok(status.code().unwrap_or(1))
+		let mut child = child?;
+		#[cfg(unix)]
+		signal_forwarder.start(child.id());
+
+		let status = child.wait()?;
+		Ok(command_exit_code(status))
 	}
 
 	/// Resolves every secret for the active profile and emits them in `format`,
@@ -6353,7 +6697,7 @@ impl Secrets {
 	/// caller can capture the formatted bytes and a broken pipe surfaces as a
 	/// returned error (and is audited) instead of a panic. The CLI passes a
 	/// locked stdout handle.
-	pub fn export(&self, format: ExportFormat, out: &mut dyn io::Write) -> Result<()> {
+	pub fn export(&self, format: ExportFormat, out: &mut dyn Write) -> Result<()> {
 		self.ensure_reason_for(AuditAction::Export, None)?;
 		let profile = self.resolve_profile_name(None);
 
@@ -6401,7 +6745,7 @@ impl Secrets {
 			.iter()
 			.map(|(key, value)| (key.as_str(), value.expose_secret()))
 			.collect();
-		entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+		entries.sort_by_key(|(a, _)| *a);
 
 		let keys: Vec<String> = if self.audit.is_some() {
 			entries.iter().map(|(key, _)| key.to_string()).collect()
@@ -6420,7 +6764,7 @@ impl Secrets {
 			},
 			AuditFields {
 				keys: &keys,
-				error_kind: result.as_ref().err().map(|e| e.kind()),
+				error_kind: result.as_ref().err().map(MonosecretError::kind),
 				..Default::default()
 			},
 		);
@@ -6448,11 +6792,7 @@ pub enum ExportFormat {
 /// Write entries (pre-sorted by key) to `out` in the given format. Writing to
 /// an injected sink (rather than `print!`) lets an SDK caller capture the bytes
 /// and turns a broken pipe into a returned error instead of a panic.
-fn write_export(
-	format: ExportFormat,
-	entries: &[(&str, &str)],
-	out: &mut dyn io::Write,
-) -> Result<()> {
+fn write_export(format: ExportFormat, entries: &[(&str, &str)], out: &mut dyn Write) -> Result<()> {
 	match format {
 		ExportFormat::Shell => {
 			let mut buf = String::new();
@@ -6470,7 +6810,7 @@ fn write_export(
 			// rebuilding and re-sorting a map (which would also re-copy values).
 			let content = crate::provider::dotenv::serialize_dotenv_pairs(
 				entries.iter().map(|(key, value)| (*key, *value)),
-			);
+			)?;
 			out.write_all(content.as_bytes())
 				.map_err(MonosecretError::Io)?;
 		}
@@ -6506,7 +6846,7 @@ pub(crate) fn shell_single_quote(value: &str) -> String {
 /// GitHub/Forgejo Actions writer that masks every value line on `out` and
 /// appends the assignments to `$GITHUB_ENV`. Multi-line values use the heredoc
 /// form so they survive. Errors when `$GITHUB_ENV` is unset.
-fn write_gha(entries: &[(&str, &str)], out: &mut dyn io::Write) -> Result<()> {
+fn write_gha(entries: &[(&str, &str)], out: &mut dyn Write) -> Result<()> {
 	use std::io::Write;
 
 	let github_env = env::var("GITHUB_ENV").map_err(|_| {
@@ -6590,6 +6930,32 @@ fn gha_heredoc_delimiter(value: &str) -> String {
 		if !value.lines().any(|line| line == delimiter) {
 			return delimiter;
 		}
+	}
+}
+
+#[cfg(test)]
+mod construction_tests {
+	use super::*;
+
+	#[test]
+	fn from_spec_uses_explicit_logical_base_directory() {
+		let spec = Spec::from_toml(
+			r#"
+            [project]
+            name = "embedded"
+            revision = "1.0"
+            require_reason = false
+
+            [profiles.default]
+            TOKEN = { description = "Embedded token", required = false }
+        "#,
+		)
+		.unwrap();
+		let base_dir = PathBuf::from("a-base-directory-that-does-not-exist");
+
+		let secrets = Secrets::from_spec_at(spec, &base_dir).unwrap();
+
+		assert_eq!(secrets.config_dir, base_dir);
 	}
 }
 
@@ -6750,9 +7116,9 @@ mod export_tests {
 	}
 
 	#[test]
-	fn dotenv_format_double_quotes_and_escapes() {
+	fn dotenv_format_uses_minimal_round_trip_quoting() {
 		let out = rendered(ExportFormat::Dotenv, &[("A", "pa$$"), ("B", "x")]);
-		assert_eq!(out, "A=\"pa\\$\\$\"\nB=\"x\"\n");
+		assert_eq!(out, "A=pa$$\nB=x\n");
 	}
 
 	/// The runner unescapes add-mask data before registering it, so the data we
@@ -6832,6 +7198,38 @@ mod policy_tests {
 			spec().with_reason("deploy").with_default_reason("").reason,
 			Some("deploy".to_string())
 		);
+	}
+
+	#[test]
+	fn caller_context_is_normalized_but_never_counts_as_a_reason() {
+		let mut spec = Secrets::new(
+			crate::tests::resolve_test_config(HashMap::new()),
+			None,
+			None,
+			None,
+		)
+		.with_caller(
+			CallerContext::new("  git  ")
+				.with_operation(" credential_get ")
+				.with_resource(" github.com "),
+		);
+
+		assert_eq!(
+			spec.caller,
+			Some(
+				CallerContext::new("git")
+					.with_operation("credential_get")
+					.with_resource("github.com")
+			)
+		);
+		spec.require_reason = RequireReason::Always;
+		assert!(matches!(
+			spec.ensure_reason(),
+			Err(MonosecretError::ReasonRequired)
+		));
+
+		// A real reason remains independent and satisfies the policy.
+		assert!(spec.with_reason("release package").ensure_reason().is_ok());
 	}
 
 	#[test]
@@ -7458,7 +7856,7 @@ mod run_prompt_tests {
 		assert_eq!(prompts.load(Ordering::SeqCst), 1);
 		assert_eq!(
 			std::fs::read_to_string(dotenv_path).unwrap(),
-			"DEPLOY_PASSWORD=\"persisted-answer\"\n"
+			"DEPLOY_PASSWORD=persisted-answer\n"
 		);
 	}
 

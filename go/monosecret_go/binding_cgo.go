@@ -16,7 +16,8 @@ import "C"
 import "unsafe"
 
 // ensureLoaded is a no-op: the platform linker loads the resolver.
-func ensureLoaded() error { return nil }
+func ensureLoaded() error     { return nil }
+func ensureCallLoaded() error { return nil }
 
 // nativeResolve calls monosecret_resolve and returns the owned response, freeing
 // both the C request copy and the returned allocation.
@@ -27,6 +28,19 @@ func nativeResolve(payload string) (string, error) {
 	res := C.monosecret_resolve(req)
 	if res == nil {
 		return "", &Error{Kind: "ffi", Message: "monosecret_resolve returned null"}
+	}
+	out := C.GoString(res)
+	C.monosecret_free(res)
+	return out, nil
+}
+
+func nativeCall(payload string) (string, error) {
+	req := C.CString(payload)
+	defer C.free(unsafe.Pointer(req))
+
+	res := C.monosecret_call(req)
+	if res == nil {
+		return "", &Error{Kind: "ffi", Message: "monosecret_call returned null"}
 	}
 	out := C.GoString(res)
 	C.monosecret_free(res)

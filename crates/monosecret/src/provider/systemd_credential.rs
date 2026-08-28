@@ -46,9 +46,10 @@ impl TryFrom<&ProviderUrl> for SystemdCredentialConfig {
 			let item = host
 				.as_deref()
 				.or((!path_item.is_empty()).then_some(path_item));
-			let hint = item
-				.map(|item| crate::config::ref_table_hint(None, item, None, None))
-				.unwrap_or_else(|| "ref = { item = \"CREDENTIAL_NAME\" }".to_string());
+			let hint = item.map_or_else(
+				|| "ref = { item = \"CREDENTIAL_NAME\" }".to_string(),
+				|item| crate::config::ref_table_hint(None, item, None, None),
+			);
 			return Err(MonosecretError::ProviderOperationFailed(format!(
 				"systemd-credential:// takes no authority, path, or query: to read one \
                  specific credential, use {hint} on the secret instead"

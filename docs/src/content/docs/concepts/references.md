@@ -40,7 +40,7 @@ vault                which container holds the item        (1Password only)
 └── item             the store's own name for the secret   (always required)
     └── section      a named group of fields               (1Password only)
         └── field    one component inside the item          (structured stores)
-            └── version   which revision to read            (GCSM only)
+            └── version   which revision to read            (supported stores only)
 ```
 
 Only `item` is universal, because every store names its secrets somehow. `item`
@@ -147,3 +147,10 @@ the inherited form. See [Profiles: Switching reference models](/concepts/profile
 See the [configuration reference](/reference/configuration/#secret-references) for
 the full specification: the coordinate table, how every provider interprets each
 coordinate, and the exact rules.
+
+Azure App Configuration (0.20+) native `ref.item` values name one App
+Configuration key and remain read-only. An App Configuration value can itself
+be a canonical Azure Key Vault reference; Monosecret follows that stored URI,
+including its optional Key Vault version. This is separate from Monosecret's
+`ref.version` coordinate, which Azure Key Vault accepts directly starting in
+0.20.

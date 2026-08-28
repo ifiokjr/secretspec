@@ -3,6 +3,7 @@ use std::convert::TryFrom;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -30,6 +31,15 @@ use crate::error::Result;
 use crate::secrets::Secrets;
 use crate::validation::ValidatedSecrets;
 use crate::validation::ValidationErrors;
+
+fn dotenv_values(path: &Path) -> HashMap<String, String> {
+	dotenv::EnvLoader::with_path(path)
+		.sequence(dotenv::EnvSequence::InputOnly)
+		.load()
+		.unwrap()
+		.into_iter()
+		.collect()
+}
 
 // Helper function for tests that need to parse from string
 fn parse_spec_from_str(content: &str, _base_path: Option<&Path>) -> Result<Config> {
@@ -1241,10 +1251,11 @@ fn test_report_lists_missing_required_without_failing() {
 	assert_eq!(status("MISSING"), Some(ResolutionStatus::MissingRequired));
 }
 
-/// A generatable secret with no stored value must be reported by the value-free
-/// surfaces (`report()`, `resolve_without_values()`) as *would-generate* without
-/// actually minting and storing it — a read-only preflight must not mutate the
-/// provider. The full `resolve()` still generates and writes.
+/// An *optional* generatable secret with no stored value must be reported by the
+/// value-free surfaces (`report()`, `resolve_without_values()`) as
+/// *would-generate* without actually minting and storing it — a read-only
+/// preflight must not mutate the provider. The full `resolve()` still generates
+/// and writes.
 #[test]
 fn test_value_free_surfaces_do_not_generate_or_store() {
 	use crate::config::GenerateConfig;
@@ -1260,7 +1271,7 @@ fn test_value_free_surfaces_do_not_generate_or_store() {
 		"SESSION_KEY".to_string(),
 		Secret {
 			description: Some("generated".to_string()),
-			required: Some(true),
+			required: Some(false),
 			secret_type: Some("hex".to_string()),
 			generate: Some(GenerateConfig::Bool(true)),
 			..Default::default()
@@ -1308,10 +1319,9 @@ fn test_value_free_surfaces_do_not_generate_or_store() {
 	);
 }
 
-/// The value-free `report()` over a read-only provider must succeed (a missing
-/// generatable secret is reported as would-generate) rather than failing because
-/// a generated value cannot be stored. Regression: the value-free path used to
-/// reach the provider write and error on `env://`.
+/// The value-free `report()` over a read-only provider must succeed rather than
+/// failing because a generated value cannot be stored. Regression: the value-free
+/// path used to reach the provider write and error on `env://`.
 #[test]
 fn test_value_free_report_tolerates_read_only_provider() {
 	use crate::config::GenerateConfig;
@@ -1342,8 +1352,112 @@ fn test_value_free_report_tolerates_read_only_provider() {
 		.iter()
 		.find(|s| s.name == "SESSION_KEY")
 		.expect("SESSION_KEY in report");
+	// `env://` stores nothing Monosecret writes, so the required secret is not
+	// provisioned: the preflight reports the gap instead of minting an answer.
+	assert_eq!(entry.status, ResolutionStatus::MissingRequired);
+	assert!(!entry.generated);
+}
+
+/// A *required* generatable secret that no provider holds is not resolved: the
+/// value-free preflight must report it missing rather than promising a value the
+/// store does not have, so `check --no-prompt --explain` exits non-zero until
+/// something actually provisions it. The value-carrying `resolve()` still mints
+/// and stores it, and afterwards the preflight sees the stored value.
+#[test]
+fn test_value_free_report_marks_unprovisioned_required_generated_secret_missing() {
+	use crate::config::GenerateConfig;
+	use crate::report::ResolutionStatus;
+
+	let temp_dir = TempDir::new().unwrap();
+	let env_path = temp_dir.path().join(".env");
+	fs::write(&env_path, "").unwrap();
+
+	let mut secrets = HashMap::new();
+	secrets.insert(
+		"SESSION_KEY".to_string(),
+		Secret {
+			description: Some("generated".to_string()),
+			required: Some(true),
+			secret_type: Some("hex".to_string()),
+			generate: Some(GenerateConfig::Bool(true)),
+			..Default::default()
+		},
+	);
+
+	let provider = format!("dotenv://{}", env_path.display());
+	let spec = Secrets::new(resolve_test_config(secrets), None, Some(provider), None);
+
+	let report = spec.report().unwrap();
+	let entry = report
+		.secrets
+		.iter()
+		.find(|s| s.name == "SESSION_KEY")
+		.expect("SESSION_KEY in report");
+	assert_eq!(entry.status, ResolutionStatus::MissingRequired);
+	assert!(!entry.generated);
+	assert!(
+		!report.all_required_present(),
+		"an unprovisioned required secret must fail the preflight gate"
+	);
+	assert!(
+		report
+			.to_explain_string()
+			.contains("SESSION_KEY  MISSING   required")
+	);
+	assert_eq!(
+		fs::read_to_string(&env_path).unwrap(),
+		"",
+		"the preflight must not store anything"
+	);
+
+	// The value-carrying pass provisions it, after which the preflight agrees.
+	assert!(spec.resolve().unwrap().is_ok());
+	let after = spec.report().unwrap();
+	let entry = after
+		.secrets
+		.iter()
+		.find(|s| s.name == "SESSION_KEY")
+		.expect("SESSION_KEY in report");
+	assert_eq!(entry.status, ResolutionStatus::Resolved);
+	assert!(after.all_required_present());
+}
+
+/// A store that never retains what it mints (`null://`) has nothing to
+/// provision: the value is generated fresh for every resolution, so even a
+/// required secret is reported as would-generate rather than missing.
+#[test]
+fn test_value_free_report_resolves_generated_secret_on_ephemeral_store() {
+	use crate::config::GenerateConfig;
+	use crate::report::ResolutionStatus;
+
+	let mut secrets = HashMap::new();
+	secrets.insert(
+		"SESSION_KEY".to_string(),
+		Secret {
+			description: Some("generated".to_string()),
+			required: Some(true),
+			secret_type: Some("hex".to_string()),
+			generate: Some(GenerateConfig::Bool(true)),
+			..Default::default()
+		},
+	);
+
+	let spec = Secrets::new(
+		resolve_test_config(secrets),
+		None,
+		Some("null://".to_string()),
+		None,
+	);
+
+	let report = spec.report().unwrap();
+	let entry = report
+		.secrets
+		.iter()
+		.find(|s| s.name == "SESSION_KEY")
+		.expect("SESSION_KEY in report");
 	assert_eq!(entry.status, ResolutionStatus::Resolved);
 	assert!(entry.generated);
+	assert!(report.all_required_present());
 }
 
 /// When a per-secret provider chain's primary provider *errors* (not merely
@@ -3040,16 +3154,8 @@ fn test_import_between_dotenv_files() {
 	let result = spec.import(&from_provider);
 	assert!(result.is_ok(), "Import should succeed: {:?}", result);
 
-	// Verify using dotenvy that the values are correct
-	let vars: HashMap<String, String> = {
-		let mut result = HashMap::new();
-		let env_vars = dotenvy::from_path_iter(&target_env_path).unwrap();
-		for item in env_vars {
-			let (k, v) = item.unwrap();
-			result.insert(k, v);
-		}
-		result
-	};
+	// Verify using the same dotenv parser that the values are correct.
+	let vars = dotenv_values(&target_env_path);
 
 	// SECRET_ONE should be imported
 	assert_eq!(
@@ -3172,16 +3278,8 @@ fn test_import_edge_cases() {
 		result
 	);
 
-	// Verify using dotenvy that the values are correct
-	let vars: HashMap<String, String> = {
-		let mut result = HashMap::new();
-		let env_vars = dotenvy::from_path_iter(&target_env_path).unwrap();
-		for item in env_vars {
-			let (k, v) = item.unwrap();
-			result.insert(k, v);
-		}
-		result
-	};
+	// Verify using the same dotenv parser that the values are correct.
+	let vars = dotenv_values(&target_env_path);
 
 	// Empty value should be imported
 	assert_eq!(
@@ -3436,16 +3534,8 @@ fn test_import_with_profiles() {
 	let result = spec.import(&from_provider);
 	assert!(result.is_ok());
 
-	// Verify using dotenvy
-	let vars: HashMap<String, String> = {
-		let mut result = HashMap::new();
-		let env_vars = dotenvy::from_path_iter(&target_env_path).unwrap();
-		for item in env_vars {
-			let (k, v) = item.unwrap();
-			result.insert(k, v);
-		}
-		result
-	};
+	// Verify using the same dotenv parser.
+	let vars = dotenv_values(&target_env_path);
 
 	// Only DEV_SECRET and SHARED_SECRET should be imported (not PROD_SECRET)
 	assert_eq!(
@@ -3802,9 +3892,12 @@ fn test_import_dotenv_profile_issue_36() {
 				println!("{}", target_contents);
 
 				// The real bug: JWT_SECRET should be imported from .env
-				assert!(
-					target_contents.contains("JWT_SECRET=\"super-secret-jwt-token\""),
-					"JWT_SECRET should have been imported from source .env"
+				assert_eq!(
+					dotenv_values(&target_env_path)
+						.get("JWT_SECRET")
+						.map(String::as_str),
+					Some("super-secret-jwt-token"),
+					"JWT_SECRET should have been imported from source .env",
 				);
 
 				// The import should NOT import defaults - those stay as defaults
@@ -4371,7 +4464,7 @@ fn operation_scoped_provider_cache_refreshes_snapshots_between_resolutions() {
 }
 
 #[test]
-fn operation_scoped_provider_cache_applies_changed_reason_on_later_resolution() {
+fn operation_scoped_provider_cache_applies_changed_session_context_on_later_resolution() {
 	let _lock = scrub_resolution_env();
 	let temp_dir = TempDir::new().unwrap();
 	let primary_file = temp_dir.path().join("empty.env");
@@ -4381,6 +4474,7 @@ fn operation_scoped_provider_cache_applies_changed_reason_on_later_resolution() 
 	const SECRET: &str = "AUDITED_SECRET";
 	let item = format!("{PROJECT}/default/{SECRET}");
 	crate::provider::tests::take_stateful_reason_reads(&item);
+	crate::provider::tests::take_stateful_caller_reads(&item);
 	let store = crate::provider::provider_from_spec(
 		"statefultest://",
 		crate::provider::ProviderCredentials::new(),
@@ -4393,9 +4487,19 @@ fn operation_scoped_provider_cache_applies_changed_reason_on_later_resolution() 
 		)
 		.unwrap();
 
-	let spec = stateful_fallback_spec(PROJECT, SECRET, &primary_file).with_reason("first reason");
+	let spec = stateful_fallback_spec(PROJECT, SECRET, &primary_file)
+		.with_reason("first reason")
+		.with_caller(
+			crate::CallerContext::new("git")
+				.with_operation("credential_get")
+				.with_resource("github.com"),
+		);
 	spec.validate().unwrap().expect("first resolution succeeds");
-	let spec = spec.with_reason("second reason");
+	let spec = spec.with_reason("second reason").with_caller(
+		crate::CallerContext::new("git")
+			.with_operation("credential_store")
+			.with_resource("github.com"),
+	);
 	spec.validate()
 		.unwrap()
 		.expect("second resolution succeeds");
@@ -4407,12 +4511,27 @@ fn operation_scoped_provider_cache_applies_changed_reason_on_later_resolution() 
 			Some("second reason".to_string())
 		]
 	);
+	assert_eq!(
+		crate::provider::tests::take_stateful_caller_reads(&item),
+		vec![
+			Some(
+				crate::CallerContext::new("git")
+					.with_operation("credential_get")
+					.with_resource("github.com")
+			),
+			Some(
+				crate::CallerContext::new("git")
+					.with_operation("credential_store")
+					.with_resource("github.com")
+			),
+		]
+	);
 }
 
 /// When the primary provider in a chain errors (e.g. authentication failure),
 /// validation should fall back to the next provider rather than propagating
 /// the error. Simulated here by pointing the primary dotenv at a directory,
-/// which causes `from_path_iter` to fail on read.
+/// which causes its loader to fail on read.
 #[test]
 fn test_validate_falls_back_on_primary_provider_error() {
 	let temp_dir = TempDir::new().unwrap();
@@ -5322,14 +5441,46 @@ BAD = { description = "invalid base64", encoding = "base64" }
 	assert!(!error.to_string().contains("%%%"));
 }
 
-#[test]
-fn test_json_extract_resolves_structured_values_after_decoding() {
-	use std::fs;
-
+/// A store of documents on disk and a spec whose secrets extract from them.
+/// `secret_rows` is the `[profiles.default]` body. The returned `TempDir` must
+/// outlive the spec, and the returned path is the store root.
+fn extract_document_spec(
+	project: &str,
+	documents: &[(&str, &str)],
+	secret_rows: &str,
+) -> (TempDir, PathBuf, Secrets) {
 	let temp_dir = TempDir::new().unwrap();
 	let store = temp_dir.path().join("store");
 	fs::create_dir(&store).unwrap();
-	let document_path = store.join("application.json");
+	for (name, contents) in documents {
+		fs::write(store.join(name), contents).unwrap();
+	}
+
+	let config_file = temp_dir.path().join("monosecret.toml");
+	let store_uri = toml::Value::String(format!("file:{}", store.display())).to_string();
+	fs::write(
+		&config_file,
+		format!(
+			r#"[project]
+name = "{project}"
+revision = "1.0"
+require_reason = false
+
+[providers]
+documents = {store_uri}
+
+[profiles.default]
+{secret_rows}"#
+		),
+	)
+	.unwrap();
+
+	let config = Config::try_from(config_file.as_path()).unwrap();
+	(temp_dir, store, Secrets::new(config, None, None, None))
+}
+
+#[test]
+fn test_json_extract_resolves_structured_values_after_decoding() {
 	let document = r#"{
   "database": {
     "password": "p@ss\nword",
@@ -5341,44 +5492,25 @@ fn test_json_extract_resolves_structured_values_after_decoding() {
   },
   "a/b": { "~key": "escaped" }
 }"#;
-	fs::write(&document_path, document).unwrap();
-	fs::write(
-		store.join("encoded.json"),
-		"eyJkYXRhIjp7InRva2VuIjoiYWJjIn19",
-	)
-	.unwrap();
-
-	let config_file = temp_dir.path().join("monosecret.toml");
-	let store_uri = toml::Value::String(format!("file:{}", store.display())).to_string();
-	fs::write(
-        &config_file,
-        format!(
-            r#"[project]
-name = "test-json-extract"
-revision = "1.0"
-require_reason = false
-
-[providers]
-documents = {store_uri}
-
-[profiles.default]
-PASSWORD = {{ description = "password", providers = ["documents"], ref = {{ item = "application.json" }}, extract = {{ format = "json", pointer = "/database/password" }} }}
-PORT = {{ description = "port", providers = ["documents"], ref = {{ item = "application.json" }}, extract = {{ format = "json", pointer = "/database/port" }} }}
-ENABLED = {{ description = "enabled", providers = ["documents"], ref = {{ item = "application.json" }}, extract = {{ format = "json", pointer = "/database/enabled" }} }}
-NULL_VALUE = {{ description = "null", providers = ["documents"], ref = {{ item = "application.json" }}, extract = {{ format = "json", pointer = "/database/nullable" }} }}
-OPTIONS = {{ description = "object", providers = ["documents"], ref = {{ item = "application.json" }}, extract = {{ format = "json", pointer = "/database/options" }} }}
-HOSTS = {{ description = "array", providers = ["documents"], ref = {{ item = "application.json" }}, extract = {{ format = "json", pointer = "/database/hosts" }} }}
-ESCAPED = {{ description = "escaped pointer", providers = ["documents"], ref = {{ item = "application.json" }}, extract = {{ format = "json", pointer = "/a~1b/~0key" }} }}
-OPTIONS_FILE = {{ description = "object as file", providers = ["documents"], ref = {{ item = "application.json" }}, extract = {{ format = "json", pointer = "/database/options" }}, as_path = true }}
-ENCODED = {{ description = "decoded document", providers = ["documents"], ref = {{ item = "encoded.json" }}, encoding = "base64", extract = {{ format = "json", pointer = "/data/token" }} }}
-FALLBACK = {{ description = "logical default", providers = ["documents"], ref = {{ item = "missing.json" }}, extract = {{ format = "json", pointer = "/ignored" }}, default = "already-logical" }}
-"#
-        ),
-    )
-    .unwrap();
-
-	let config = Config::try_from(config_file.as_path()).unwrap();
-	let spec = Secrets::new(config, None, None, None);
+	let (_temp_dir, store, spec) = extract_document_spec(
+		"test-json-extract",
+		&[
+			("application.json", document),
+			("encoded.json", "eyJkYXRhIjp7InRva2VuIjoiYWJjIn19"),
+		],
+		r#"PASSWORD = { description = "password", providers = ["documents"], ref = { item = "application.json" }, extract = { format = "json", pointer = "/database/password" } }
+PORT = { description = "port", providers = ["documents"], ref = { item = "application.json" }, extract = { format = "json", pointer = "/database/port" } }
+ENABLED = { description = "enabled", providers = ["documents"], ref = { item = "application.json" }, extract = { format = "json", pointer = "/database/enabled" } }
+NULL_VALUE = { description = "null", providers = ["documents"], ref = { item = "application.json" }, extract = { format = "json", pointer = "/database/nullable" } }
+OPTIONS = { description = "object", providers = ["documents"], ref = { item = "application.json" }, extract = { format = "json", pointer = "/database/options" } }
+HOSTS = { description = "array", providers = ["documents"], ref = { item = "application.json" }, extract = { format = "json", pointer = "/database/hosts" } }
+ESCAPED = { description = "escaped pointer", providers = ["documents"], ref = { item = "application.json" }, extract = { format = "json", pointer = "/a~1b/~0key" } }
+OPTIONS_FILE = { description = "object as file", providers = ["documents"], ref = { item = "application.json" }, extract = { format = "json", pointer = "/database/options" }, as_path = true }
+ENCODED = { description = "decoded document", providers = ["documents"], ref = { item = "encoded.json" }, encoding = "base64", extract = { format = "json", pointer = "/data/token" } }
+FALLBACK = { description = "logical default", providers = ["documents"], ref = { item = "missing.json" }, extract = { format = "json", pointer = "/ignored" }, default = "already-logical" }
+"#,
+	);
+	let document_path = store.join("application.json");
 	let validated = spec.validate().unwrap().unwrap();
 	let values = &validated.resolved.secrets;
 	assert_eq!(values["PASSWORD"].expose_secret(), "p@ss\nword");
@@ -5417,22 +5549,105 @@ FALLBACK = {{ description = "logical default", providers = ["documents"], ref = 
 }
 
 #[test]
-fn test_json_extract_errors_do_not_expose_stored_documents() {
+fn test_json_extract_renders_a_null_while_a_provider_field_treats_it_as_absent() {
 	use crate::config::ExtractFormat;
 	use crate::config::SecretExtract;
 
+	// An extract pointer names one location and reports what the document
+	// holds there, so a null renders. test_json_extract_resolves_structured_
+	// values_after_decoding pins this end to end.
 	let extract = SecretExtract {
 		format: ExtractFormat::Json,
 		pointer: "/database/password".to_string(),
 	};
-	for stored in [
-		r#"{"database":"sensitive-invalid-document""#,
-		r#"{"other":"sensitive-missing-pointer"}"#,
-	] {
-		let error = Secrets::extract_stored_value(&extract, "PASSWORD", stored).unwrap_err();
-		assert_eq!(error.kind(), "decode_failed");
-		assert!(error.to_string().contains("using json"));
-		assert!(!error.to_string().contains("sensitive"));
+	let rendered =
+		Secrets::extract_stored_value(&extract, "PASSWORD", r#"{"database":{"password":null}}"#)
+			.unwrap();
+	assert_eq!(rendered.expose_secret(), "null");
+
+	// A provider `field` is a lookup that can come up empty, so the same null
+	// is absent and the provider chain continues.
+	let value: serde_json::Value = serde_json::from_str(r#"{"password":null}"#).unwrap();
+	assert!(crate::json_field::render_field(&value["password"]).is_none());
+
+	// Everything that is not null renders identically on both paths.
+	let port =
+		Secrets::extract_stored_value(&extract, "PASSWORD", r#"{"database":{"password":5432}}"#)
+			.unwrap();
+	assert_eq!(port.expose_secret(), "5432");
+}
+
+#[test]
+fn test_ini_extract_resolves_sectioned_and_unsectioned_values() {
+	let (_temp_dir, _store, spec) = extract_document_spec(
+		"test-ini-extract",
+		&[(
+			"application.ini",
+			r#"root_token = root-value
+
+[database]
+password = p@ss#word;still-secret
+windows_path = C:\secrets\database
+
+[a/b]
+~key = escaped
+"#,
+		)],
+		r#"ROOT = { description = "root", providers = ["documents"], ref = { item = "application.ini" }, extract = { format = "ini", pointer = "/root_token" } }
+PASSWORD = { description = "password", providers = ["documents"], ref = { item = "application.ini" }, extract = { format = "ini", pointer = "/database/password" } }
+WINDOWS_PATH = { description = "literal backslashes", providers = ["documents"], ref = { item = "application.ini" }, extract = { format = "ini", pointer = "/database/windows_path" } }
+ESCAPED = { description = "escaped pointer", providers = ["documents"], ref = { item = "application.ini" }, extract = { format = "ini", pointer = "/a~1b/~0key" } }
+"#,
+	);
+	let validated = spec.validate().unwrap().unwrap();
+	let values = &validated.resolved.secrets;
+	assert_eq!(values["ROOT"].expose_secret(), "root-value");
+	assert_eq!(values["PASSWORD"].expose_secret(), "p@ss#word;still-secret");
+	assert_eq!(
+		values["WINDOWS_PATH"].expose_secret(),
+		r"C:\secrets\database"
+	);
+	assert_eq!(values["ESCAPED"].expose_secret(), "escaped");
+}
+
+/// No extract format may quote the stored document or the selected value in a
+/// failure. Every format is covered here so a new one inherits the invariant.
+#[test]
+fn test_extract_errors_do_not_expose_stored_documents() {
+	use crate::config::ExtractFormat;
+	use crate::config::SecretExtract;
+
+	let cases = [
+		(
+			ExtractFormat::Json,
+			[
+				r#"{"database":"sensitive-invalid-document""#,
+				r#"{"other":"sensitive-missing-pointer"}"#,
+			],
+		),
+		(
+			ExtractFormat::Ini,
+			[
+				"[database\npassword=sensitive-invalid-document",
+				"[database]\nother=sensitive-missing-pointer",
+			],
+		),
+	];
+	for (format, documents) in cases {
+		let extract = SecretExtract {
+			format,
+			pointer: "/database/password".to_string(),
+		};
+		for stored in documents {
+			let error = Secrets::extract_stored_value(&extract, "PASSWORD", stored).unwrap_err();
+			assert_eq!(error.kind(), "decode_failed", "{format:?}");
+			let message = error.to_string();
+			assert!(
+				message.contains(&format!("using {}", format.as_str())),
+				"{message}"
+			);
+			assert!(!message.contains("sensitive"), "{message}");
+		}
 	}
 }
 
@@ -6232,11 +6447,11 @@ fn build_chain_scenario(
 }
 
 fn read_env_var(path: &std::path::Path, key: &str) -> Option<String> {
-	dotenvy::from_path_iter(path)
+	dotenv::EnvLoader::with_path(path)
+		.sequence(dotenv::EnvSequence::InputOnly)
+		.load()
 		.ok()?
-		.filter_map(|res| res.ok())
-		.find(|(k, _)| k == key)
-		.map(|(_, v)| v)
+		.remove(key)
 }
 
 /// Builds a `Secrets` whose single required `MY_SECRET` declares the given
@@ -7777,6 +7992,27 @@ fn test_check_returns_ok_when_required_present() {
 }
 
 #[test]
+fn test_check_with_writer_captures_the_report() {
+	let temp_dir = TempDir::new().unwrap();
+	let spec = dotenv_spec(
+		"REQUIRED=value\n",
+		required_secret_profile("REQUIRED"),
+		&temp_dir,
+	);
+	let mut report = Vec::new();
+
+	let validated = spec
+		.check_with_writer(true, &mut report)
+		.expect("check should succeed");
+
+	assert!(validated.resolved.secrets.contains_key("REQUIRED"));
+	let report = String::from_utf8(report).unwrap();
+	assert!(report.contains("Checking secrets in test"));
+	assert!(report.contains("REQUIRED"));
+	assert!(report.contains("Summary:"));
+}
+
+#[test]
 fn test_check_no_prompt_errors_when_required_missing() {
 	let temp_dir = TempDir::new().unwrap();
 	// Empty .env -> the required secret is missing.
@@ -7973,20 +8209,20 @@ fn audit_failed_get_records_scoped_and_alias_template_refs() {
 		(
 			ProviderAlias::from(uri.clone())
 				.with_reference_template(NativeAddressTemplate {
-					item: "invalid-{key}".to_string(),
+					item: "invalid={key}".to_string(),
 					..Default::default()
 				})
 				.unwrap(),
 			None,
-			"item=invalid-REQUIRED",
+			"item=invalid=REQUIRED",
 		),
 		(
 			ProviderAlias::from(uri),
 			Some(NativeAddress {
-				item: "invalid-scoped".to_string(),
+				item: "invalid=scoped".to_string(),
 				..Default::default()
 			}),
-			"item=invalid-scoped",
+			"item=invalid=scoped",
 		),
 	];
 
@@ -9608,10 +9844,7 @@ secrets = ["IN_SCOPE"]
 		spec.import(&format!("dotenv://{}", source.display()))
 			.unwrap();
 
-		let imported: HashMap<String, String> = dotenvy::from_path_iter(&target)
-			.unwrap()
-			.map(|item| item.unwrap())
-			.collect();
+		let imported = dotenv_values(&target);
 		assert_eq!(imported.get("IN_SCOPE"), Some(&"a".to_string()));
 		assert_eq!(
 			imported.get("OUT_OF_SCOPE"),
@@ -10276,12 +10509,10 @@ fn set_writes_authoritative_provider_then_refreshes_cache() {
 	let secrets = cached_dotenv_secrets(&[&source], &cache, "1h");
 
 	secrets.set("API_KEY", Some("written".to_string())).unwrap();
-	let source_value = dotenvy::from_path_iter(&source)
-		.unwrap()
-		.next()
-		.unwrap()
-		.unwrap();
-	assert_eq!(source_value, ("API_KEY".to_string(), "written".to_string()));
+	assert_eq!(
+		dotenv_values(&source).get("API_KEY").map(String::as_str),
+		Some("written")
+	);
 	fs::remove_file(&source).unwrap();
 	assert_eq!(resolved_value(&secrets, "API_KEY"), "written");
 }
@@ -10440,11 +10671,7 @@ fn cache_write_failure_does_not_hide_authoritative_value() {
 /// Rewrite a dotenv-backed cache entry's expiration, so it reads as expired.
 fn expire_cache_entry(cache: &Path, project: &str, name: &str) {
 	let marker = crate::cache::CACHE_ENVELOPE_MARKER;
-	let (_, stored) = dotenvy::from_path_iter(cache)
-		.unwrap()
-		.next()
-		.unwrap()
-		.unwrap();
+	let stored = dotenv_values(cache).remove("API_KEY").unwrap();
 	let payload = stored
 		.strip_prefix(marker)
 		.expect("a cache entry carries the ownership marker");
@@ -10461,11 +10688,7 @@ fn expire_cache_entry(cache: &Path, project: &str, name: &str) {
 /// Rewrite the current dotenv-backed entry in the released v2 envelope format.
 fn rewrite_cache_entry_as_v2(cache: &Path, project: &str, name: &str) {
 	let marker = crate::cache::CACHE_ENVELOPE_MARKER;
-	let (_, stored) = dotenvy::from_path_iter(cache)
-		.unwrap()
-		.next()
-		.unwrap()
-		.unwrap();
+	let stored = dotenv_values(cache).remove("API_KEY").unwrap();
 	let payload = stored
 		.strip_prefix(marker)
 		.expect("a cache entry carries the current ownership marker");
@@ -10665,10 +10888,7 @@ fn cache_construction_failure_drops_the_superseded_entry() {
 
 /// The value a cache store holds at `API_KEY`'s cache address, or `None`.
 fn stored_cache_entry(cache: &Path) -> Option<String> {
-	dotenvy::from_path_iter(cache).unwrap().find_map(|item| {
-		let (key, value) = item.unwrap();
-		(key == "API_KEY").then_some(value)
-	})
+	dotenv_values(cache).remove("API_KEY")
 }
 
 #[test]
@@ -10897,4 +11117,85 @@ fn cache_clear_clears_what_it_can_before_reporting_a_failure() {
 		!fs::read_to_string(&cache).unwrap().contains("B_KEY"),
 		"one unclearable cache must not leave the rest of the profile cached"
 	);
+}
+
+/// A provider built for an operation carries that operation's profile, so an
+/// Infisical `ref` — whose coordinates name no environment — resolves in the
+/// environment the profile names. Deleting the `set_profile` call at the
+/// construction chokepoint leaves every other test green, so this is the one
+/// that holds the wiring in place.
+#[cfg(feature = "infisical")]
+#[test]
+fn a_built_provider_carries_the_operation_profile() {
+	use crate::provider::Address;
+
+	let config = Config {
+		project: Project {
+			name: "myapp".to_string(),
+			..Default::default()
+		},
+		profiles: HashMap::new(),
+		providers: None,
+		scopes: None,
+		groups: None,
+	};
+	let mut secrets = Secrets::new(config, None, None, None);
+	secrets.set_profile("production");
+
+	let reference = crate::config::NativeAddress {
+		item: "/DB_PASSWORD".to_string(),
+		..Default::default()
+	};
+	let provider = secrets
+		.build_provider(
+			"infisical://app.infisical.com/7e2f1a4c-0000-0000-0000-000000000000".to_string(),
+			None,
+		)
+		.unwrap();
+
+	let target = provider
+		.describe_write_target(Address::Native(&reference))
+		.unwrap();
+	assert!(
+		target.contains("environment production"),
+		"a ref must resolve in the operation's profile environment, got {target}"
+	);
+}
+
+/// A credential source gets no profile, so a `ref`-addressed Infisical
+/// credential still needs an explicit `?env=`. Without this the environment
+/// would come from whichever profile ran: a credential stored under `prod`
+/// would be missing under `dev`, breaking the round-trip
+/// `PROVIDER_CREDENTIAL_SCOPE` promises.
+#[cfg(feature = "infisical")]
+#[test]
+fn a_credential_source_provider_gets_no_profile() {
+	use crate::provider::Address;
+
+	let config = Config {
+		project: Project {
+			name: "myapp".to_string(),
+			..Default::default()
+		},
+		profiles: HashMap::new(),
+		providers: None,
+		scopes: None,
+		groups: None,
+	};
+	let mut secrets = Secrets::new(config, None, None, None);
+	secrets.set_profile("production");
+
+	let reference = crate::config::NativeAddress {
+		item: "/ci/VAULT_TOKEN".to_string(),
+		..Default::default()
+	};
+	let provider = secrets
+		.build_source_provider("infisical://app.infisical.com/7e2f1a4c-0000-0000-0000-000000000000")
+		.unwrap();
+
+	let err = provider
+		.describe_write_target(Address::Native(&reference))
+		.unwrap_err()
+		.to_string();
+	assert!(err.contains("?env="), "{err}");
 }

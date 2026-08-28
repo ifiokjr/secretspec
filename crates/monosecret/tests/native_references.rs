@@ -84,12 +84,13 @@ TOKEN = { description = "generated token", type = "password", generate = { lengt
 		"dotenv:{}",
 		env_path.display().to_string().replace('\\', "/")
 	));
+	// A value-free surface mints nothing: an unprovisioned required `generate`
+	// secret is reported as missing rather than as resolved-from-generation.
 	let response = secrets
 		.resolve_without_values()
 		.expect("value-free resolution succeeds");
-	let token = response.secrets.get("TOKEN").expect("generated provenance");
-	assert_eq!(token.source, ResolvedSource::Generated);
-	assert_eq!(token.value, None);
+	assert_eq!(response.secrets.get("TOKEN"), None);
+	assert_eq!(response.missing_required, vec!["TOKEN".to_string()]);
 	assert!(!env_path.exists(), "value-free resolution must not write");
 
 	let response = secrets.resolve().expect("materialized resolution succeeds");

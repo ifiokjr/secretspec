@@ -14,18 +14,23 @@ use crate::provider::ProviderCredentials;
 use crate::provider::ProviderUrl;
 use crate::provider::credential_or_env;
 
-/// Represents a OnePassword item retrieved from the CLI.
+/// Represents a `OnePassword` item retrieved from the CLI.
 ///
 /// This struct deserializes the JSON output from the `op item get` command
 /// and contains an array of fields that hold the actual secret data.
 #[derive(Debug, Deserialize)]
 struct OnePasswordItem {
-	/// Collection of fields within the OnePassword item.
+	/// Stable item identifier returned by batched `op item get` calls.
+	///
+	/// Single-item reads only need the fields, so this remains optional for
+	/// compatibility with older CLI output and focused parser fixtures.
+	id: Option<String>,
+	/// Collection of fields within the `OnePassword` item.
 	/// Each field represents a piece of data stored in the item.
 	fields: Vec<OnePasswordField>,
 }
 
-/// Represents a single field within a OnePassword item.
+/// Represents a single field within a `OnePassword` item.
 ///
 /// Fields can contain various types of data such as passwords, strings,
 /// or concealed values. The field's label is used to identify specific
@@ -45,7 +50,7 @@ struct OnePasswordField {
 	value: Option<String>,
 }
 
-/// Template for creating new OnePassword items via the CLI.
+/// Template for creating new `OnePassword` items via the CLI.
 ///
 /// This struct is serialized to JSON and passed to the `op item create` command
 /// using the `--template` flag. It defines the structure and metadata for
@@ -54,7 +59,7 @@ struct OnePasswordField {
 struct OnePasswordItemTemplate {
 	/// The title of the item, formatted as "monosecret/{project}/{profile}/{key}".
 	title: String,
-	/// The category of the item. Always "SECURE_NOTE" for monosecret items.
+	/// The category of the item. Always "`SECURE_NOTE`" for monosecret items.
 	category: String,
 	/// Collection of fields to include in the item.
 	/// Contains project, key, and value fields.
@@ -64,10 +69,10 @@ struct OnePasswordItemTemplate {
 	tags: Vec<String>,
 }
 
-/// Template for individual fields when creating OnePassword items.
+/// Template for individual fields when creating `OnePassword` items.
 ///
 /// Each field represents a piece of data to store in the item.
-/// Used within OnePasswordItemTemplate to define the item's content.
+/// Used within `OnePasswordItemTemplate` to define the item's content.
 #[derive(Debug, Serialize)]
 struct OnePasswordFieldTemplate {
 	/// Human-readable label for the field (e.g., "project", "key", "value").
@@ -91,6 +96,17 @@ pub struct SecretReference {
 	pub section: Option<String>,
 	/// The field label or ID to read and write.
 	pub field: String,
+}
+
+/// A field reference queued for `op inject`, carrying the vault and item
+/// strings the render site already resolved. The URI is built from these
+/// same strings and is never re-parsed to recover them: item titles may
+/// contain `/`, which would make splitting the URI ambiguous.
+#[derive(Debug, Clone)]
+struct BatchRef {
+	uri: String,
+	vault: String,
+	item: String,
 }
 
 /// Collision-resistant framing around each `op inject` expression.
@@ -161,10 +177,10 @@ impl InjectTemplate {
 	}
 }
 
-/// Configuration for the OnePassword provider.
+/// Configuration for the `OnePassword` provider.
 ///
 /// This struct contains all the necessary configuration options for
-/// interacting with OnePassword CLI. It supports both interactive authentication
+/// interacting with `OnePassword` CLI. It supports both interactive authentication
 /// and service account tokens for automated workflows.
 ///
 /// # Examples
@@ -190,7 +206,7 @@ impl InjectTemplate {
 pub struct OnePasswordConfig {
 	/// Optional account shorthand (for multiple accounts).
 	///
-	/// Used with the `--account` flag when you have multiple OnePassword
+	/// Used with the `--account` flag when you have multiple `OnePassword`
 	/// accounts configured. This should match the shorthand shown in
 	/// `op account list`.
 	pub account: Option<String>,
@@ -201,11 +217,11 @@ pub struct OnePasswordConfig {
 	pub default_vault: Option<String>,
 	/// Service account token (alternative to interactive auth).
 	///
-	/// When set, this token is passed via the OP_SERVICE_ACCOUNT_TOKEN
+	/// When set, this token is passed via the `OP_SERVICE_ACCOUNT_TOKEN`
 	/// environment variable to authenticate without user interaction.
 	/// Ideal for CI/CD environments.
 	pub service_account_token: Option<String>,
-	/// Optional folder prefix format string for organizing secrets in OnePassword.
+	/// Optional folder prefix format string for organizing secrets in `OnePassword`.
 	///
 	/// Supports placeholders: {project}, {profile}, and {key}.
 	/// Defaults to "monosecret/{project}/{profile}/{key}" if not specified.
@@ -234,8 +250,7 @@ impl TryFrom<&ProviderUrl> for OnePasswordConfig {
 			"onepassword" | "onepassword+token" | "op" | "op+token" => {}
 			_ => {
 				return Err(MonosecretError::ProviderOperationFailed(format!(
-					"Invalid scheme '{}' for OnePassword provider",
-					scheme
+					"Invalid scheme '{scheme}' for OnePassword provider"
 				)));
 			}
 		}
@@ -275,11 +290,11 @@ impl TryFrom<&ProviderUrl> for OnePasswordConfig {
 			let username = url.username();
 
 			// Check if we have username (account) information
-			if !username.is_empty() {
-				config.account = Some(username);
+			if username.is_empty() {
+				// No username, so the host is the vault
 				config.default_vault = Some(host);
 			} else {
-				// No username, so the host is the vault
+				config.account = Some(username);
 				config.default_vault = Some(host);
 			}
 		}
@@ -392,10 +407,10 @@ pub(crate) fn strip_op_session_env(cmd: &mut Command) {
 	}
 }
 
-/// Provider implementation for OnePassword password manager.
+/// Provider implementation for `OnePassword` password manager.
 ///
-/// This provider integrates with OnePassword CLI (`op`) to store and retrieve
-/// secrets. It organizes secrets in a hierarchical structure within OnePassword
+/// This provider integrates with `OnePassword` CLI (`op`) to store and retrieve
+/// secrets. It organizes secrets in a hierarchical structure within `OnePassword`
 /// items using a configurable format string that defaults to: `monosecret/{project}/{profile}/{key}`.
 ///
 /// A secret with native `ref` coordinates instead reads the referenced item
@@ -417,9 +432,9 @@ pub(crate) fn strip_op_session_env(cmd: &mut Command) {
 ///
 /// # Storage Structure
 ///
-/// Secrets are stored as Secure Note items in OnePassword with:
-/// - Title: formatted according to folder_prefix configuration
-/// - Category: SECURE_NOTE
+/// Secrets are stored as Secure Note items in `OnePassword` with:
+/// - Title: formatted according to `folder_prefix` configuration
+/// - Category: `SECURE_NOTE`
 /// - Fields: project, key, value
 /// - Tags: "automated", {project}
 ///
@@ -436,7 +451,7 @@ pub(crate) fn strip_op_session_env(cmd: &mut Command) {
 pub struct OnePasswordProvider {
 	/// Configuration for the provider including auth settings and default vault.
 	config: OnePasswordConfig,
-	/// The OnePassword CLI command to use (either "op" or a custom path).
+	/// The `OnePassword` CLI command to use (either "op" or a custom path).
 	op_command: String,
 	/// Credentials supplied by the provider alias.
 	credentials: ProviderCredentials,
@@ -463,7 +478,7 @@ crate::register_provider! {
 }
 
 impl OnePasswordProvider {
-	/// Creates a new OnePasswordProvider with the given configuration.
+	/// Creates a new `OnePasswordProvider` with the given configuration.
 	///
 	/// # Arguments
 	///
@@ -499,7 +514,7 @@ impl OnePasswordProvider {
 		})
 	}
 
-	/// Executes a OnePassword CLI command with proper error handling.
+	/// Executes a `OnePassword` CLI command with proper error handling.
 	///
 	/// This method handles:
 	/// - Setting up authentication (account, service token)
@@ -519,7 +534,7 @@ impl OnePasswordProvider {
 	/// # Errors
 	///
 	/// Returns specific errors for:
-	/// - Missing OnePassword CLI installation
+	/// - Missing `OnePassword` CLI installation
 	/// - Authentication required
 	/// - Command execution failures
 	/// - Stdin write failures
@@ -629,7 +644,7 @@ impl OnePasswordProvider {
 		})
 	}
 
-	/// Checks if the user is authenticated with OnePassword (uncached).
+	/// Checks if the user is authenticated with `OnePassword` (uncached).
 	///
 	/// Uses `op vault list` rather than `op whoami` because the latter only
 	/// reports the state of an explicit `op signin` session and reports
@@ -658,7 +673,7 @@ impl OnePasswordProvider {
 	///
 	/// # Returns
 	///
-	/// The vault name to use - always returns the configured default_vault or "Private"
+	/// The vault name to use - always returns the configured `default_vault` or "Private"
 	fn get_vault_name(&self) -> String {
 		self.config
 			.default_vault
@@ -745,19 +760,24 @@ impl OnePasswordProvider {
 
 	/// Resolves unique field references with one textual `op inject` batch.
 	///
-	/// A failed inject is retried with bounded concurrent reads because `op
-	/// inject` fails the entire template when any field is missing. Individual
-	/// reads retain the provider's missing-value and detailed error semantics.
-	fn read_reference_uris(&self, reference_uris: &[String]) -> Result<Vec<Option<SecretString>>> {
-		if reference_uris.is_empty() {
+	/// A failed inject is classified first: an auth/session error surfaces
+	/// immediately ([`inject_error_is_recoverable`]), since retrying would
+	/// only repeat the same failure. Any other failure is treated as
+	/// recoverable and handed to [`Self::recover_reference_uris`], which
+	/// identifies refs whose items are actually missing, retries the batch
+	/// once without them, and falls back to bounded concurrent reads for
+	/// anything it cannot positively resolve.
+	fn read_reference_uris(&self, refs: &[BatchRef]) -> Result<Vec<Option<SecretString>>> {
+		if refs.is_empty() {
 			return Ok(Vec::new());
 		}
-		if reference_uris.len() == 1 {
-			return Ok(vec![self.read_reference_uri(&reference_uris[0])?]);
+		if refs.len() == 1 {
+			return Ok(vec![self.read_reference_uri(&refs[0].uri)?]);
 		}
 
+		let uris: Vec<String> = refs.iter().map(|r| r.uri.clone()).collect();
 		let nonce = uuid::Uuid::new_v4().simple().to_string();
-		let template = InjectTemplate::new(reference_uris, &nonce);
+		let template = InjectTemplate::new(&uris, &nonce);
 		match self.execute_op_command(&["inject"], Some(&template.input)) {
 			Ok(output) => {
 				template.parse(&output).map(|values| {
@@ -767,16 +787,142 @@ impl OnePasswordProvider {
 						.collect()
 				})
 			}
-			Err(_) => {
-				super::map_concurrently(
-					reference_uris,
-					super::get_each_concurrency(),
-					|reference_uri| self.read_reference_uri(reference_uri),
-				)
-				.into_iter()
-				.collect()
+			Err(error) => {
+				if !inject_error_is_recoverable(&error) {
+					return Err(error);
+				}
+				self.recover_reference_uris(refs)
 			}
 		}
+	}
+
+	/// Identifies refs whose items are absent from their vault (one
+	/// `op item list` per distinct vault), resolves those as missing, and
+	/// retries the inject batch once with the remainder. Every path that
+	/// cannot positively identify-and-retry lands in the per-secret
+	/// fallback, preserving the pre-recovery behavior exactly.
+	fn recover_reference_uris(&self, refs: &[BatchRef]) -> Result<Vec<Option<SecretString>>> {
+		let Some(retained_flags) = self.flag_refs_with_existing_items(refs)? else {
+			return self.read_uris_with_fallback(refs);
+		};
+		if retained_flags.iter().all(|&retained| retained) {
+			return self.read_uris_with_fallback(refs);
+		}
+
+		let retained: Vec<&BatchRef> = refs
+			.iter()
+			.zip(&retained_flags)
+			.filter_map(|(r, &keep)| keep.then_some(r))
+			.collect();
+
+		let retained_values = match retained.len() {
+			0 => Vec::new(),
+			1 => vec![self.read_reference_uri(&retained[0].uri)?],
+			_ => {
+				let uris: Vec<String> = retained.iter().map(|r| r.uri.clone()).collect();
+				let nonce = uuid::Uuid::new_v4().simple().to_string();
+				let template = InjectTemplate::new(&uris, &nonce);
+				match self.execute_op_command(&["inject"], Some(&template.input)) {
+					Ok(output) => {
+						template
+							.parse(&output)?
+							.into_iter()
+							.map(|value| Some(SecretString::new(value.into())))
+							.collect()
+					}
+					Err(error) => {
+						if !inject_error_is_recoverable(&error) {
+							return Err(error);
+						}
+						let retained_refs: Vec<BatchRef> =
+							retained.iter().map(|r| (*r).clone()).collect();
+						self.read_uris_with_fallback(&retained_refs)?
+					}
+				}
+			}
+		};
+
+		let mut retained_iter = retained_values.into_iter();
+		Ok(retained_flags
+			.into_iter()
+			.map(|keep| {
+				if keep {
+					retained_iter.next().flatten()
+				} else {
+					None
+				}
+			})
+			.collect())
+	}
+
+	/// The pre-existing bounded per-secret fallback, extracted verbatim.
+	fn read_uris_with_fallback(&self, refs: &[BatchRef]) -> Result<Vec<Option<SecretString>>> {
+		super::map_concurrently(refs, super::get_each_concurrency(), |r| {
+			self.read_reference_uri(&r.uri)
+		})
+		.into_iter()
+		.collect()
+	}
+
+	/// Returns per-ref "item exists" flags, or `None` when a vault listing
+	/// fails for a recoverable reason (caller then treats every ref as retained
+	/// via full fallback). Global auth and installation errors are preserved.
+	/// A ref is flagged missing ONLY on a successful listing with no match
+	/// by id or case-insensitive title — when in doubt, keep it.
+	///
+	/// Lists with `--include-archive`: archived items are absent from the
+	/// default listing but still resolvable by `op read`/`inject`, so
+	/// omitting the flag would misclassify their refs as missing.
+	fn flag_refs_with_existing_items(&self, refs: &[BatchRef]) -> Result<Option<Vec<bool>>> {
+		use std::collections::HashMap;
+		use std::collections::HashSet;
+
+		#[derive(Deserialize)]
+		struct ListItem {
+			id: String,
+			title: String,
+		}
+
+		let vaults: HashSet<&str> = refs.iter().map(|r| r.vault.as_str()).collect();
+		let mut known: HashMap<&str, (HashSet<String>, HashSet<String>)> = HashMap::new();
+		for vault in vaults {
+			let output = match self.execute_op_command(
+				&[
+					"item",
+					"list",
+					"--vault",
+					vault,
+					"--include-archive",
+					"--format",
+					"json",
+				],
+				None,
+			) {
+				Ok(output) => output,
+				Err(error) if inject_error_is_recoverable(&error) => return Ok(None),
+				Err(error) => return Err(error),
+			};
+			let items: Vec<ListItem> = match serde_json::from_str(&output) {
+				Ok(items) => items,
+				Err(_) => return Ok(None),
+			};
+			let mut ids = HashSet::new();
+			let mut titles = HashSet::new();
+			for entry in items {
+				ids.insert(entry.id);
+				titles.insert(entry.title.trim().to_lowercase());
+			}
+			known.insert(vault, (ids, titles));
+		}
+
+		Ok(Some(
+			refs.iter()
+				.map(|r| {
+					let (ids, titles) = &known[r.vault.as_str()];
+					ids.contains(&r.item) || titles.contains(&r.item.trim().to_lowercase())
+				})
+				.collect(),
+		))
 	}
 
 	/// Writes a value to the pinned reference via `op item edit` in the given
@@ -824,22 +970,19 @@ impl OnePasswordProvider {
 			.vault
 			.clone()
 			.unwrap_or_else(|| self.get_vault_name());
-		let reference = match &native.field {
-			Some(field) => {
-				Some(SecretReference {
-					item: native.item.clone(),
-					section: native.section.clone(),
-					field: field.clone(),
-				})
+		let reference = if let Some(field) = &native.field {
+			Some(SecretReference {
+				item: native.item.clone(),
+				section: native.section.clone(),
+				field: field.clone(),
+			})
+		} else {
+			if native.section.is_some() {
+				return Err(MonosecretError::ProviderOperationFailed(
+					"onepassword references with a `section` also need a `field`".to_string(),
+				));
 			}
-			None => {
-				if native.section.is_some() {
-					return Err(MonosecretError::ProviderOperationFailed(
-						"onepassword references with a `section` also need a `field`".to_string(),
-					));
-				}
-				None
-			}
+			None
 		};
 		Ok((vault, reference))
 	}
@@ -926,9 +1069,9 @@ impl OnePasswordProvider {
 			.map(|item| item.id))
 	}
 
-	/// Formats the item name for storage in OnePassword.
+	/// Formats the item name for storage in `OnePassword`.
 	///
-	/// Creates a hierarchical name using the folder_prefix format string.
+	/// Creates a hierarchical name using the `folder_prefix` format string.
 	/// Supports placeholders: {project}, {profile}, and {key}.
 	/// Defaults to "monosecret/{project}/{profile}/{key}" if not configured.
 	///
@@ -954,7 +1097,7 @@ impl OnePasswordProvider {
 			.replace("{key}", key)
 	}
 
-	/// Creates a template for a new OnePassword item.
+	/// Creates a template for a new `OnePassword` item.
 	///
 	/// This template is serialized to JSON and used with `op item create`.
 	/// The item is created as a Secure Note with structured fields.
@@ -968,7 +1111,7 @@ impl OnePasswordProvider {
 	///
 	/// # Returns
 	///
-	/// A OnePasswordItemTemplate ready for serialization
+	/// A `OnePasswordItemTemplate` ready for serialization
 	fn create_item_template(
 		&self,
 		project: &str,
@@ -1000,39 +1143,109 @@ impl OnePasswordProvider {
 		}
 	}
 
-	/// Extracts the secret value from a OnePassword item JSON.
+	/// Extracts the secret value from a `OnePassword` item JSON.
 	///
 	/// Looks for a field labeled "value" first, then falls back to
 	/// password or concealed fields.
 	fn extract_value_from_item(&self, output: &str) -> Result<Option<SecretString>> {
 		let item: OnePasswordItem = serde_json::from_str(output)?;
+		Ok(Self::extract_value(&item))
+	}
 
+	fn extract_value(item: &OnePasswordItem) -> Option<SecretString> {
 		// Look for the "value" field
 		for field in &item.fields {
 			if field.label.as_deref() == Some("value") {
-				return Ok(field
+				return field
 					.value
 					.as_ref()
-					.map(|v| SecretString::new(v.clone().into())));
+					.map(|v| SecretString::new(v.clone().into()));
 			}
 		}
 
 		// Fallback: look for password field or first concealed field
 		for field in &item.fields {
 			if field.field_type == "CONCEALED" || field.id == "password" {
-				return Ok(field
+				return field
 					.value
 					.as_ref()
-					.map(|v| SecretString::new(v.clone().into())));
+					.map(|v| SecretString::new(v.clone().into()));
 			}
 		}
 
-		Ok(None)
+		None
+	}
+}
+
+/// Diagnostic prefixes from `op` that indicate the CLI cannot serve ANY
+/// request (authentication/session/account problems). Matching is
+/// case-insensitive, after the `[ERROR]` log prefix and optional timestamp. A
+/// batch failure matching one of these must surface immediately: retrying or
+/// fanning out per-secret reads would repeat the same failure N times, slowly.
+const AUTH_ERROR_PATTERNS: &[&str] = &[
+	// Verbatim fragments pinned in the Findings Log (Task 1, live `op` 2.35.0 probes).
+	// execute_op_command's canned AUTH_REQUIRED_HELP is matched exactly below;
+	// the pattern also recognizes the equivalent structured `op` diagnostic.
+	"authentication required",
+	"authorization prompt",
+	"error initializing client",
+];
+
+fn inject_error_is_recoverable(error: &MonosecretError) -> bool {
+	let MonosecretError::ProviderOperationFailed(message) = error else {
+		return true;
+	};
+
+	if message == OP_NOT_INSTALLED_HELP || message == AUTH_REQUIRED_HELP {
+		return false;
+	}
+
+	!message.lines().any(|line| {
+		let Some(diagnostic) = op_error_diagnostic(line) else {
+			return false;
+		};
+		let diagnostic = diagnostic.to_ascii_lowercase();
+		AUTH_ERROR_PATTERNS
+			.iter()
+			.any(|pattern| diagnostic.starts_with(pattern))
+	})
+}
+
+/// Extracts the start of an `op` structured diagnostic without scanning its payload,
+/// which may contain user-controlled vault, item, section, or field names.
+fn op_error_diagnostic(line: &str) -> Option<&str> {
+	let line = line.trim_start();
+	let diagnostic = line.strip_prefix("[ERROR]")?.trim_start();
+
+	let mut parts = diagnostic.splitn(3, char::is_whitespace);
+	let Some(date) = parts.next() else {
+		return Some(diagnostic);
+	};
+	let Some(time) = parts.next() else {
+		return Some(diagnostic);
+	};
+	let Some(message) = parts.next() else {
+		return Some(diagnostic);
+	};
+
+	let is_date = date.split('/').count() == 3
+		&& date.split('/').all(|component| {
+			!component.is_empty() && component.chars().all(|c| c.is_ascii_digit())
+		});
+	let is_time = time.split(':').count() == 3
+		&& time.split(':').all(|component| {
+			!component.is_empty() && component.chars().all(|c| c.is_ascii_digit())
+		});
+
+	if is_date && is_time {
+		Some(message.trim_start())
+	} else {
+		Some(diagnostic)
 	}
 }
 
 impl OnePasswordProvider {
-	/// Checks that the user is authenticated with OnePassword.
+	/// Checks that the user is authenticated with `OnePassword`.
 	/// Called by the preflight guard before any provider operations, which
 	/// dedupes the probe across instances via [`Provider::auth_scope_key`].
 	pub(crate) fn check_auth(&self) -> Result<()> {
@@ -1127,7 +1340,7 @@ impl Provider for OnePasswordProvider {
 			"onepassword"
 		};
 
-		let mut uri = format!("{}://", scheme);
+		let mut uri = format!("{scheme}://");
 
 		// A configured service account token (from a provider credential or the
 		// environment) selects the scheme but is never written into the URI.
@@ -1161,7 +1374,7 @@ impl Provider for OnePasswordProvider {
 		}
 	}
 
-	/// Retrieves a secret from OnePassword.
+	/// Retrieves a secret from `OnePassword`.
 	///
 	/// If multiple items exist with the same title, falls back to ID-based
 	/// lookup to retrieve the first matching item.
@@ -1184,7 +1397,7 @@ impl Provider for OnePasswordProvider {
 		}
 	}
 
-	/// Stores or updates a secret in OnePassword.
+	/// Stores or updates a secret in `OnePassword`.
 	///
 	/// If an item with the same title exists, it updates the "value" field.
 	/// Otherwise, it creates a new Secure Note item with the secret data.
@@ -1262,12 +1475,12 @@ impl Provider for OnePasswordProvider {
 		Ok(())
 	}
 
-	/// Retrieves multiple secrets from OnePassword in a single batch operation.
+	/// Retrieves multiple secrets from `OnePassword` in a single batch operation.
 	///
 	/// Whole-item addresses (every convention secret, and field-less refs)
-	/// are served from one item listing per vault plus parallel `op item get`
-	/// calls for the titles that exist. Multiple field-addressed refs use one
-	/// `op inject` call, with individual reads only as a correctness fallback.
+	/// are served from one item listing plus one batched `op item get` call per
+	/// vault. Multiple field-addressed refs use one `op inject` call, with
+	/// individual reads only as a correctness fallback.
 	fn get_many(&self, requests: &[(&str, Address<'_>)]) -> Result<HashMap<String, SecretString>> {
 		if requests.is_empty() {
 			return Ok(HashMap::new());
@@ -1278,7 +1491,7 @@ impl Provider for OnePasswordProvider {
 		// Field references retain first-seen order while the index deduplicates
 		// identical physical addresses and records every request name to fan out.
 		let mut field_ref_indices: HashMap<String, usize> = HashMap::new();
-		let mut field_refs: Vec<(String, Vec<String>)> = Vec::new();
+		let mut field_refs: Vec<(BatchRef, Vec<String>)> = Vec::new();
 		for (name, addr) in requests {
 			let coords = self.operation_coordinates(*addr)?;
 			let (vault, reference) = self.native_reference(&coords)?;
@@ -1289,14 +1502,19 @@ impl Provider for OnePasswordProvider {
 						field_refs[*index].1.push(name.to_string());
 					} else {
 						field_ref_indices.insert(reference_uri.clone(), field_refs.len());
-						field_refs.push((reference_uri, vec![name.to_string()]));
+						let batch_ref = BatchRef {
+							uri: reference_uri,
+							vault: vault.clone(),
+							item: reference.item.clone(),
+						};
+						field_refs.push((batch_ref, vec![name.to_string()]));
 					}
 				}
 				None => {
 					whole_items
 						.entry(vault)
 						.or_default()
-						.push((name.to_string(), coords.item.clone()))
+						.push((name.to_string(), coords.item.clone()));
 				}
 			}
 		}
@@ -1306,11 +1524,8 @@ impl Provider for OnePasswordProvider {
 			results.extend(self.get_items_batch(&vault, items)?);
 		}
 
-		let reference_uris: Vec<String> = field_refs
-			.iter()
-			.map(|(reference_uri, _)| reference_uri.clone())
-			.collect();
-		let values = self.read_reference_uris(&reference_uris)?;
+		let refs: Vec<BatchRef> = field_refs.iter().map(|(r, _)| r.clone()).collect();
+		let values = self.read_reference_uris(&refs)?;
 		for ((_, names), value) in field_refs.into_iter().zip(values) {
 			if let Some(value) = value {
 				for name in names {
@@ -1325,8 +1540,9 @@ impl Provider for OnePasswordProvider {
 
 impl OnePasswordProvider {
 	/// Fetches the given `(request name, item title)` pairs from one vault:
-	/// lists the vault once to resolve titles to ids, then fetches the items
-	/// that exist in parallel threads and extracts their value/password field.
+	/// lists the vault once to resolve titles to ids, then pipes every matching
+	/// id through one `op item get` process and extracts each value/password
+	/// field from the returned JSON stream.
 	fn get_items_batch(
 		&self,
 		vault: &str,
@@ -1350,30 +1566,87 @@ impl OnePasswordProvider {
 			.map(|item| (item.title, item.id))
 			.collect();
 
-		// Find which titles exist and need to be fetched
-		let to_fetch: Vec<(String, String)> = items
-			.into_iter()
-			.filter_map(|(name, title)| item_map.get(&title).map(|id| (name, id.clone())))
-			.collect();
+		// Find which titles exist and need to be fetched. Multiple request names
+		// may resolve to one physical item, so fetch each id once and fan its
+		// value back out afterwards.
+		let mut fetch_indices: HashMap<String, usize> = HashMap::new();
+		let mut to_fetch: Vec<(String, Vec<String>)> = Vec::new();
+		for (name, title) in items {
+			let Some(item_id) = item_map.get(&title) else {
+				continue;
+			};
+			if let Some(index) = fetch_indices.get(item_id) {
+				to_fetch[*index].1.push(name);
+			} else {
+				fetch_indices.insert(item_id.clone(), to_fetch.len());
+				to_fetch.push((item_id.clone(), vec![name]));
+			}
+		}
 
-		// Fetch the items concurrently. Each id came from the listing above, so
-		// it is unambiguous: `read_item`'s duplicate-title fallback never fires.
-		let fetched: Vec<(String, Result<Option<SecretString>>)> = std::thread::scope(|scope| {
-			let handles: Vec<_> = to_fetch
-				.into_iter()
-				.map(|(name, item_id)| (name, scope.spawn(move || self.read_item(vault, &item_id))))
-				.collect();
-			handles
-				.into_iter()
-				.map(|(name, handle)| (name, handle.join().expect("op item get thread panicked")))
-				.collect()
-		});
+		if to_fetch.is_empty() {
+			return Ok(HashMap::new());
+		}
+
+		// `op item get` treats each stdin line as an item specifier and emits
+		// one JSON document per item. Do not pass `-`: current CLI versions can
+		// interpret it as an additional literal item. This keeps desktop-app
+		// authentication to one connection instead of spawning one `op`
+		// process per secret.
+		let mut input = to_fetch
+			.iter()
+			.map(|(item_id, _)| item_id.as_str())
+			.collect::<Vec<_>>()
+			.join("\n");
+		input.push('\n');
+		let output = self.execute_op_command(
+			&["item", "get", "--vault", vault, "--format", "json"],
+			Some(&input),
+		)?;
+
+		let fetched: Vec<OnePasswordItem> =
+			match serde_json::from_str::<Vec<OnePasswordItem>>(&output) {
+				// Accept an array as well as the JSON stream emitted by current
+				// CLI versions so this remains compatible with output changes.
+				Ok(items) => items,
+				Err(_) => {
+					serde_json::Deserializer::from_str(&output)
+						.into_iter::<OnePasswordItem>()
+						.collect::<std::result::Result<_, _>>()
+						.map_err(|error| {
+							MonosecretError::ProviderOperationFailed(format!(
+								"1Password CLI returned invalid batched item JSON: {error}"
+							))
+						})?
+				}
+			};
+
+		let expected_count = to_fetch.len();
+		let mut names_by_id: HashMap<String, Vec<String>> = to_fetch.into_iter().collect();
 
 		let mut results = HashMap::new();
-		for (name, result) in fetched {
-			if let Some(value) = result? {
-				results.insert(name, value);
+		for item in fetched {
+			let item_id = item.id.as_deref().ok_or_else(|| {
+				MonosecretError::ProviderOperationFailed(
+					"1Password CLI batch response omitted an item ID".to_string(),
+				)
+			})?;
+			let names = names_by_id.remove(item_id).ok_or_else(|| {
+				MonosecretError::ProviderOperationFailed(
+					"1Password CLI batch response contained an unexpected item".to_string(),
+				)
+			})?;
+			if let Some(value) = Self::extract_value(&item) {
+				for name in names {
+					results.insert(name, value.clone());
+				}
 			}
+		}
+
+		if !names_by_id.is_empty() {
+			return Err(MonosecretError::ProviderOperationFailed(format!(
+				"1Password CLI returned {} of {expected_count} requested items",
+				expected_count - names_by_id.len()
+			)));
 		}
 
 		Ok(results)
@@ -1381,7 +1654,7 @@ impl OnePasswordProvider {
 }
 
 impl Default for OnePasswordProvider {
-	/// Creates a OnePasswordProvider with default configuration.
+	/// Creates a `OnePasswordProvider` with default configuration.
 	///
 	/// Uses interactive authentication and the "Private" vault by default.
 	fn default() -> Self {
@@ -2042,6 +2315,10 @@ mod tests {
 						"one field is missing".to_string(),
 					))
 				}
+				// Recovery's vault listing: the item exists (only the field is
+				// missing), so both refs stay retained and fall through to the
+				// per-secret reads below.
+				Some("item") => Ok(r#"[{"id":"item-id","title":"Item"}]"#.to_string()),
 				Some("read") if args.last().is_some_and(|arg| arg.ends_with("/present")) => {
 					Ok("available".to_string())
 				}
@@ -2073,8 +2350,9 @@ mod tests {
 			.unwrap();
 
 		let calls = calls.lock().unwrap();
-		assert_eq!(calls.len(), 3);
+		assert_eq!(calls.len(), 4, "inject + one vault listing + two reads");
 		assert_eq!(calls[0], ["inject"]);
+		assert_eq!(calls.iter().filter(|args| args[0] == "item").count(), 1);
 		assert_eq!(calls.iter().filter(|args| args[0] == "read").count(), 2);
 		assert!(secret_matches(&results, "PRESENT", "available"));
 		assert!(!results.contains_key("MISSING"));
@@ -2107,6 +2385,12 @@ mod tests {
 						"one field is missing".to_string(),
 					));
 				}
+				if args.first().is_some_and(|arg| arg == "item") {
+					// Recovery's vault listing: the item exists, so every ref
+					// stays retained and falls through to the per-secret reads
+					// this test measures the concurrency of.
+					return Ok(r#"[{"id":"item-id","title":"Item"}]"#.to_string());
+				}
 
 				assert_eq!(args.first().map(String::as_str), Some("read"));
 				reads.fetch_add(1, Ordering::SeqCst);
@@ -2118,12 +2402,18 @@ mod tests {
 			}
 		}));
 
-		let references: Vec<String> = (0..10)
-			.map(|index| format!("op://Personal/Item/field-{index}"))
+		let refs: Vec<BatchRef> = (0..10)
+			.map(|index| {
+				BatchRef {
+					uri: format!("op://Personal/Item/field-{index}"),
+					vault: "Personal".to_string(),
+					item: "Item".to_string(),
+				}
+			})
 			.collect();
-		let values = provider.read_reference_uris(&references).unwrap();
+		let values = provider.read_reference_uris(&refs).unwrap();
 
-		assert_eq!(reads.load(Ordering::SeqCst), references.len());
+		assert_eq!(reads.load(Ordering::SeqCst), refs.len());
 		assert!(
 			peak.load(Ordering::SeqCst) <= 3,
 			"fallback exceeded the configured concurrency cap"
@@ -2132,11 +2422,674 @@ mod tests {
 			peak.load(Ordering::SeqCst) >= 2,
 			"fallback unexpectedly processed every reference serially"
 		);
-		assert!(values.iter().zip(&references).all(|(value, reference)| {
+		assert!(values.iter().zip(&refs).all(|(value, r)| {
 			value
 				.as_ref()
-				.is_some_and(|value| value.expose_secret() == reference)
+				.is_some_and(|value| value.expose_secret() == r.uri)
 		}));
+	}
+
+	#[test]
+	fn auth_failure_on_inject_fails_fast_without_fanout() {
+		use std::sync::Arc;
+		use std::sync::Mutex;
+
+		let calls = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
+		let observed = Arc::clone(&calls);
+		let mut provider = OnePasswordProvider::new(config("onepassword://Personal"));
+		provider.command_override = Some(Arc::new(move |command, _stdin| {
+			observed.lock().unwrap().push(command_args(command));
+			Err(MonosecretError::ProviderOperationFailed(
+                "[ERROR] 2026/08/14 00:00:00 error initializing client: found no accounts for filter \"x\"".to_string(),
+            ))
+		}));
+
+		let first = crate::config::NativeAddress {
+			item: "API Key".to_string(),
+			field: Some("password".to_string()),
+			..Default::default()
+		};
+		let second = crate::config::NativeAddress {
+			item: "Database".to_string(),
+			field: Some("secret".to_string()),
+			..Default::default()
+		};
+		let error = provider
+			.get_many(&[
+				("FIRST", Address::Native(&first)),
+				("SECOND", Address::Native(&second)),
+			])
+			.unwrap_err();
+
+		assert!(error.to_string().contains("error initializing client"));
+		assert_eq!(
+			calls.lock().unwrap().len(),
+			1,
+			"auth failure must not retry or fan out"
+		);
+	}
+
+	#[test]
+	fn inject_error_classification_separates_auth_from_data() {
+		let auth_authentication_required =
+			MonosecretError::ProviderOperationFailed(AUTH_REQUIRED_HELP.to_string());
+		let auth_authorization_prompt = MonosecretError::ProviderOperationFailed(
+			"[ERROR] 2026/08/14 00:00:00 authorization prompt dismissed, please try again"
+				.to_string(),
+		);
+		let auth_error_initializing_client = MonosecretError::ProviderOperationFailed(
+            "[ERROR] 2026/08/14 00:00:00 error initializing client: found no accounts for filter \"x\"".to_string(),
+        );
+		let cli_not_installed =
+			MonosecretError::ProviderOperationFailed(OP_NOT_INSTALLED_HELP.to_string());
+		let data = MonosecretError::ProviderOperationFailed(
+            "[ERROR] 2026/08/14 00:00:00 could not resolve item UUID for item X: could not find item X in vault abc".to_string(),
+        );
+		assert!(!inject_error_is_recoverable(&auth_authentication_required));
+		assert!(!inject_error_is_recoverable(&auth_authorization_prompt));
+		assert!(!inject_error_is_recoverable(
+			&auth_error_initializing_client
+		));
+		assert!(!inject_error_is_recoverable(&cli_not_installed));
+		assert!(inject_error_is_recoverable(&data));
+
+		for item in [
+			"Authentication Required",
+			"Authorization Prompt",
+			"Error Initializing Client",
+		] {
+			let missing_item = MonosecretError::ProviderOperationFailed(format!(
+				"[ERROR] 2026/08/14 00:00:00 could not resolve item UUID for item {item}: could not find item {item} in vault abc"
+			));
+			assert!(
+				inject_error_is_recoverable(&missing_item),
+				"auth-like item name {item:?} must remain a recoverable data error"
+			);
+		}
+	}
+
+	#[test]
+	fn missing_item_drops_ref_and_retries_batch_once() {
+		use std::sync::Arc;
+		use std::sync::Mutex;
+
+		let calls = Arc::new(Mutex::new(Vec::<(Vec<String>, Option<String>)>::new()));
+		let observed = Arc::clone(&calls);
+		let mut provider = OnePasswordProvider::new(config("onepassword://Personal"));
+		provider.command_override = Some(Arc::new(move |command, stdin| {
+			let args = command_args(command);
+			let mut log = observed.lock().unwrap();
+			let call_index = log.len();
+			log.push((args.clone(), stdin.map(str::to_string)));
+			drop(log);
+			match call_index {
+				0 => {
+					assert!(args.contains(&"inject".to_string()));
+					Err(MonosecretError::ProviderOperationFailed(
+                        "[ERROR] could not resolve item UUID for item Ghost: could not find item Ghost in vault abc".to_string(),
+                    ))
+				}
+				1 => {
+					assert_eq!(
+						args,
+						[
+							"item",
+							"list",
+							"--vault",
+							"Personal",
+							"--include-archive",
+							"--format",
+							"json"
+						]
+					);
+					Ok(
+						r#"[{"id":"aaa111","title":"API Key"},{"id":"bbb222","title":"Database"}]"#
+							.to_string(),
+					)
+				}
+				2 => {
+					let template = stdin.expect("retry inject stdin").to_string();
+					assert!(args.contains(&"inject".to_string()));
+					assert!(
+						!template.contains("Ghost"),
+						"dropped ref must not be retried"
+					);
+					Ok(template
+						.replace("{{ op://Personal/API Key/password }}", "alpha")
+						.replace("{{ op://Personal/Database/secret }}", "beta"))
+				}
+				_ => panic!("no further op calls expected"),
+			}
+		}));
+
+		let first = crate::config::NativeAddress {
+			item: "API Key".to_string(),
+			field: Some("password".to_string()),
+			..Default::default()
+		};
+		let ghost = crate::config::NativeAddress {
+			item: "Ghost".to_string(),
+			field: Some("credential".to_string()),
+			..Default::default()
+		};
+		let second = crate::config::NativeAddress {
+			item: "Database".to_string(),
+			field: Some("secret".to_string()),
+			..Default::default()
+		};
+		let results = provider
+			.get_many(&[
+				("FIRST", Address::Native(&first)),
+				("GHOST", Address::Native(&ghost)),
+				("SECOND", Address::Native(&second)),
+			])
+			.unwrap();
+
+		assert_eq!(calls.lock().unwrap().len(), 3);
+		assert!(secret_matches(&results, "FIRST", "alpha"));
+		assert!(secret_matches(&results, "SECOND", "beta"));
+		assert!(
+			!results.contains_key("GHOST"),
+			"missing item resolves as absent"
+		);
+	}
+
+	#[test]
+	fn missing_item_check_is_case_insensitive_and_retains_match() {
+		use std::sync::Arc;
+		use std::sync::Mutex;
+
+		let calls = Arc::new(Mutex::new(Vec::<(Vec<String>, Option<String>)>::new()));
+		let observed = Arc::clone(&calls);
+		let mut provider = OnePasswordProvider::new(config("onepassword://Personal"));
+		provider.command_override = Some(Arc::new(move |command, stdin| {
+			let args = command_args(command);
+			let mut log = observed.lock().unwrap();
+			let call_index = log.len();
+			log.push((args.clone(), stdin.map(str::to_string)));
+			drop(log);
+			match call_index {
+				0 => {
+					assert!(args.contains(&"inject".to_string()));
+					Err(MonosecretError::ProviderOperationFailed(
+                        "[ERROR] could not resolve item UUID for item Ghost: could not find item Ghost in vault abc".to_string(),
+                    ))
+				}
+				1 => {
+					assert_eq!(
+						args,
+						[
+							"item",
+							"list",
+							"--vault",
+							"Personal",
+							"--include-archive",
+							"--format",
+							"json"
+						]
+					);
+					// Listing returns the title lower-cased; the ref uses "API Key".
+					// The match must be case-insensitive, so this ref stays retained.
+					Ok(
+						r#"[{"id":"aaa111","title":"api key"},{"id":"bbb222","title":"Database"}]"#
+							.to_string(),
+					)
+				}
+				2 => {
+					let template = stdin.expect("retry inject stdin").to_string();
+					assert!(args.contains(&"inject".to_string()));
+					assert!(
+						!template.contains("Ghost"),
+						"dropped ref must not be retried"
+					);
+					assert!(
+						template.contains("{{ op://Personal/API Key/password }}"),
+						"case-different title match must retain the ref for retry"
+					);
+					Ok(template
+						.replace("{{ op://Personal/API Key/password }}", "alpha")
+						.replace("{{ op://Personal/Database/secret }}", "beta"))
+				}
+				_ => panic!("no further op calls expected"),
+			}
+		}));
+
+		let first = crate::config::NativeAddress {
+			item: "API Key".to_string(),
+			field: Some("password".to_string()),
+			..Default::default()
+		};
+		let ghost = crate::config::NativeAddress {
+			item: "Ghost".to_string(),
+			field: Some("credential".to_string()),
+			..Default::default()
+		};
+		let second = crate::config::NativeAddress {
+			item: "Database".to_string(),
+			field: Some("secret".to_string()),
+			..Default::default()
+		};
+		let results = provider
+			.get_many(&[
+				("FIRST", Address::Native(&first)),
+				("GHOST", Address::Native(&ghost)),
+				("SECOND", Address::Native(&second)),
+			])
+			.unwrap();
+
+		assert_eq!(calls.lock().unwrap().len(), 3);
+		assert!(secret_matches(&results, "FIRST", "alpha"));
+		assert!(secret_matches(&results, "SECOND", "beta"));
+		assert!(
+			!results.contains_key("GHOST"),
+			"missing item resolves as absent"
+		);
+	}
+
+	#[test]
+	fn multi_vault_recovery_lists_each_vault_once() {
+		use std::collections::HashSet;
+		use std::sync::Arc;
+		use std::sync::Mutex;
+
+		let calls = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
+		let observed = Arc::clone(&calls);
+		let mut provider = OnePasswordProvider::new(config("onepassword://Personal"));
+		provider.command_override = Some(Arc::new(move |command, stdin| {
+			let args = command_args(command);
+			observed.lock().unwrap().push(args.clone());
+			if args.contains(&"inject".to_string()) {
+				return Err(MonosecretError::ProviderOperationFailed(
+                    "[ERROR] could not resolve item UUID for item X: could not find item X in vault abc".to_string(),
+                ));
+			}
+			if args.first().map(String::as_str) == Some("item") {
+				let vault = args.get(3).expect("--vault value").as_str();
+				let body = match vault {
+					"Personal" => r#"[{"id":"aaa111","title":"API Key"}]"#,
+					"Work" => r#"[{"id":"bbb222","title":"Secret"}]"#,
+					other => panic!("unexpected vault {other}"),
+				};
+				return Ok(body.to_string());
+			}
+			assert_eq!(args.first().map(String::as_str), Some("read"));
+			assert!(stdin.is_none());
+			Ok(format!("value-for-{}", args.last().expect("reference URI")))
+		}));
+
+		let first = crate::config::NativeAddress {
+			item: "API Key".to_string(),
+			field: Some("password".to_string()),
+			..Default::default()
+		};
+		let second = crate::config::NativeAddress {
+			item: "Secret".to_string(),
+			field: Some("value".to_string()),
+			vault: Some("Work".to_string()),
+			..Default::default()
+		};
+		let results = provider
+			.get_many(&[
+				("FIRST", Address::Native(&first)),
+				("SECOND", Address::Native(&second)),
+			])
+			.unwrap();
+
+		let calls = calls.lock().unwrap();
+		let list_calls: Vec<&Vec<String>> = calls
+			.iter()
+			.filter(|args| args.first().map(String::as_str) == Some("item"))
+			.collect();
+		assert_eq!(
+			list_calls.len(),
+			2,
+			"one `item list` call per distinct vault"
+		);
+		let listed_vaults: HashSet<&str> = list_calls.iter().map(|args| args[3].as_str()).collect();
+		assert!(listed_vaults.contains("Personal"));
+		assert!(listed_vaults.contains("Work"));
+		assert_eq!(
+			calls
+				.iter()
+				.filter(|args| args.first().map(String::as_str) == Some("inject"))
+				.count(),
+			1
+		);
+		assert_eq!(
+			calls
+				.iter()
+				.filter(|args| args.first().map(String::as_str) == Some("read"))
+				.count(),
+			2
+		);
+		assert!(secret_matches(
+			&results,
+			"FIRST",
+			"value-for-op://Personal/API Key/password"
+		));
+		assert!(secret_matches(
+			&results,
+			"SECOND",
+			"value-for-op://Work/Secret/value"
+		));
+	}
+
+	#[test]
+	fn failed_retry_falls_back_to_reads_for_retained_refs_only() {
+		use std::sync::Arc;
+		use std::sync::Mutex;
+
+		let calls = Arc::new(Mutex::new(Vec::<(Vec<String>, Option<String>)>::new()));
+		let observed = Arc::clone(&calls);
+		let mut provider = OnePasswordProvider::new(config("onepassword://Personal"));
+		provider.command_override = Some(Arc::new(move |command, stdin| {
+			let args = command_args(command);
+			let mut log = observed.lock().unwrap();
+			let call_index = log.len();
+			log.push((args.clone(), stdin.map(str::to_string)));
+			drop(log);
+			match call_index {
+                0 => Err(MonosecretError::ProviderOperationFailed(
+                    "[ERROR] could not resolve item UUID for item Ghost: could not find item Ghost in vault abc".to_string(),
+                )),
+                1 => {
+                    assert_eq!(args, ["item", "list", "--vault", "Personal", "--include-archive", "--format", "json"]);
+                    Ok(r#"[{"id":"aaa111","title":"API Key"},{"id":"bbb222","title":"Database"}]"#.to_string())
+                }
+                2 => {
+                    assert!(args.contains(&"inject".to_string()));
+                    Err(MonosecretError::ProviderOperationFailed(
+                        "[ERROR] item 'Personal/API Key' does not have a field 'password'".to_string(),
+                    ))
+                }
+                index => {
+                    assert_eq!(args[0], "read", "post-retry recovery must use per-ref reads");
+                    let uri = &args[2];
+                    assert!(!uri.contains("Ghost"), "dropped ref must not be individually read");
+                    assert!(index <= 4, "exactly one read per retained ref");
+                    if uri.contains("API Key") {
+                        Err(MonosecretError::ProviderOperationFailed(
+                            "[ERROR] item Personal/API Key doesn't have a field password".to_string(),
+                        ))
+                    } else {
+                        Ok("beta".to_string())
+                    }
+                }
+            }
+		}));
+
+		let first = crate::config::NativeAddress {
+			item: "API Key".to_string(),
+			field: Some("password".to_string()),
+			..Default::default()
+		};
+		let ghost = crate::config::NativeAddress {
+			item: "Ghost".to_string(),
+			field: Some("credential".to_string()),
+			..Default::default()
+		};
+		let second = crate::config::NativeAddress {
+			item: "Database".to_string(),
+			field: Some("secret".to_string()),
+			..Default::default()
+		};
+		let results = provider
+			.get_many(&[
+				("FIRST", Address::Native(&first)),
+				("GHOST", Address::Native(&ghost)),
+				("SECOND", Address::Native(&second)),
+			])
+			.unwrap();
+
+		assert_eq!(
+			calls.lock().unwrap().len(),
+			5,
+			"inject, list, retry inject, 2 reads"
+		);
+		assert!(
+			!results.contains_key("GHOST"),
+			"listed-missing ref stays absent, never read"
+		);
+		assert!(
+			!results.contains_key("FIRST"),
+			"field-miss on read resolves as absent"
+		);
+		assert!(secret_matches(&results, "SECOND", "beta"));
+	}
+
+	#[test]
+	fn failed_item_list_falls_back_to_reads_for_all_refs() {
+		use std::sync::Arc;
+		use std::sync::Mutex;
+
+		let calls = Arc::new(Mutex::new(Vec::<(Vec<String>, Option<String>)>::new()));
+		let observed = Arc::clone(&calls);
+		let mut provider = OnePasswordProvider::new(config("onepassword://Personal"));
+		provider.command_override = Some(Arc::new(move |command, stdin| {
+			let args = command_args(command);
+			let mut log = observed.lock().unwrap();
+			let call_index = log.len();
+			log.push((args.clone(), stdin.map(str::to_string)));
+			drop(log);
+			match call_index {
+                0 => Err(MonosecretError::ProviderOperationFailed(
+                    "[ERROR] could not resolve item UUID for item Ghost: could not find item Ghost in vault abc".to_string(),
+                )),
+                1 => {
+                    assert_eq!(args, ["item", "list", "--vault", "Personal", "--include-archive", "--format", "json"]);
+                    Err(MonosecretError::ProviderOperationFailed(
+                        "[ERROR] vault listing unavailable".to_string(),
+                    ))
+                }
+                index => {
+                    assert_eq!(args[0], "read", "full fallback must use per-ref reads");
+                    let uri = &args[2];
+                    assert!(index <= 4, "exactly one read per ref, including the dropped one");
+                    if uri.contains("Ghost") {
+                        Err(MonosecretError::ProviderOperationFailed(
+                            "[ERROR] \"Ghost\" isn't an item in this vault".to_string(),
+                        ))
+                    } else if uri.contains("API Key") {
+                        Ok("alpha".to_string())
+                    } else {
+                        Ok("beta".to_string())
+                    }
+                }
+            }
+		}));
+
+		let first = crate::config::NativeAddress {
+			item: "API Key".to_string(),
+			field: Some("password".to_string()),
+			..Default::default()
+		};
+		let ghost = crate::config::NativeAddress {
+			item: "Ghost".to_string(),
+			field: Some("credential".to_string()),
+			..Default::default()
+		};
+		let second = crate::config::NativeAddress {
+			item: "Database".to_string(),
+			field: Some("secret".to_string()),
+			..Default::default()
+		};
+		let results = provider
+			.get_many(&[
+				("FIRST", Address::Native(&first)),
+				("GHOST", Address::Native(&ghost)),
+				("SECOND", Address::Native(&second)),
+			])
+			.unwrap();
+
+		let observed_calls = calls.lock().unwrap();
+		assert_eq!(observed_calls.len(), 5, "inject, list, 3 reads");
+		assert!(
+			observed_calls[2..]
+				.iter()
+				.any(|(args, _)| args[2].contains("Ghost")),
+			"an unresolvable vault listing must still individually read every ref, including Ghost"
+		);
+		drop(observed_calls);
+		assert!(
+			!results.contains_key("GHOST"),
+			"missing item resolves as absent"
+		);
+		assert!(secret_matches(&results, "FIRST", "alpha"));
+		assert!(secret_matches(&results, "SECOND", "beta"));
+	}
+
+	#[test]
+	fn auth_error_on_item_list_fails_fast() {
+		use std::sync::Arc;
+		use std::sync::Mutex;
+
+		let calls = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
+		let observed = Arc::clone(&calls);
+		let mut provider = OnePasswordProvider::new(config("onepassword://Personal"));
+		provider.command_override = Some(Arc::new(move |command, _stdin| {
+			let args = command_args(command);
+			let mut calls = observed.lock().unwrap();
+			let call_index = calls.len();
+			calls.push(args.clone());
+			drop(calls);
+			match call_index {
+                0 => Err(MonosecretError::ProviderOperationFailed(
+                    "[ERROR] could not resolve item UUID for item Ghost: could not find item Ghost in vault abc".to_string(),
+                )),
+                1 => {
+                    assert_eq!(args.first().map(String::as_str), Some("item"));
+                    Err(MonosecretError::ProviderOperationFailed(
+                        "[ERROR] error initializing client: found no accounts for filter \"x\""
+                            .to_string(),
+                    ))
+                }
+                _ => panic!("no per-reference reads after an auth failure"),
+            }
+		}));
+
+		let first = crate::config::NativeAddress {
+			item: "API Key".to_string(),
+			field: Some("password".to_string()),
+			..Default::default()
+		};
+		let ghost = crate::config::NativeAddress {
+			item: "Ghost".to_string(),
+			field: Some("credential".to_string()),
+			..Default::default()
+		};
+		let error = provider
+			.get_many(&[
+				("FIRST", Address::Native(&first)),
+				("GHOST", Address::Native(&ghost)),
+			])
+			.unwrap_err();
+
+		assert!(error.to_string().contains("error initializing client"));
+		assert_eq!(calls.lock().unwrap().len(), 2, "inject, item list");
+	}
+
+	#[test]
+	fn auth_error_on_retry_inject_fails_fast() {
+		use std::sync::Arc;
+		use std::sync::Mutex;
+
+		let calls = Arc::new(Mutex::new(Vec::<(Vec<String>, Option<String>)>::new()));
+		let observed = Arc::clone(&calls);
+		let mut provider = OnePasswordProvider::new(config("onepassword://Personal"));
+		provider.command_override = Some(Arc::new(move |command, stdin| {
+			let args = command_args(command);
+			let mut log = observed.lock().unwrap();
+			let call_index = log.len();
+			log.push((args.clone(), stdin.map(str::to_string)));
+			drop(log);
+			match call_index {
+                0 => Err(MonosecretError::ProviderOperationFailed(
+                    "[ERROR] could not resolve item UUID for item Ghost: could not find item Ghost in vault abc".to_string(),
+                )),
+                1 => {
+                    assert_eq!(args, ["item", "list", "--vault", "Personal", "--include-archive", "--format", "json"]);
+                    Ok(r#"[{"id":"aaa111","title":"API Key"},{"id":"bbb222","title":"Database"}]"#.to_string())
+                }
+                2 => {
+                    assert!(args.contains(&"inject".to_string()));
+                    Err(MonosecretError::ProviderOperationFailed(
+                        "[ERROR] error initializing client: found no accounts for filter \"x\"".to_string(),
+                    ))
+                }
+                _ => panic!("no calls after auth failure"),
+            }
+		}));
+
+		let first = crate::config::NativeAddress {
+			item: "API Key".to_string(),
+			field: Some("password".to_string()),
+			..Default::default()
+		};
+		let ghost = crate::config::NativeAddress {
+			item: "Ghost".to_string(),
+			field: Some("credential".to_string()),
+			..Default::default()
+		};
+		let second = crate::config::NativeAddress {
+			item: "Database".to_string(),
+			field: Some("secret".to_string()),
+			..Default::default()
+		};
+		let error = provider
+			.get_many(&[
+				("FIRST", Address::Native(&first)),
+				("GHOST", Address::Native(&ghost)),
+				("SECOND", Address::Native(&second)),
+			])
+			.unwrap_err();
+
+		assert!(error.to_string().contains("error initializing client"));
+		assert_eq!(calls.lock().unwrap().len(), 3);
+	}
+
+	#[test]
+	fn missing_item_check_matches_by_id() {
+		use std::sync::Arc;
+		use std::sync::Mutex;
+
+		let calls = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
+		let observed = Arc::clone(&calls);
+		let mut provider = OnePasswordProvider::new(config("onepassword://Personal"));
+		provider.command_override = Some(Arc::new(move |command, _stdin| {
+			let args = command_args(command);
+			observed.lock().unwrap().push(args.clone());
+			assert_eq!(
+				args,
+				[
+					"item",
+					"list",
+					"--vault",
+					"Personal",
+					"--include-archive",
+					"--format",
+					"json"
+				]
+			);
+			Ok(r#"[{"id":"aaa111","title":"Something Else"}]"#.to_string())
+		}));
+
+		let refs = vec![BatchRef {
+			uri: "op://Personal/aaa111/password".to_string(),
+			vault: "Personal".to_string(),
+			item: "aaa111".to_string(),
+		}];
+
+		let flags = provider
+			.flag_refs_with_existing_items(&refs)
+			.unwrap()
+			.unwrap();
+
+		assert_eq!(
+			flags,
+			[true],
+			"a ref whose item matches the listing entry's id (not its title) must be retained, not dropped"
+		);
+		assert_eq!(calls.lock().unwrap().len(), 1);
 	}
 
 	#[test]
@@ -2151,20 +3104,27 @@ mod tests {
 			let args = command_args(command);
 			observed.lock().unwrap().push(args.clone());
 			match args.as_slice() {
-                [command, list, ..] if command == "item" && list == "list" => Ok(
-                    r#"[{"id":"whole-id","title":"Whole Item"}]"#.to_string(),
-                ),
-                [command, get, id, ..]
-                    if command == "item" && get == "get" && id == "whole-id" =>
-                {
-                    Ok(r#"{"fields":[{"id":"value","type":"STRING","label":"value","value":"whole value"}]}"#.to_string())
-                }
-                [command] if command == "inject" => Ok(stdin
-                    .expect("inject stdin")
-                    .replace("{{ op://Personal/Field One/password }}", "field one")
-                    .replace("{{ op://Personal/Field Two/token }}", "field two")),
-                _ => unreachable!("unexpected mocked command"),
-            }
+				[command, list, ..] if command == "item" && list == "list" => {
+					Ok(r#"[{"id":"whole-id","title":"Whole Item"}]"#.to_string())
+				}
+				[command, get, vault_flag, vault, format_flag, format]
+					if command == "item"
+						&& get == "get" && vault_flag == "--vault"
+						&& vault == "Personal"
+						&& format_flag == "--format"
+						&& format == "json" =>
+				{
+					assert_eq!(stdin, Some("whole-id\n"));
+					Ok(r#"{"id":"whole-id","fields":[{"id":"value","type":"STRING","label":"value","value":"whole value"}]}"#.to_string())
+				}
+				[command] if command == "inject" => {
+					Ok(stdin
+						.expect("inject stdin")
+						.replace("{{ op://Personal/Field One/password }}", "field one")
+						.replace("{{ op://Personal/Field Two/token }}", "field two"))
+				}
+				_ => unreachable!("unexpected mocked command"),
+			}
 		}));
 
 		let whole = crate::config::NativeAddress {
@@ -2208,6 +3168,105 @@ mod tests {
 		assert!(secret_matches(&results, "WHOLE", "whole value"));
 		assert!(secret_matches(&results, "FIRST", "field one"));
 		assert!(secret_matches(&results, "SECOND", "field two"));
+	}
+
+	#[test]
+	fn whole_item_batch_uses_one_get_process_and_maps_results_by_id() {
+		use std::sync::Arc;
+		use std::sync::Mutex;
+
+		let listed = serde_json::Value::Array(
+			(0..10)
+				.map(|index| {
+					serde_json::json!({
+						"id": format!("item-{index}"),
+						"title": format!("Secret {index}"),
+					})
+				})
+				.collect(),
+		)
+		.to_string();
+		// `op item get --format json` emits a stream of JSON documents. Use
+		// reverse order to prove results are associated by item ID, not by the
+		// order in which the CLI returns them.
+		let fetched = (0..10)
+			.rev()
+			.map(|index| {
+				serde_json::json!({
+					"id": format!("item-{index}"),
+					"fields": [{
+						"id": "value",
+						"type": "STRING",
+						"label": "value",
+						"value": format!("value-{index}"),
+					}],
+				})
+				.to_string()
+			})
+			.collect::<String>();
+
+		let calls = Arc::new(Mutex::new(Vec::<(Vec<String>, Option<String>)>::new()));
+		let observed = Arc::clone(&calls);
+		let mut provider = OnePasswordProvider::new(config("onepassword://Personal"));
+		provider.command_override = Some(Arc::new(move |command, stdin| {
+			let args = command_args(command);
+			observed
+				.lock()
+				.unwrap()
+				.push((args.clone(), stdin.map(str::to_string)));
+			match args.as_slice() {
+				[command, list, ..] if command == "item" && list == "list" => {
+					assert!(stdin.is_none());
+					Ok(listed.clone())
+				}
+				[command, get, vault_flag, vault, format_flag, format]
+					if command == "item"
+						&& get == "get" && vault_flag == "--vault"
+						&& vault == "Personal"
+						&& format_flag == "--format"
+						&& format == "json" =>
+				{
+					assert!(stdin.is_some());
+					Ok(fetched.clone())
+				}
+				_ => unreachable!("unexpected mocked command"),
+			}
+		}));
+
+		let names: Vec<String> = (0..10).map(|index| format!("SECRET_{index}")).collect();
+		let addresses: Vec<crate::config::NativeAddress> = (0..10)
+			.map(|index| {
+				crate::config::NativeAddress {
+					item: format!("Secret {index}"),
+					..Default::default()
+				}
+			})
+			.collect();
+		let requests: Vec<(&str, Address<'_>)> = names
+			.iter()
+			.zip(&addresses)
+			.map(|(name, address)| (name.as_str(), Address::Native(address)))
+			.collect();
+
+		let results = provider.get_many(&requests).unwrap();
+
+		let calls = calls.lock().unwrap();
+		assert_eq!(calls.len(), 2, "one list process and one get process");
+		assert_eq!(
+			calls[1].0,
+			["item", "get", "--vault", "Personal", "--format", "json"]
+		);
+		let batch_input = calls[1].1.as_deref().expect("batch item IDs on stdin");
+		assert_eq!(batch_input.lines().count(), 10);
+		for index in 0..10 {
+			let item_id = format!("item-{index}");
+			assert!(batch_input.lines().any(|line| line == item_id));
+			assert!(secret_matches(
+				&results,
+				&format!("SECRET_{index}"),
+				&format!("value-{index}")
+			));
+		}
 	}
 
 	#[test]

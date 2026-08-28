@@ -10,8 +10,14 @@ use pyo3::prelude::*;
 /// Resolve secrets from a JSON request string, returning the JSON response
 /// envelope (`{"ok": true, "response": ...}` or `{"ok": false, "error": ...}`).
 #[pyfunction]
-fn resolve(py: Python<'_>, request_json: String) -> String {
-	py.detach(|| monosecret::resolve_json(&request_json))
+fn resolve(py: Python<'_>, request_json: &str) -> String {
+	py.detach(|| monosecret::resolve_json(request_json))
+}
+
+/// Process a versioned native operation request, including inline specs.
+#[pyfunction]
+fn call(py: Python<'_>, request_json: &str) -> String {
+	py.detach(|| monosecret::call_json(request_json))
 }
 
 /// The extension's version (tracks the crate version).
@@ -23,6 +29,7 @@ fn abi_version() -> String {
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
 	m.add_function(wrap_pyfunction!(resolve, m)?)?;
+	m.add_function(wrap_pyfunction!(call, m)?)?;
 	m.add_function(wrap_pyfunction!(abi_version, m)?)?;
 	Ok(())
 }

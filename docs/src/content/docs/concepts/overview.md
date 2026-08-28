@@ -7,7 +7,7 @@ Monosecret is built around three core ideas that separate concerns and keep your
 
 ## Declare what you need
 
-A [`monosecret.toml`](/concepts/declarative/) file lists the secrets your project depends on, with descriptions, defaults, and whether they are required. This file lives in version control so every developer and CI system sees the same requirements.
+A [`monosecret.toml`](/concepts/declarative/) lists the abstract secrets your project depends on, with descriptions, defaults, and whether they are required. This file lives in version control so every developer and CI system sees the same requirements.
 
 ## Use profiles for environments
 

@@ -55,6 +55,27 @@ A one-shot form is also available:
 
 <Code code={oneShotExample} lang="csharp" theme={githubDark} meta='title="OneShot.cs"' />
 
+## Caller context (0.20+)
+
+```csharp
+var builder = Monosecret.Builder().WithCaller(new CallerContext
+{
+    Name = "git",
+    Version = "2.51.0",
+    Operation = "credential_get",
+    Resource = "github.com",
+});
+```
+
+Caller context identifies the invoking integration in audit records but never
+satisfies `require_reason`. Do not put credentials or secret values in it.
+
+## Inline specifications (0.20+)
+
+Use `WithInlineSpec(spec, baseDir)` to resolve strict inline-spec v1 declarations
+from an object serialized by `System.Text.Json`. `baseDir` resolves relative
+provider paths, and an older native library reports a capability error.
+
 ## Scopes (0.2+)
 
 Use `WithScope("api")` to resolve only a named `[scopes.api]` subset. The

@@ -2,15 +2,19 @@
  * Monosecret C ABI.
  *
  * A deliberately narrow, JSON-in / JSON-out boundary. The entire native surface
- * is the three functions below; all richness lives in the versioned JSON
+ * is the functions below; all richness lives in the versioned JSON
  * contract so language bindings stay thin.
  *
  * Request JSON (all fields optional):
  *   { "path": ".../monosecret.toml", "provider": "keyring://",
  *     "profile": "production", "scope": "api", "reason": "boot",
+ *     "caller": { "name": "git", "operation": "credential_get",
+ *                 "resource": "github.com" },
  *     "no_values": false, "mode": "resolve" }
  *
  * "scope" selects a named [scopes] subset of the active profile (0.17+).
+ * "caller" supplies structured, caller-asserted integration context (0.20+).
+ * Unlike "reason", it never satisfies the require_reason policy.
  *
  * "mode" selects the response shape and defaults to "resolve":
  *
@@ -58,7 +62,40 @@ extern "C" {
 char *monosecret_resolve(const char *request_json);
 
 /*
- * Free a string previously returned by monosecret_resolve(). NULL is ignored.
+ * Execute a versioned native operation. This is separate from
+ * monosecret_resolve so SDKs using inline declarations can require this symbol
+ * at load time, rather than risk an old library ignoring an unknown field and
+ * searching for a filesystem manifest.
+ *
+ * Request v1:
+ * {
+ *   "request_version": 1,
+ *   "operation": "resolve",
+ *   "source": {
+ *     "kind": "inline", "spec_version": 1, "base_dir": "/project",
+ *     "spec": {
+ *       "project": { "name": "my-app" },
+ *       "profiles": {
+ *         "default": { "secrets": {
+ *           "TOKEN": { "description": "API token", "required": true }
+ *         }}
+ *       }
+ *     }
+ *   },
+ *   "options": { "provider": "dotenv://.env", "reason": "startup" }
+ * }
+ *
+ * source.kind is exactly one of "search", "path" (with path), or "inline".
+ * Inline spec v1 is strict JSON: profile declarations use a `secrets` object,
+ * and unknown declaration fields are rejected. Its base_dir resolves relative
+ * provider paths like Secrets::from_spec_at. project.extends is supported and
+ * resolves parent manifests relative to base_dir, like a file-backed Spec.
+ */
+char *monosecret_call(const char *request_json);
+
+/*
+ * Free a string previously returned by monosecret_resolve() or monosecret_call().
+ * NULL is ignored.
  * Must not be called twice on the same pointer.
  */
 void monosecret_free(char *ptr);

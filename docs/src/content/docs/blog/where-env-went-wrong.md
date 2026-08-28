@@ -6,8 +6,8 @@ authors:
   - domen
 ---
 
-:::note[Adapted from upstream SecretSpec]
-This evergreen article was originally published by the upstream SecretSpec project. It is retained with its original author attribution; technical examples have been adapted for Monosecret.
+:::note[Adapted from upstream Monosecret]
+This evergreen article was originally published by the upstream Monosecret project. It is retained with its original author attribution; technical examples have been adapted for Monosecret.
 :::
 
 `.env` is one of software's most successful accidents.
