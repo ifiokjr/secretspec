@@ -29,7 +29,7 @@ Use `.with_scope("api")` to resolve only a named `[scopes.api]` subset. Both
 `resolved.scope` and `report.scope` return the selected scope:
 
 ```ruby
-resolved = Monosecret::Monosecret.builder.with_scope("api").load
+resolved = Monosecret.builder.with_scope("api").load
 ```
 
 ## Cleanup

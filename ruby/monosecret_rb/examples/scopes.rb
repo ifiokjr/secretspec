@@ -1,1 +1,1 @@
-resolved = Monosecret::Monosecret.builder.with_scope("api").load
+resolved = Monosecret.builder.with_scope("api").load

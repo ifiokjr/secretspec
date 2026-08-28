@@ -1,6 +1,6 @@
 require "monosecret"
 
-resolved = Monosecret::Monosecret.builder
+resolved = Monosecret.builder
                                  .with_provider("keyring://")
                                  .with_profile("production")
                                  .with_reason("boot web app")
