@@ -150,7 +150,7 @@ coordinate, and the exact rules.
 
 Azure App Configuration (0.20+) native `ref.item` values name one App
 Configuration key and remain read-only. An App Configuration value can itself
-be a canonical Azure Key Vault reference; SecretSpec follows that stored URI,
-including its optional Key Vault version. This is separate from SecretSpec's
+be a canonical Azure Key Vault reference; Monosecret follows that stored URI,
+including its optional Key Vault version. This is separate from Monosecret's
 `ref.version` coordinate, which Azure Key Vault accepts directly starting in
 0.20.

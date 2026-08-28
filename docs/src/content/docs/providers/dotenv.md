@@ -82,11 +82,11 @@ MIIEpAIBAAKCAQEA...
 -----END RSA PRIVATE KEY-----"
 ```
 
-:::note[Dotenv syntax in SecretSpec 0.20+]
-Starting in SecretSpec 0.20+, dotenv parsing and rendering use dotenv-ng syntax.
+:::note[Dotenv syntax in Monosecret 0.20+]
+Starting in Monosecret 0.20+, dotenv parsing and rendering use dotenv-ng syntax.
 Dollar signs and expressions such as `$TOKEN` and `${TOKEN}` are literal; the
 provider does not substitute them from the process environment. When writing,
-SecretSpec leaves values unquoted when they already round-trip and otherwise
+Monosecret leaves values unquoted when they already round-trip and otherwise
 double-quotes and escapes them. Keys may include hyphens, leading digits,
 leading dots, and Unicode, but not whitespace, `=`, `#`, or control characters.
 :::

@@ -112,7 +112,7 @@ be confused with component data.
 A secret's
 [`ref`](/reference/configuration/#secret-references) field names an
 existing secret instead: `item` is the secret name (`field` and `version` are
-both rejected through SecretSpec 0.18). `field` remains unsupported. SecretSpec
+both rejected through Monosecret 0.18). `field` remains unsupported. Monosecret
 0.20+ accepts `version` as a 32-character ASCII alphanumeric Azure Key Vault
 version identifier; omission reads the latest version. References are
 **read-only** in this provider, and `item`

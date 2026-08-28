@@ -56,7 +56,7 @@ spec := map[string]any{
 		},
 	}},
 }
-resolved, err := secretspec.New().WithInlineSpec(spec, "/logical/project").Load()
+resolved, err := monosecret.New().WithInlineSpec(spec, "/logical/project").Load()
 ```
 
 ## Scopes (0.17+)
