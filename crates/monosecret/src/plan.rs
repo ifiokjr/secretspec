@@ -252,7 +252,7 @@ impl ResolutionPlan {
 			};
 			let primary = route.group_key();
 			if let Some(&idx) = group_index.get(&primary) {
-				groups[idx].1.push(secret)
+				groups[idx].1.push(secret);
 			} else {
 				group_index.insert(primary, groups.len());
 				groups.push((primary, vec![secret]));
