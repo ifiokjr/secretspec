@@ -5542,16 +5542,16 @@ DIRECT = { description = "Direct secret", providers = ["secret"] }
 		let compiled = config.validate_and_compile().unwrap();
 		let default = compiled.profile("default").unwrap();
 		assert_eq!(
-			aliases(&default.secrets["SHARED"]),
+			aliases(default.secrets.get("SHARED").unwrap()),
 			Some(vec!["project".to_string()])
 		);
 		let production = compiled.profile("production").unwrap();
 		assert_eq!(
-			aliases(&production.secrets["SHARED"]),
+			aliases(production.secrets.get("SHARED").unwrap()),
 			Some(vec!["profile".to_string()])
 		);
 		assert_eq!(
-			aliases(&production.secrets["DIRECT"]),
+			aliases(production.secrets.get("DIRECT").unwrap()),
 			Some(vec!["secret".to_string()])
 		);
 	}

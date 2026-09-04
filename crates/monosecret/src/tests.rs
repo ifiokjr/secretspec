@@ -1266,7 +1266,6 @@ fn test_report_lists_missing_required_without_failing() {
 /// and writes.
 #[test]
 fn test_value_free_surfaces_do_not_generate_or_store() {
-	use crate::config::GenerateConfig;
 	use crate::report::ResolutionStatus;
 	use crate::resolve::ResolvedSource;
 
@@ -1332,7 +1331,6 @@ fn test_value_free_surfaces_do_not_generate_or_store() {
 /// path used to reach the provider write and error on `env://`.
 #[test]
 fn test_value_free_report_tolerates_read_only_provider() {
-	use crate::config::GenerateConfig;
 	use crate::report::ResolutionStatus;
 
 	let mut secrets = HashMap::new();
@@ -1373,7 +1371,6 @@ fn test_value_free_report_tolerates_read_only_provider() {
 /// and stores it, and afterwards the preflight sees the stored value.
 #[test]
 fn test_value_free_report_marks_unprovisioned_required_generated_secret_missing() {
-	use crate::config::GenerateConfig;
 	use crate::report::ResolutionStatus;
 
 	let temp_dir = TempDir::new().unwrap();
@@ -1435,7 +1432,6 @@ fn test_value_free_report_marks_unprovisioned_required_generated_secret_missing(
 /// required secret is reported as would-generate rather than missing.
 #[test]
 fn test_value_free_report_resolves_generated_secret_on_ephemeral_store() {
-	use crate::config::GenerateConfig;
 	use crate::report::ResolutionStatus;
 
 	let mut secrets = HashMap::new();
@@ -5804,10 +5800,7 @@ DB_PASSWORD = { description = "Database password", type = "password", generate =
 	let profile = config.profiles.get("default").unwrap();
 	let secret = profile.secrets.get("DB_PASSWORD").unwrap();
 	assert_eq!(secret.secret_type.as_deref(), Some("password"));
-	assert!(matches!(
-		secret.generate,
-		Some(crate::config::GenerateConfig::Bool(true))
-	));
+	assert!(matches!(secret.generate, Some(GenerateConfig::Bool(true))));
 }
 
 #[test]
@@ -5825,7 +5818,7 @@ API_TOKEN = { description = "API token", type = "hex", generate = { bytes = 32 }
 	let secret = profile.secrets.get("API_TOKEN").unwrap();
 	assert_eq!(secret.secret_type.as_deref(), Some("hex"));
 	match &secret.generate {
-		Some(crate::config::GenerateConfig::Options(opts)) => {
+		Some(GenerateConfig::Options(opts)) => {
 			assert_eq!(opts.bytes, Some(32));
 		}
 		other => panic!("Expected Options, got {other:?}"),
@@ -5847,7 +5840,7 @@ MONGO_KEY = { description = "MongoDB keyfile", type = "command", generate = { co
 	let secret = profile.secrets.get("MONGO_KEY").unwrap();
 	assert_eq!(secret.secret_type.as_deref(), Some("command"));
 	match &secret.generate {
-		Some(crate::config::GenerateConfig::Options(opts)) => {
+		Some(GenerateConfig::Options(opts)) => {
 			assert_eq!(opts.command.as_deref(), Some("echo test"));
 		}
 		other => panic!("Expected Options, got {other:?}"),
@@ -5868,7 +5861,7 @@ RELEASE_KEY = { description = "Release key", type = "openpgp_private_key", gener
 	let secret = &config.profiles["default"].secrets["RELEASE_KEY"];
 	assert_eq!(secret.secret_type.as_deref(), Some("openpgp_private_key"));
 	match &secret.generate {
-		Some(crate::config::GenerateConfig::Options(opts)) => {
+		Some(GenerateConfig::Options(opts)) => {
 			assert_eq!(
 				opts.user_id.as_deref(),
 				Some("Release Bot <releases@example.com>")
@@ -6001,10 +5994,7 @@ MANUAL_SECRET = { description = "No gen", generate = false }
 	let config = parse_spec_from_str(toml_content, None).unwrap();
 	let profile = config.profiles.get("default").unwrap();
 	let secret = profile.secrets.get("MANUAL_SECRET").unwrap();
-	assert!(matches!(
-		secret.generate,
-		Some(crate::config::GenerateConfig::Bool(false))
-	));
+	assert!(matches!(secret.generate, Some(GenerateConfig::Bool(false))));
 }
 
 #[test]
@@ -6453,7 +6443,7 @@ fn test_resolve_secret_config_merges_type_and_generate() {
 			encoding: None,
 			extract: None,
 			secret_type: Some("password".to_string()),
-			generate: Some(crate::config::GenerateConfig::Bool(true)),
+			generate: Some(GenerateConfig::Bool(true)),
 			prompt: None,
 		},
 	);

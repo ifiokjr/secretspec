@@ -1443,8 +1443,8 @@ mod tests {
 			.unwrap();
 
 		assert_eq!(results.len(), 2);
-		assert_eq!(results["API_KEY"].expose_secret(), "one");
-		assert_eq!(results["OTHER"].expose_secret(), "two");
+		assert_eq!(results.get("API_KEY").unwrap().expose_secret(), "one");
+		assert_eq!(results.get("OTHER").unwrap().expose_secret(), "two");
 		assert_eq!(fs::read_to_string(count).unwrap(), "x");
 	}
 

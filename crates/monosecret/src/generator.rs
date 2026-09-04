@@ -730,14 +730,14 @@ mod tests {
 		let signing = parse_openpgp(&openpgp_config(None, None, Some(vec!["sign"])));
 		assert_eq!(signing.secret_subkeys.len(), 1);
 		assert_eq!(
-			signing.secret_subkeys[0].algorithm(),
+			signing.secret_subkeys.first().unwrap().algorithm(),
 			PublicKeyAlgorithm::EdDSALegacy
 		);
 
 		let encryption = parse_openpgp(&openpgp_config(None, None, Some(vec!["encrypt"])));
 		assert_eq!(encryption.secret_subkeys.len(), 1);
 		assert_eq!(
-			encryption.secret_subkeys[0].algorithm(),
+			encryption.secret_subkeys.first().unwrap().algorithm(),
 			PublicKeyAlgorithm::ECDH
 		);
 	}
@@ -748,7 +748,10 @@ mod tests {
 		assert_eq!(key.primary_key.algorithm(), PublicKeyAlgorithm::RSA);
 		assert_eq!(key.primary_key.version(), KeyVersion::V4);
 		assert_eq!(key.secret_subkeys.len(), 1);
-		assert_eq!(key.secret_subkeys[0].algorithm(), PublicKeyAlgorithm::RSA);
+		assert_eq!(
+			key.secret_subkeys.first().unwrap().algorithm(),
+			PublicKeyAlgorithm::RSA
+		);
 	}
 
 	#[test]

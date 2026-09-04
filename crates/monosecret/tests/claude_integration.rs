@@ -118,19 +118,8 @@ CLAUDE_TOKEN = { description = "Claude token", default = "fixture-claude-token",
 			.unwrap()
 	}
 
-	fn helper_id_at(&self, settings: &Path) -> String {
-		let settings = read_json(settings);
-		settings["apiKeyHelper"]
-			.as_str()
-			.unwrap()
-			.split_whitespace()
-			.last()
-			.unwrap()
-			.to_string()
-	}
-
 	fn helper_id(&self) -> String {
-		self.helper_id_at(&self.settings)
+		helper_id_at(&self.settings)
 	}
 
 	fn credential(&self) -> Output {
@@ -148,6 +137,17 @@ CLAUDE_TOKEN = { description = "Claude token", default = "fixture-claude-token",
 		find_named(&self.root, "claude-code.json")
 			.unwrap_or_else(|| self.root.join("config/monosecret/claude-code.json"))
 	}
+}
+
+fn helper_id_at(settings: &Path) -> String {
+	read_json(settings)
+		.get("apiKeyHelper")
+		.and_then(Value::as_str)
+		.unwrap()
+		.split_whitespace()
+		.last()
+		.unwrap()
+		.to_string()
 }
 
 fn read_json(path: &Path) -> Value {
@@ -200,19 +200,39 @@ fn custom_manifest_configure_resolve_and_unconfigure_preserve_settings() {
 	let output = fixture.custom_configure();
 	assert_success("Claude configure", &output);
 	let configured = read_json(&fixture.settings);
-	assert_eq!(configured["permissions"], original["permissions"]);
-	assert_eq!(configured["env"], original["env"]);
+	assert_eq!(configured.get("permissions"), original.get("permissions"));
+	assert_eq!(configured.get("env"), original.get("env"));
 	assert!(
-		configured["apiKeyHelper"]
-			.as_str()
+		configured
+			.get("apiKeyHelper")
+			.and_then(Value::as_str)
 			.unwrap()
 			.starts_with("monosecret claude credential --configuration ")
 	);
 	let state = fixture.state();
-	assert_eq!(state["settings"][0]["provider"], "null");
-	assert_eq!(state["settings"][0]["reason"], "Use gateway credential");
-	assert_eq!(state["settings"][0]["resource"], "gateway.example.com");
-	assert_eq!(state["settings"][0]["source"]["kind"], "manifest");
+	let setting = || {
+		state
+			.get("settings")
+			.and_then(Value::as_array)
+			.unwrap()
+			.first()
+			.unwrap()
+	};
+	assert_eq!(setting().get("provider"), Some(&Value::from("null")));
+	assert_eq!(
+		setting().get("reason"),
+		Some(&Value::from("Use gateway credential"))
+	);
+	assert_eq!(
+		setting().get("resource"),
+		Some(&Value::from("gateway.example.com"))
+	);
+	assert_eq!(
+		setting()
+			.get("source")
+			.and_then(|source| source.get("kind")),
+		Some(&Value::from("manifest"))
+	);
 
 	let output = fixture.credential();
 	assert_success("Claude credential", &output);
@@ -225,7 +245,17 @@ fn custom_manifest_configure_resolve_and_unconfigure_preserve_settings() {
 		.unwrap();
 	assert_success("Claude unconfigure", &output);
 	assert_eq!(read_json(&fixture.settings), original);
-	assert_eq!(fixture.state()["settings"][0]["configured"], false);
+	assert_eq!(
+		fixture
+			.state()
+			.get("settings")
+			.and_then(Value::as_array)
+			.unwrap()
+			.first()
+			.unwrap()
+			.get("configured"),
+		Some(&Value::Bool(false))
+	);
 }
 
 #[test]
@@ -278,7 +308,10 @@ fn embedded_login_credential_and_logout_use_the_configured_provider() {
 fn configure_refuses_to_replace_an_unmanaged_helper() {
 	let fixture = Fixture::new();
 	let mut settings = read_json(&fixture.settings);
-	settings["apiKeyHelper"] = Value::String("other-helper".to_string());
+	settings.as_object_mut().unwrap().insert(
+		"apiKeyHelper".to_string(),
+		Value::String("other-helper".to_string()),
+	);
 	fs::write(
 		&fixture.settings,
 		serde_json::to_vec_pretty(&settings).unwrap(),
@@ -292,7 +325,12 @@ fn configure_refuses_to_replace_an_unmanaged_helper() {
 		stderr.contains("not") && stderr.contains("managed by Monosecret"),
 		"stderr:\n{stderr}"
 	);
-	assert_eq!(read_json(&fixture.settings)["apiKeyHelper"], "other-helper");
+	assert_eq!(
+		read_json(&fixture.settings)
+			.get("apiKeyHelper")
+			.and_then(Value::as_str),
+		Some("other-helper")
+	);
 }
 
 #[test]
@@ -300,7 +338,10 @@ fn unconfigure_refuses_to_remove_an_edited_managed_helper() {
 	let fixture = Fixture::new();
 	assert_success("Claude configure", &fixture.custom_configure());
 	let mut settings = read_json(&fixture.settings);
-	settings["apiKeyHelper"] = Value::String("edited-helper".to_string());
+	settings.as_object_mut().unwrap().insert(
+		"apiKeyHelper".to_string(),
+		Value::String("edited-helper".to_string()),
+	);
 	fs::write(
 		&fixture.settings,
 		serde_json::to_vec_pretty(&settings).unwrap(),
@@ -318,10 +359,20 @@ fn unconfigure_refuses_to_remove_an_edited_managed_helper() {
 		stderr.contains("changed") && stderr.contains("outside Monosecret"),
 		"stderr:\n{stderr}"
 	);
-	assert_eq!(fixture.state()["settings"].as_array().unwrap().len(), 1);
 	assert_eq!(
-		read_json(&fixture.settings)["apiKeyHelper"],
-		"edited-helper"
+		fixture
+			.state()
+			.get("settings")
+			.and_then(Value::as_array)
+			.unwrap()
+			.len(),
+		1
+	);
+	assert_eq!(
+		read_json(&fixture.settings)
+			.get("apiKeyHelper")
+			.and_then(Value::as_str),
+		Some("edited-helper")
 	);
 }
 
@@ -343,7 +394,17 @@ fn unconfigure_recovers_when_the_managed_helper_is_already_absent() {
 		.output()
 		.unwrap();
 	assert_success("stale-state Claude unconfigure", &output);
-	assert_eq!(fixture.state()["settings"][0]["configured"], false);
+	assert_eq!(
+		fixture
+			.state()
+			.get("settings")
+			.and_then(Value::as_array)
+			.unwrap()
+			.first()
+			.unwrap()
+			.get("configured"),
+		Some(&Value::Bool(false))
+	);
 }
 
 #[test]
@@ -357,7 +418,17 @@ fn ambient_provider_is_not_saved_as_durable_helper_configuration() {
 		.unwrap();
 	assert_success("ambient-provider Claude configure", &output);
 	assert!(String::from_utf8_lossy(&output.stdout).contains("was not recorded"));
-	assert!(fixture.state()["settings"][0]["provider"].is_null());
+	assert!(
+		fixture
+			.state()
+			.get("settings")
+			.and_then(Value::as_array)
+			.unwrap()
+			.first()
+			.unwrap()
+			.get("provider")
+			.is_some_and(Value::is_null)
+	);
 }
 
 #[test]
@@ -379,7 +450,11 @@ fn global_configuration_requires_confirmation_and_supports_yes() {
 		.output()
 		.unwrap();
 	assert_success("global Claude configure", &output);
-	assert!(read_json(&global_settings)["apiKeyHelper"].is_string());
+	assert!(
+		read_json(&global_settings)
+			.get("apiKeyHelper")
+			.is_some_and(Value::is_string)
+	);
 
 	let output = fixture
 		.command()
@@ -403,7 +478,11 @@ fn project_configuration_uses_the_repository_root_from_a_subdirectory() {
 		.unwrap();
 	assert_success("subdirectory Claude configure", &output);
 	assert!(String::from_utf8_lossy(&output.stdout).contains("out of version control"));
-	assert!(read_json(&fixture.settings)["apiKeyHelper"].is_string());
+	assert!(
+		read_json(&fixture.settings)
+			.get("apiKeyHelper")
+			.is_some_and(Value::is_string)
+	);
 	assert!(!subdirectory.join(".claude/settings.local.json").exists());
 }
 
@@ -445,7 +524,11 @@ fn linked_worktree_configuration_uses_the_main_checkout_root() {
 		.output()
 		.unwrap();
 	assert_success("linked-worktree Claude configure", &output);
-	assert!(read_json(&fixture.settings)["apiKeyHelper"].is_string());
+	assert!(
+		read_json(&fixture.settings)
+			.get("apiKeyHelper")
+			.is_some_and(Value::is_string)
+	);
 	assert!(!linked.join(".claude/settings.local.json").exists());
 }
 
@@ -461,7 +544,11 @@ fn global_configuration_honors_claude_config_dir() {
 		.output()
 		.unwrap();
 	assert_success("custom-config-dir Claude configure", &output);
-	assert!(read_json(&claude_config.join("settings.json"))["apiKeyHelper"].is_string());
+	assert!(
+		read_json(&claude_config.join("settings.json"))
+			.get("apiKeyHelper")
+			.is_some_and(Value::is_string)
+	);
 	assert!(!fixture.home.join(".claude/settings.json").exists());
 }
 
@@ -519,7 +606,7 @@ fn embedded_credentials_are_isolated_by_settings_scope() {
 			"claude",
 			"credential",
 			"--configuration",
-			&fixture.helper_id_at(&second_settings),
+			&helper_id_at(&second_settings),
 		])
 		.output()
 		.unwrap();
@@ -581,7 +668,18 @@ fn managed_state_rejects_relative_settings_paths() {
 	assert_success("Claude configure", &fixture.embedded_configure("null"));
 	let state_path = fixture.state_path();
 	let mut state = read_json(&state_path);
-	state["settings"][0]["settings"] = Value::String("relative/settings.json".to_string());
+	state
+		.get_mut("settings")
+		.and_then(Value::as_array_mut)
+		.unwrap()
+		.first_mut()
+		.unwrap()
+		.as_object_mut()
+		.unwrap()
+		.insert(
+			"settings".to_string(),
+			Value::String("relative/settings.json".to_string()),
+		);
 	fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
 
 	let output = fixture
@@ -603,7 +701,14 @@ fn repeated_configuration_is_idempotent() {
 	assert_success("second Claude configure", &second);
 	assert!(String::from_utf8_lossy(&second.stdout).contains("already configured"));
 	assert_eq!(fixture.state(), state);
-	assert_eq!(state["settings"].as_array().unwrap().len(), 1);
+	assert_eq!(
+		state
+			.get("settings")
+			.and_then(Value::as_array)
+			.unwrap()
+			.len(),
+		1
+	);
 }
 
 #[test]
@@ -655,7 +760,11 @@ fn configuration_preserves_a_symlinked_settings_file() {
 			.file_type()
 			.is_symlink()
 	);
-	assert!(read_json(&target)["apiKeyHelper"].is_string());
+	assert!(
+		read_json(&target)
+			.get("apiKeyHelper")
+			.is_some_and(Value::is_string)
+	);
 	let output = fixture
 		.command()
 		.args(["claude", "unconfigure"])
@@ -697,8 +806,9 @@ fn new_state_and_settings_files_are_owner_only() {
 fn generated_helper_runs_through_the_system_shell() {
 	let fixture = Fixture::new();
 	assert_success("Claude configure", &fixture.custom_configure());
-	let helper = read_json(&fixture.settings)["apiKeyHelper"]
-		.as_str()
+	let helper = read_json(&fixture.settings)
+		.get("apiKeyHelper")
+		.and_then(Value::as_str)
 		.unwrap()
 		.to_string();
 	let binary = Path::new(env!("CARGO_BIN_EXE_monosecret"));
