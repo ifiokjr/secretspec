@@ -7,6 +7,7 @@
 
 #![cfg(unix)]
 
+use std::fmt::Write as _;
 use std::fs;
 use std::io::Read;
 use std::os::unix::process::ExitStatusExt;
@@ -41,9 +42,11 @@ env = "env://"
 "#,
 	);
 	for i in 0..SECRET_COUNT {
-		config.push_str(&format!(
-			"SECRET_{i} = {{ description = \"secret {i}\", providers = [\"env\"] }}\n"
-		));
+		writeln!(
+			config,
+			"SECRET_{i} = {{ description = \"secret {i}\", providers = [\"env\"] }}"
+		)
+		.unwrap();
 	}
 	fs::write(&config_path, config).unwrap();
 

@@ -111,7 +111,8 @@ fn normalize_server(raw: &str) -> String {
 			let mut normalized =
 				format!("{}://{}", url.scheme(), url.host_str().unwrap_or_default());
 			if let Some(port) = url.port() {
-				normalized.push_str(&format!(":{port}"));
+				normalized.push(':');
+				normalized.push_str(&port.to_string());
 			}
 			normalized.push_str(url.path().trim_end_matches('/'));
 			normalized
@@ -775,7 +776,9 @@ mod tests {
 	}
 
 	fn with_env<T>(key: &'static str, value: &str, body: impl FnOnce() -> T) -> T {
-		let _guard = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+		let _guard = ENV_LOCK
+			.lock()
+			.unwrap_or_else(std::sync::PoisonError::into_inner);
 		let _restore = EnvRestore {
 			key,
 			previous: std::env::var_os(key),
@@ -792,11 +795,13 @@ mod tests {
 
 	#[cfg(unix)]
 	impl FakePassbolt {
-		fn new(list: serde_json::Value, get: serde_json::Value) -> Self {
+		fn new(list: &serde_json::Value, get: &serde_json::Value) -> Self {
 			use std::io::Write;
 			use std::os::unix::fs::PermissionsExt;
 
-			let env_guard = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+			let env_guard = ENV_LOCK
+				.lock()
+				.unwrap_or_else(std::sync::PoisonError::into_inner);
 			let dir = tempfile::tempdir().unwrap();
 			let script = r#"#!/bin/sh
 fixture_dir=$(dirname "$0")
@@ -1113,8 +1118,8 @@ esac
 	fn uuid_writes_bypass_the_folder_listing() {
 		let id = "a9230ec4-5507-4870-b8b5-b3f500587e4c";
 		let fake = FakePassbolt::new(
-			serde_json::json!([]),
-			serde_json::json!({"id": id, "name": "outside-folder"}),
+			&serde_json::json!([]),
+			&serde_json::json!({"id": id, "name": "outside-folder"}),
 		);
 		let provider = fake.provider("passbolt://?folder=folder-id");
 		let native = NativeAddress {
@@ -1149,8 +1154,8 @@ esac
 	fn native_name_write_reuses_its_resource_listing() {
 		let id = "a9230ec4-5507-4870-b8b5-b3f500587e4c";
 		let fake = FakePassbolt::new(
-			serde_json::json!([{"id": id, "name": "existing-resource"}]),
-			serde_json::json!({"id": id, "name": "existing-resource"}),
+			&serde_json::json!([{"id": id, "name": "existing-resource"}]),
+			&serde_json::json!({"id": id, "name": "existing-resource"}),
 		);
 		let provider = fake.provider("passbolt://?folder=folder-id");
 		let native = NativeAddress {

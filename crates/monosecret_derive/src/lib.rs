@@ -133,7 +133,7 @@ impl FieldInfo {
 	/// # Returns
 	///
 	/// Token stream for the field assignment, with proper error handling for required fields
-	fn generate_assignment(&self, source: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+	fn generate_assignment(&self, source: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
 		generate_secret_assignment(
 			&self.field_name(),
 			&self.name,
@@ -306,7 +306,7 @@ pub fn declare_secrets(input: TokenStream) -> TokenStream {
 	}
 
 	// Generate all the code
-	let output = generate_secret_spec_code(ir);
+	let output = generate_secret_spec_code(&ir);
 	output.into()
 }
 
@@ -546,7 +546,7 @@ fn ir_field_type(field: &IrField) -> proc_macro2::TokenStream {
 fn generate_secret_assignment(
 	field_name: &proc_macro2::Ident,
 	secret_name: &str,
-	source: proc_macro2::TokenStream,
+	source: &proc_macro2::TokenStream,
 	is_optional: bool,
 	as_path: bool,
 ) -> proc_macro2::TokenStream {
@@ -795,6 +795,10 @@ mod secret_spec_generation {
 		let fields = field_info.values().map(FieldInfo::generate_struct_field);
 
 		quote! {
+			// The struct is plain data; the `unsafe` blocks in its generated accessors
+			// wrap `std::env::set_var` (thread-safety, not data invariants), so deriving
+			// Deserialize cannot bypass a safety invariant.
+			#[allow(clippy::unsafe_derive_deserialize)]
 			#[derive(Debug, ::monosecret::__private::serde::Serialize, ::monosecret::__private::serde::Deserialize)]
 			#[serde(crate = "::monosecret::__private::serde")]
 			pub struct Monosecret {
@@ -834,6 +838,9 @@ mod secret_spec_generation {
 		profile_variants: &[proc_macro2::TokenStream],
 	) -> proc_macro2::TokenStream {
 		quote! {
+			// Plain data enum; see the allow on the Monosecret struct for why the
+			// unsafe_derive_deserialize lint does not apply here.
+			#[allow(clippy::unsafe_derive_deserialize)]
 			#[derive(Debug, ::monosecret::__private::serde::Serialize, ::monosecret::__private::serde::Deserialize)]
 			#[serde(crate = "::monosecret::__private::serde")]
 			pub enum MonosecretProfile {
@@ -920,7 +927,7 @@ mod secret_spec_generation {
 					generate_secret_assignment(
 						&field_name_ident(&field.name),
 						&field.name,
-						quote! { secrets },
+						&quote! { secrets },
 						field.optional,
 						field.as_path,
 					)
@@ -1022,7 +1029,7 @@ mod secret_spec_generation {
 	/// - `set_as_env_vars()` - Sets all secrets as environment variables
 	pub fn generate_impl(
 		load_assignments: &[proc_macro2::TokenStream],
-		env_setters: Vec<proc_macro2::TokenStream>,
+		env_setters: &[proc_macro2::TokenStream],
 		_field_info: &BTreeMap<String, FieldInfo>,
 	) -> proc_macro2::TokenStream {
 		quote! {
@@ -1228,7 +1235,7 @@ mod builder_generation {
 	/// 2. Convert any errors to `MonosecretError`
 	/// 3. Extract the provider name to pass to the loading system
 	fn generate_provider_resolution(
-		provider_expr: proc_macro2::TokenStream,
+		provider_expr: &proc_macro2::TokenStream,
 	) -> proc_macro2::TokenStream {
 		quote! {
 			let provider_str = if let Some(provider_fn) = #provider_expr {
@@ -1256,7 +1263,7 @@ mod builder_generation {
 	/// 2. Convert any errors to `MonosecretError`
 	/// 3. Convert Profile to string for the loading system
 	fn generate_profile_resolution(
-		profile_expr: proc_macro2::TokenStream,
+		profile_expr: &proc_macro2::TokenStream,
 	) -> proc_macro2::TokenStream {
 		quote! {
 			let profile_str = if let Some(profile_fn) = #profile_expr {
@@ -1290,10 +1297,10 @@ mod builder_generation {
 		load_profile_arms: &[proc_macro2::TokenStream],
 		first_profile_variant: &proc_macro2::Ident,
 	) -> proc_macro2::TokenStream {
-		let resolve_provider_load = generate_provider_resolution(quote! { self.provider.take() });
-		let resolve_profile_load = generate_profile_resolution(quote! { self.profile.take() });
+		let resolve_provider_load = generate_provider_resolution(&quote! { self.provider.take() });
+		let resolve_profile_load = generate_profile_resolution(&quote! { self.profile.take() });
 		let resolve_provider_profile =
-			generate_provider_resolution(quote! { self.provider.take() });
+			generate_provider_resolution(&quote! { self.provider.take() });
 
 		quote! {
 			impl MonosecretBuilder {
@@ -1425,16 +1432,16 @@ mod builder_generation {
 /// 4. Generate `MonosecretProfile` enum (profile-specific types)
 /// 5. Generate builder pattern implementation
 /// 6. Combine all components with necessary imports
-fn generate_secret_spec_code(ir: CodegenIr) -> proc_macro2::TokenStream {
-	let profile_variants = profile_variants_from_ir(&ir);
+fn generate_secret_spec_code(ir: &CodegenIr) -> proc_macro2::TokenStream {
+	let profile_variants = profile_variants_from_ir(ir);
 
 	// Union struct fields.
-	let field_info = union_field_info(&ir);
+	let field_info = union_field_info(ir);
 
 	// Generate field assignments for load()
 	let load_assignments: Vec<_> = field_info
 		.values()
-		.map(|info| info.generate_assignment(quote! { secrets }))
+		.map(|info| info.generate_assignment(&quote! { secrets }))
 		.collect();
 
 	// Generate env var setters
@@ -1448,13 +1455,13 @@ fn generate_secret_spec_code(ir: CodegenIr) -> proc_macro2::TokenStream {
 
 	// Generate Monosecret components
 	let secret_spec_struct = secret_spec_generation::generate_struct(&field_info);
-	let profile_enum_variants = secret_spec_generation::generate_profile_enum_variants(&ir);
+	let profile_enum_variants = secret_spec_generation::generate_profile_enum_variants(ir);
 	let secret_spec_profile_enum =
 		secret_spec_generation::generate_profile_enum(&profile_enum_variants);
-	let load_profile_arms = secret_spec_generation::generate_load_profile_arms(&ir);
+	let load_profile_arms = secret_spec_generation::generate_load_profile_arms(ir);
 	let load_internal = secret_spec_generation::generate_load_internal();
 	let secret_spec_impl =
-		secret_spec_generation::generate_impl(&load_assignments, env_setters, &field_info);
+		secret_spec_generation::generate_impl(&load_assignments, &env_setters, &field_info);
 
 	// Get first profile variant for defaults
 	// Get first profile variant for defaults

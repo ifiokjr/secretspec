@@ -532,7 +532,7 @@ in
     "lint:clippy" = {
       exec = ''
         set -euo pipefail
-        cargo clippy --all-targets --all-features --locked
+        cargo clippy --all-targets --all-features --locked -- -D warnings
       '';
       description = "Run Clippy across all Rust targets and features.";
       binary = "bash";

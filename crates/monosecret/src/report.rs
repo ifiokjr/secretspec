@@ -12,6 +12,8 @@
 //! mismatched version rather than silently misparse. The canonical JSON Schema
 //! lives at `schema/resolution-report.schema.json` in the repository root.
 
+use std::fmt::Write as _;
+
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -36,6 +38,9 @@ pub enum ResolutionStatus {
 }
 
 /// The resolution outcome for one declared secret. Never carries the value.
+// The booleans are the report wire format consumed by out-of-process SDKs and
+// CI tooling; reshaping them into enums would change the published JSON schema.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecretResolution {
 	/// The declared secret name (the `UPPER_SNAKE` key from the manifest).
@@ -139,10 +144,10 @@ impl ResolutionReport {
 	/// generate*, because nothing was minted to produce this report.
 	pub fn to_explain_string(&self) -> String {
 		let mut out = String::new();
-		out.push_str(&format!("profile:  {}\n", self.profile));
-		out.push_str(&format!("provider: {}\n", self.provider));
+		let _ = writeln!(out, "profile:  {}", self.profile);
+		let _ = writeln!(out, "provider: {}", self.provider);
 		if let Some(scope) = &self.scope {
-			out.push_str(&format!("scope:    {scope}\n"));
+			let _ = writeln!(out, "scope:    {scope}");
 		}
 
 		let width = self.secrets.iter().map(|s| s.name.len()).max().unwrap_or(0);
@@ -168,16 +173,17 @@ impl ResolutionReport {
 				ResolutionStatus::MissingOptional => "missing   optional".to_string(),
 			};
 			let path = if s.as_path { "  (as path)" } else { "" };
-			out.push_str(&format!(
-				"  {:width$}  {}{}\n",
+			let _ = writeln!(
+				out,
+				"  {:width$}  {}{}",
 				s.name,
 				detail,
 				path,
 				width = width
-			));
+			);
 		}
 		for violation in &self.constraint_violations {
-			out.push_str(&format!("  CONSTRAINT  FAILED    {violation}\n"));
+			let _ = writeln!(out, "  CONSTRAINT  FAILED    {violation}");
 		}
 		out
 	}

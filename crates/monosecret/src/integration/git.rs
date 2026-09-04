@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::io::BufRead;
 use std::io::Write;
 use std::path::Path;
@@ -214,7 +215,7 @@ pub(crate) fn canonical_target(url: &Url) -> String {
 		target.push_str(&host.to_ascii_lowercase());
 	}
 	if let Some(port) = url.port() {
-		target.push_str(&format!(":{port}"));
+		let _ = write!(target, ":{port}");
 	}
 	let path = canonical_target_path(url.path());
 	let path = path.trim_end_matches('/');
@@ -225,24 +226,20 @@ pub(crate) fn canonical_target(url: &Url) -> String {
 }
 
 fn canonical_target_path(path: &str) -> String {
-	const HEX: &[u8; 16] = b"0123456789ABCDEF";
-
 	let mut canonical = String::with_capacity(path.len());
 	let mut index = 0;
 	while index < path.len() {
 		let remaining = &path[index..];
 		let bytes = remaining.as_bytes();
-		if bytes[0] == b'%'
-			&& bytes.len() >= 3
-			&& let (Some(high), Some(low)) = (hex_value(bytes[1]), hex_value(bytes[2]))
+		// A `%` escape needs three bytes: the marker plus two hex digits.
+		if let [b'%', high_byte, low_byte, ..] = bytes
+			&& let (Some(high), Some(low)) = (hex_value(*high_byte), hex_value(*low_byte))
 		{
 			let byte = (high << 4) | low;
 			if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
 				canonical.push(char::from(byte));
 			} else {
-				canonical.push('%');
-				canonical.push(char::from(HEX[usize::from(byte >> 4)]));
-				canonical.push(char::from(HEX[usize::from(byte & 0x0f)]));
+				let _ = write!(canonical, "%{byte:02X}");
 			}
 			index += 3;
 			continue;
@@ -403,30 +400,27 @@ struct LoadedGitCredentials {
 }
 
 fn load(args: &Args) -> Result<LoadedGitCredentials> {
-	let (mut secrets, password_secret, username_secret) = match &args.file {
-		Some(path) => {
-			(
-				Secrets::load_from(path)?,
-				args.password_secret.clone(),
-				args.username_secret.clone(),
-			)
-		}
-		None => {
-			let embedded = load_embedded_git_credentials(&args.url, args.username.as_deref())?;
-			let password_secret = if args.password_secret == EMBEDDED_PASSWORD {
-				embedded.password_secret.clone()
+	let (mut secrets, password_secret, username_secret) = if let Some(path) = &args.file {
+		(
+			Secrets::load_from(path)?,
+			args.password_secret.clone(),
+			args.username_secret.clone(),
+		)
+	} else {
+		let embedded = load_embedded_git_credentials(&args.url, args.username.as_deref())?;
+		let password_secret = if args.password_secret == EMBEDDED_PASSWORD {
+			embedded.password_secret.clone()
+		} else {
+			args.password_secret.clone()
+		};
+		let username_secret = args.username_secret.as_ref().map(|name| {
+			if name == EMBEDDED_USERNAME {
+				embedded.username_secret.clone()
 			} else {
-				args.password_secret.clone()
-			};
-			let username_secret = args.username_secret.as_ref().map(|name| {
-				if name == EMBEDDED_USERNAME {
-					embedded.username_secret.clone()
-				} else {
-					name.clone()
-				}
-			});
-			(embedded.secrets, password_secret, username_secret)
-		}
+				name.clone()
+			}
+		});
+		(embedded.secrets, password_secret, username_secret)
 	};
 	if let Some(provider) = &args.provider {
 		secrets.set_provider(provider);
@@ -474,7 +468,7 @@ fn resolve(secrets: &Secrets, name: &str) -> Result<Option<SecretString>> {
 	}
 }
 
-fn run(args: Args, input: impl BufRead, mut output: impl Write) -> Result<()> {
+fn run(args: &Args, input: impl BufRead, mut output: impl Write) -> Result<()> {
 	if args.operation != "get" {
 		return Ok(());
 	}
@@ -486,18 +480,17 @@ fn run(args: Args, input: impl BufRead, mut output: impl Write) -> Result<()> {
 		return Ok(());
 	}
 
-	let loaded = load(&args)?;
+	let loaded = load(args)?;
 	let username = if args.username.is_none()
 		&& let Some(name) = &loaded.username_secret
 	{
-		match resolve(&loaded.secrets, name)? {
-			Some(value) => Some((name, value)),
-			None => {
-				if args.file.is_some() {
-					return Ok(());
-				}
-				None
+		if let Some(value) = resolve(&loaded.secrets, name)? {
+			Some((name, value))
+		} else {
+			if args.file.is_some() {
+				return Ok(());
 			}
+			None
 		}
 	} else {
 		None
@@ -535,7 +528,7 @@ fn write_password(name: &str, password: &SecretString, mut output: impl Write) -
 
 pub fn main() -> Result<()> {
 	run(
-		Args::parse(),
+		&Args::parse(),
 		std::io::stdin().lock(),
 		std::io::stdout().lock(),
 	)
@@ -587,7 +580,7 @@ GITHUB_TOKEN = { description = "GitHub token", default = "token=value", provider
 		);
 		let mut output = Vec::new();
 		run(
-			args(path, "get"),
+			&args(path, "get"),
 			Cursor::new("protocol=https\nhost=github.com\n\n"),
 			&mut output,
 		)
@@ -614,7 +607,7 @@ GITHUB_TOKEN = { description = "GitHub token", default = "alice-token", provider
 		);
 		let mut output = Vec::new();
 		run(
-			args(path, "get"),
+			&args(path, "get"),
 			Cursor::new("protocol=https\nhost=github.com\nusername=bob\n\n"),
 			&mut output,
 		)
@@ -626,7 +619,7 @@ GITHUB_TOKEN = { description = "GitHub token", default = "alice-token", provider
 	fn mismatched_url_does_not_load_or_return_credentials() {
 		let mut output = Vec::new();
 		run(
-			args(PathBuf::from("missing.toml"), "get"),
+			&args(PathBuf::from("missing.toml"), "get"),
 			Cursor::new("protocol=https\nhost=example.com\n\n"),
 			&mut output,
 		)
@@ -650,7 +643,7 @@ GITHUB_TOKEN = { description = "GitHub token", providers = ["null"] }
 		);
 		let mut output = Vec::new();
 		run(
-			args(path, "get"),
+			&args(path, "get"),
 			Cursor::new("protocol=https\nhost=github.com\n\n"),
 			&mut output,
 		)
@@ -665,7 +658,7 @@ GITHUB_TOKEN = { description = "GitHub token", providers = ["null"] }
 			arguments.url = Url::parse("ssh://github.com").unwrap();
 			let mut output = Vec::new();
 			run(
-				arguments,
+				&arguments,
 				Cursor::new("not a credential attribute\n"),
 				&mut output,
 			)
@@ -1012,7 +1005,7 @@ GITHUB_TOKEN = { description = "GitHub token", default = "token", providers = ["
 "#,
 		);
 		let error = run(
-			args(path, "get"),
+			&args(path, "get"),
 			Cursor::new("protocol=https\nhost=github.com\n\n"),
 			Vec::new(),
 		)

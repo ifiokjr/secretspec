@@ -4,6 +4,7 @@
 /// Only boundary slashes are normalized: leading and interior slashes keep
 /// their meaning. This is deliberately separate from [`std::path::Path`],
 /// whose platform-specific separators are wrong for remote provider paths.
+#[cfg(any(feature = "awssm", feature = "infisical", feature = "scaleway", test))]
 pub(crate) fn join_slash_path(left: &str, right: &str) -> String {
 	format!(
 		"{}/{}",

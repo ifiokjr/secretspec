@@ -299,7 +299,7 @@ impl CloudflareProvider {
 		}
 		let output = command
 			.output()
-			.map_err(|error| self.wrangler_spawn_error(error))?;
+			.map_err(|error| self.wrangler_spawn_error(&error))?;
 		if !output.status.success() {
 			let stderr = String::from_utf8_lossy(&output.stderr);
 			return Err(operation_error(format!(
@@ -318,7 +318,7 @@ impl CloudflareProvider {
 		})
 	}
 
-	fn wrangler_spawn_error(&self, error: io::Error) -> MonosecretError {
+	fn wrangler_spawn_error(&self, error: &io::Error) -> MonosecretError {
 		if error.kind() == io::ErrorKind::NotFound {
 			operation_error(format!(
 				"wrangler executable '{}' was not found; configure the `{API_TOKEN}` provider credential, set {API_TOKEN_ENV}, install Wrangler, or select it with {WRANGLER_PATH_ENV}",
@@ -431,7 +431,7 @@ impl CloudflareProvider {
 				.query(&query)
 				.send()
 				.await
-				.map_err(|error| reach_error("listing secrets", error))?;
+				.map_err(|error| reach_error("listing secrets", &error))?;
 			let envelope: ApiEnvelope<Vec<ListedSecret>> =
 				parse_envelope(response, "listing secrets").await?;
 			let page_results = envelope.result.ok_or_else(|| {
@@ -492,7 +492,7 @@ impl CloudflareProvider {
 			})
 			.send()
 			.await
-			.map_err(|error| reach_error("updating secret", error))?;
+			.map_err(|error| reach_error("updating secret", &error))?;
 		let _: ApiEnvelope<serde_json::Value> = parse_envelope(response, "updating secret").await?;
 		Ok(())
 	}
@@ -515,7 +515,7 @@ impl CloudflareProvider {
 			}])
 			.send()
 			.await
-			.map_err(|error| reach_error("creating secret", error))?;
+			.map_err(|error| reach_error("creating secret", &error))?;
 		if response.status() == reqwest::StatusCode::CONFLICT {
 			if let Some(existing) = self.lookup_secret(&client, &account_id, name).await? {
 				return self
@@ -542,7 +542,7 @@ impl CloudflareProvider {
 			.delete(url)
 			.send()
 			.await
-			.map_err(|error| reach_error("deleting secret", error))?;
+			.map_err(|error| reach_error("deleting secret", &error))?;
 		let _: ApiEnvelope<serde_json::Value> = parse_envelope(response, "deleting secret").await?;
 		Ok(true)
 	}
@@ -714,10 +714,10 @@ async fn parse_envelope<T: DeserializeOwned>(
 	)))
 }
 
-fn reach_error(action: &str, error: reqwest::Error) -> MonosecretError {
+fn reach_error(action: &str, error: &reqwest::Error) -> MonosecretError {
 	operation_error(format!(
 		"failed to reach Cloudflare while {action}: {}",
-		crate::error::display_error_chain(&error)
+		crate::error::display_error_chain(error)
 	))
 }
 
@@ -726,6 +726,7 @@ fn operation_error(message: impl Into<String>) -> MonosecretError {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use std::io::BufRead;
 	use std::io::BufReader;

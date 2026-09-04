@@ -65,7 +65,7 @@ jobs:
         run: dart format --output=none --set-exit-if-changed dart/monosecret dart/monosecret_builder
         shell: devenv shell -- bash -e {0}
       - name: clippy
-        run: cargo clippy --all-targets --all-features --locked
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
         shell: devenv shell -- bash -e {0}
       - name: dart analyze
         run: dart analyze .

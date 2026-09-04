@@ -57,6 +57,10 @@ use crate::manifest::Manifest;
 ///
 /// String entries retain the historical alias form, while table entries can
 /// declare provider dependencies and all Monosecret 0.19 alias options.
+// `ProviderConfig` is a serde-untagged wire enum re-exported through the public
+// SDK surface; boxing the large structured variant would change its public
+// shape, so the size disparity is accepted instead.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ProviderConfig {
@@ -493,9 +497,9 @@ pub(crate) fn parse_cache_max_age(value: &str) -> Result<u64, String> {
 	let bytes = value.as_bytes();
 	let mut index = 0;
 	let mut total = 0_u64;
-	while index < bytes.len() {
+	while bytes.get(index).is_some() {
 		let digits_start = index;
-		while index < bytes.len() && bytes[index].is_ascii_digit() {
+		while bytes.get(index).is_some_and(u8::is_ascii_digit) {
 			index += 1;
 		}
 		if digits_start == index {
@@ -503,7 +507,9 @@ pub(crate) fn parse_cache_max_age(value: &str) -> Result<u64, String> {
 				"invalid cache max_age '{value}'; expected a duration such as '30m', '8h', or '1d'"
 			));
 		}
-		let amount: u64 = value[digits_start..index]
+		let amount: u64 = value
+			.get(digits_start..index)
+			.unwrap_or(value)
 			.parse()
 			.map_err(|_| format!("cache max_age '{value}' is too large"))?;
 		if index == bytes.len() {
@@ -511,12 +517,13 @@ pub(crate) fn parse_cache_max_age(value: &str) -> Result<u64, String> {
 				"invalid cache max_age '{value}'; every number needs a unit (s, m, h, d, or w)"
 			));
 		}
-		let multiplier = match bytes[index] {
-			b's' => 1,
-			b'm' => 60,
-			b'h' => 60 * 60,
-			b'd' => 24 * 60 * 60,
-			b'w' => 7 * 24 * 60 * 60,
+		// The length guard above guarantees this lookup succeeds.
+		let multiplier = match bytes.get(index) {
+			Some(b's') => 1,
+			Some(b'm') => 60,
+			Some(b'h') => 60 * 60,
+			Some(b'd') => 24 * 60 * 60,
+			Some(b'w') => 7 * 24 * 60 * 60,
 			_ => {
 				return Err(format!(
 					"invalid cache max_age '{value}'; supported units are s, m, h, d, and w"
@@ -659,6 +666,7 @@ impl ProviderAlias {
 	///
 	/// A URI alias retains its URI and credentials as the authoritative
 	/// provider. An existing fallback alias retains its ordered route.
+	#[must_use]
 	pub fn with_cache(mut self, cache: ProviderCache) -> Self {
 		self.cache = Some(cache);
 		self
@@ -1004,7 +1012,11 @@ impl Config {
 		profile_names.sort();
 
 		for profile_name in profile_names {
-			let profile = &self.profiles[profile_name];
+			// Keys were collected from the same map, so lookups always succeed.
+			let profile = self
+				.profiles
+				.get(profile_name)
+				.expect("invariant: key comes from the same map");
 			let can_inherit_secrets = default_profile.is_some() && profile.inherits_default();
 			profile
 				.validate_raw(can_inherit_secrets)
@@ -1078,7 +1090,11 @@ impl Config {
 				));
 			}
 
-			let secrets = &scopes[scope_name].secrets;
+			let secrets = scopes
+				.get(scope_name)
+				.expect("invariant: scope names come from the same map")
+				.secrets
+				.as_slice();
 			if secrets.is_empty() {
 				return Err(ParseError::Validation(format!(
 					"Scope '{scope_name}' lists no secrets; a scope must name at least one"
@@ -1269,8 +1285,12 @@ fn validate_composition_graph(
 			Some(2) => return Ok(()),
 			Some(1) => {
 				let start = stack.iter().position(|item| *item == name).unwrap_or(0);
-				let mut cycle: Vec<String> =
-					stack[start..].iter().map(ToString::to_string).collect();
+				let mut cycle: Vec<String> = stack
+					.get(start..)
+					.unwrap_or_default()
+					.iter()
+					.map(ToString::to_string)
+					.collect();
 				cycle.push(name.to_string());
 				return Err(cycle);
 			}
@@ -1334,6 +1354,10 @@ impl ConfigGraphLoader {
 	fn visit_extends(&mut self, config: &Config, base_dir: &Path) -> Result<(), ParseError> {
 		for extend_path in config.project.extends.iter().flatten() {
 			let joined_path = base_dir.join(extend_path);
+			// Deliberately case-sensitive: only a lowercase `.toml` suffix marks a
+			// direct manifest; any other spelling is treated as a directory that
+			// contains `monosecret.toml`, and `.TOML`-style names are not accepted.
+			#[allow(clippy::case_sensitive_file_extension_comparisons)]
 			let full_path = if extend_path.ends_with(".toml") {
 				joined_path
 			} else {
@@ -1718,10 +1742,10 @@ impl ProfileDefaults {
 		self.inherit = self.inherit.or(earlier.inherit);
 		self.required = self.required.or(earlier.required);
 		if self.default.is_none() {
-			self.default = earlier.default.clone();
+			self.default.clone_from(&earlier.default);
 		}
 		if self.providers.is_none() {
-			self.providers = earlier.providers.clone();
+			self.providers.clone_from(&earlier.providers);
 		}
 	}
 }
@@ -1754,7 +1778,11 @@ impl Profile {
 		}
 
 		for name in self.sorted_secret_names() {
-			let secret = &self.secrets[&name];
+			// Names were collected from the same map, so lookups always succeed.
+			let secret = self
+				.secrets
+				.get(&name)
+				.expect("invariant: name comes from the same map");
 			if !is_valid_identifier(&name) {
 				return Err(format!(
 					"Invalid secret name '{name}': must be a valid identifier (alphanumeric and underscores, not starting with a number)"
@@ -2189,6 +2217,9 @@ where
 }
 
 /// Preserve the compact string form when a secret belongs to one group.
+// The `&Option<..>` signature is dictated by serde's `serialize_with`
+// contract: serde passes a reference to the field value verbatim.
+#[allow(clippy::ref_option)]
 fn serialize_group_names<S>(groups: &Option<Vec<String>>, serializer: S) -> Result<S::Ok, S::Error>
 where
 	S: serde::Serializer,
@@ -2440,7 +2471,7 @@ pub struct Secret {
 	/// Providers are tried in order until one has the secret.
 	/// If not specified, uses the profile defaults.providers or global provider.
 	/// Each alias is resolved against the providers map in `GlobalConfig`.
-	/// Example: providers = ["keyring", "env"] will try keyring first, then env.
+	/// Example: `providers = ["keyring", "env"]` will try keyring first, then env.
 	pub providers: Option<Vec<ProviderRef>>,
 	/// Native coordinates naming one externally managed secret (see
 	/// [`NativeAddress`]): `ref = { item = "db", field = "password" }`.
@@ -2995,12 +3026,12 @@ impl GlobalConfig {
 
 		// Ensure the parent directory exists
 		if let Some(parent) = config_path.parent() {
-			std::fs::create_dir_all(parent)?;
+			fs::create_dir_all(parent)?;
 		}
 
 		let content = toml::to_string_pretty(self)
 			.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-		std::fs::write(&config_path, content)?;
+		fs::write(&config_path, content)?;
 
 		Ok(())
 	}
@@ -3114,7 +3145,7 @@ pub struct Resolved<T> {
 	pub profile: String,
 	/// Resources whose lifetime must match the resolved secret values.
 	#[serde(skip)]
-	_resources: Option<Arc<ResolvedResources>>,
+	resources: Option<Arc<ResolvedResources>>,
 }
 
 /// Owns temporary files referenced by typed `as_path` fields.
@@ -3122,16 +3153,21 @@ pub struct Resolved<T> {
 /// Sharing this owner makes cloning a [`Resolved`] value safe: the files are
 /// removed only after the final clone is dropped.
 struct ResolvedResources {
-	_temp_files: Vec<NamedTempFile>,
+	// Never read: this field exists to keep the `NamedTempFile`s alive until
+	// this owner (shared through an `Arc`) is dropped, which deletes them.
+	#[allow(dead_code)]
+	temp_files: Vec<NamedTempFile>,
 }
 
 impl<T: std::fmt::Debug> std::fmt::Debug for Resolved<T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		// Temp-file resources are omitted from `Debug` output on purpose: they
+		// are an implementation detail and the paths are not for display.
 		f.debug_struct("Resolved")
 			.field("secrets", &self.secrets)
 			.field("provider", &self.provider)
 			.field("profile", &self.profile)
-			.finish()
+			.finish_non_exhaustive()
 	}
 }
 
@@ -3148,7 +3184,7 @@ impl<T> Resolved<T> {
 			secrets,
 			provider,
 			profile,
-			_resources: None,
+			resources: None,
 		}
 	}
 
@@ -3157,15 +3193,13 @@ impl<T> Resolved<T> {
 			secrets,
 			provider: self.provider,
 			profile: self.profile,
-			_resources: self._resources,
+			resources: self.resources,
 		}
 	}
 
 	pub(crate) fn with_temp_files(mut self, temp_files: Vec<NamedTempFile>) -> Self {
 		if !temp_files.is_empty() {
-			self._resources = Some(Arc::new(ResolvedResources {
-				_temp_files: temp_files,
-			}));
+			self.resources = Some(Arc::new(ResolvedResources { temp_files }));
 		}
 		self
 	}
@@ -3515,7 +3549,7 @@ mod validation_tests {
 		assert!(err.to_string().contains("at least one secret"));
 	}
 
-	/// Regression for https://github.com/cachix/monosecret/issues/144: an
+	/// Regression for <https://github.com/cachix/monosecret/issues/144>: an
 	/// explicitly declared empty profile inherits the complete default
 	/// profile and is therefore not empty from the resolver's perspective.
 	#[test]
@@ -3595,7 +3629,12 @@ API_KEY = { description = "Deployment API key" }
 		.unwrap();
 
 		let compiled = config.validate_and_compile().unwrap();
-		let api_key = &compiled.profile("deployment").unwrap().secrets["API_KEY"];
+		let api_key = compiled
+			.profile("deployment")
+			.unwrap()
+			.secrets
+			.get("API_KEY")
+			.expect("API_KEY declaration present");
 		assert_eq!(
 			api_key.config.description.as_deref(),
 			Some("Deployment API key")
@@ -3647,13 +3686,42 @@ ACCESS_TOKEN = { description = "Access token", required = { at_least_one = ["aut
 		config.validate().unwrap();
 		let compiled = CompiledSpec::compile(&config);
 		let production = compiled.profile("production").unwrap();
-		assert_eq!(production.constraints.at_least_one[0].name, "auth");
 		assert_eq!(
-			production.constraints.at_least_one[0].members,
+			production
+				.constraints
+				.at_least_one
+				.first()
+				.expect("one auth group")
+				.name,
+			"auth"
+		);
+		assert_eq!(
+			production
+				.constraints
+				.at_least_one
+				.first()
+				.expect("one auth group")
+				.members,
 			vec!["ACCESS_TOKEN".to_string(), "PASSWORD".to_string()]
 		);
-		assert_eq!(production.constraints.at_least_one[1].name, "fallback_auth");
-		assert_eq!(production.constraints.exactly_one[0].name, "exclusive_auth");
+		assert_eq!(
+			production
+				.constraints
+				.at_least_one
+				.get(1)
+				.expect("fallback auth group")
+				.name,
+			"fallback_auth"
+		);
+		assert_eq!(
+			production
+				.constraints
+				.exactly_one
+				.first()
+				.expect("exclusive auth group")
+				.name,
+			"exclusive_auth"
+		);
 		assert_eq!(production.constraints.exactly_one.len(), 1);
 
 		let rendered = toml::to_string(&config).unwrap();
@@ -3752,7 +3820,12 @@ ACCESS_TOKEN = { required = { at_least_one = "auth" } }
 
 		config.validate().unwrap();
 		let compiled = CompiledSpec::compile(&config);
-		let password = &compiled.profile("production").unwrap().secrets["PASSWORD"];
+		let password = compiled
+			.profile("production")
+			.unwrap()
+			.secrets
+			.get("PASSWORD")
+			.expect("PASSWORD declaration present");
 		assert!(!password.declared_required);
 		assert_eq!(password.config.required, None);
 		assert_eq!(
@@ -3906,7 +3979,13 @@ providers = ["keyring"]
 		)
 		.unwrap();
 		let compiled = config.validate_and_compile().unwrap();
-		let result = &compiled.profile("default").unwrap().secrets["RESULT"].config;
+		let result = &compiled
+			.profile("default")
+			.unwrap()
+			.secrets
+			.get("RESULT")
+			.expect("RESULT declaration present")
+			.config;
 		assert!(result.default.is_none());
 		assert!(result.providers.is_none());
 	}
@@ -4220,9 +4299,12 @@ refs = { remote = { vault = "Production", item = "shared", field = "token" }, lo
         )
         .unwrap();
 		let refs = secret.refs.expect("scoped refs present");
-		assert_eq!(refs["remote"].item, "shared");
-		assert_eq!(refs["remote"].field.as_deref(), Some("token"));
-		assert_eq!(refs["local"].item, "TOKEN");
+		assert_eq!(refs.get("remote").expect("remote ref").item, "shared");
+		assert_eq!(
+			refs.get("remote").expect("remote ref").field.as_deref(),
+			Some("token")
+		);
+		assert_eq!(refs.get("local").expect("local ref").item, "TOKEN");
 
 		let error = toml::from_str::<Secret>(
 			r#"description = "token"
@@ -4614,15 +4696,16 @@ mod provider_alias_tests {
 	#[test]
 	fn bare_string_parses_as_uri_without_credentials() {
 		let map = parse(r#"keyring = "keyring://""#);
-		assert_eq!(map["keyring"], ProviderAlias::from("keyring://"));
-		assert!(map["keyring"].credentials.is_empty());
+		let keyring = map.get("keyring").expect("keyring alias present");
+		assert_eq!(*keyring, ProviderAlias::from("keyring://"));
+		assert!(keyring.credentials.is_empty());
 	}
 
 	#[test]
 	fn table_with_credentials_parses_uri_and_credentials() {
 		let map =
 			parse(r#"bws = { uri = "bws://proj", credentials = { access_token = "keyring" } }"#);
-		let alias = &map["bws"];
+		let alias = map.get("bws").expect("bws alias present");
 		assert_eq!(alias.uri, "bws://proj");
 		let source = alias
 			.credentials
@@ -4636,7 +4719,7 @@ mod provider_alias_tests {
 		let map = parse(
 			r#"op = { uri = "onepassword://Production", ref = { vault = "{profile}", item = "{project}-{key}", field = "password" } }"#,
 		);
-		let alias = &map["op"];
+		let alias = map.get("op").expect("op alias present");
 		let template = alias.reference_template().expect("template present");
 		let expanded = template.expand("web", "prod", "DATABASE_URL").unwrap();
 		assert_eq!(expanded.vault.as_deref(), Some("prod"));
@@ -4678,7 +4761,13 @@ mod provider_alias_tests {
 		let map = parse(
 			r#"vault = { uri = "vault://kv", credentials = { role_id = { provider = "onepassword", ref = { vault = "Infra", item = "approle", field = "role_id" } } } }"#,
 		);
-		let source = map["vault"].credentials["role_id"].clone();
+		let source = map
+			.get("vault")
+			.expect("vault alias present")
+			.credentials
+			.get("role_id")
+			.expect("role_id credential present")
+			.clone();
 		assert_eq!(source.provider, "onepassword");
 		let reference = source.reference.expect("ref present");
 		assert_eq!(reference.vault.as_deref(), Some("Infra"));
@@ -4705,14 +4794,14 @@ mod provider_alias_tests {
 			};
 			let map = HashMap::from([("vault".to_string(), alias.clone())]);
 			let serialized = toml::to_string(&map).unwrap();
-			assert_eq!(parse(&serialized)["vault"], alias);
+			assert_eq!(parse(&serialized).get("vault"), Some(&alias));
 		}
 	}
 
 	#[test]
 	fn table_without_credentials_is_equivalent_to_bare_string() {
 		let map = parse(r#"bws = { uri = "bws://proj" }"#);
-		assert_eq!(map["bws"], ProviderAlias::from("bws://proj"));
+		assert_eq!(map.get("bws"), Some(&ProviderAlias::from("bws://proj")));
 	}
 
 	#[test]
@@ -4720,7 +4809,7 @@ mod provider_alias_tests {
 		// `credentials = {}` declares nothing: the alias equals its bare-string form
 		// and serializes back to it.
 		let map = parse(r#"keyring = { uri = "keyring://", credentials = {} }"#);
-		assert_eq!(map["keyring"], ProviderAlias::from("keyring://"));
+		assert_eq!(map.get("keyring"), Some(&ProviderAlias::from("keyring://")));
 	}
 
 	#[test]
@@ -4728,7 +4817,7 @@ mod provider_alias_tests {
 		let map = parse(
 			r#"myprovider = { fallback = ["azure", "env"], cache = { provider = "local", max_age = "8h" } }"#,
 		);
-		let alias = &map["myprovider"];
+		let alias = map.get("myprovider").expect("myprovider alias present");
 		assert!(alias.is_cached());
 		assert_eq!(alias.fallback, ["azure", "env"]);
 		assert_eq!(
@@ -4746,7 +4835,7 @@ mod provider_alias_tests {
 		let map = parse(
 			r#"azure = { uri = "akv://team-vault", credentials = { client_secret = "keyring" }, cache = { provider = "local", max_age = "5m" } }"#,
 		);
-		let alias = &map["azure"];
+		let alias = map.get("azure").expect("azure alias present");
 		assert_eq!(alias.uri, "akv://team-vault");
 		assert_eq!(
 			alias.credentials.get("client_secret"),
@@ -4830,7 +4919,7 @@ mod provider_alias_tests {
 		let serialized = toml::to_string(&map).unwrap();
 		// The bare-string form is preserved so existing configs are untouched.
 		assert_eq!(serialized.trim(), r#"keyring = "keyring://""#);
-		assert_eq!(parse(&serialized)["keyring"], alias);
+		assert_eq!(parse(&serialized).get("keyring"), Some(&alias));
 	}
 
 	#[test]
@@ -4845,7 +4934,7 @@ mod provider_alias_tests {
 		};
 		let map = HashMap::from([("bws".to_string(), alias.clone())]);
 		let serialized = toml::to_string(&map).unwrap();
-		assert_eq!(parse(&serialized)["bws"], alias);
+		assert_eq!(parse(&serialized).get("bws"), Some(&alias));
 	}
 
 	#[test]
@@ -4866,11 +4955,17 @@ API_KEY = { description = "key", required = true }
 		)
 		.unwrap();
 		let providers = config.providers.expect("[providers] present");
-		assert_eq!(providers["keyring"], ProviderConfig::from("keyring://"));
-		assert_eq!(providers["bws"].uri(), "bws://proj");
+		assert_eq!(
+			providers.get("keyring"),
+			Some(&ProviderConfig::from("keyring://"))
+		);
+		assert_eq!(
+			providers.get("bws").map(ProviderConfig::uri),
+			Some("bws://proj")
+		);
 		assert!(matches!(
-			&providers["bws"],
-			ProviderConfig::Structured(config)
+			providers.get("bws"),
+			Some(ProviderConfig::Structured(config))
 				if config.credentials.contains_key("access_token")
 		));
 	}
@@ -4905,10 +5000,13 @@ secrets = ["DATABASE_URL", "QUEUE_TOKEN"]
 	fn scopes_parse_as_named_membership_lists() {
 		let config = parse(WITH_SCOPES).unwrap();
 		let scopes = config.scopes.as_ref().expect("[scopes] present");
-		assert_eq!(scopes["api"].secrets, vec!["DATABASE_URL", "API_KEY"]);
 		assert_eq!(
-			scopes["worker"].secrets,
-			vec!["DATABASE_URL", "QUEUE_TOKEN"]
+			scopes.get("api").expect("api scope").secrets,
+			["DATABASE_URL", "API_KEY"]
+		);
+		assert_eq!(
+			scopes.get("worker").expect("worker scope").secrets,
+			["DATABASE_URL", "QUEUE_TOKEN"]
 		);
 	}
 
@@ -5115,12 +5213,18 @@ secrets = ["DATABASE_URL"]
 		let scopes = base.scopes.expect("scopes present after overlay");
 		// Later document wins on conflict; new scopes are added; untouched
 		// scopes are preserved.
-		assert_eq!(scopes["api"].secrets, vec!["DATABASE_URL"]);
 		assert_eq!(
-			scopes["worker"].secrets,
-			vec!["DATABASE_URL", "QUEUE_TOKEN"]
+			scopes.get("api").expect("api scope").secrets,
+			["DATABASE_URL"]
 		);
-		assert_eq!(scopes["migration"].secrets, vec!["DATABASE_URL"]);
+		assert_eq!(
+			scopes.get("worker").expect("worker scope").secrets,
+			["DATABASE_URL", "QUEUE_TOKEN"]
+		);
+		assert_eq!(
+			scopes.get("migration").expect("migration scope").secrets,
+			["DATABASE_URL"]
+		);
 	}
 
 	#[test]
@@ -5147,12 +5251,37 @@ LOCAL_ONLY = { required = false }
 		.expect("valid config");
 
 		let manifest = config.to_manifest();
-		let development = &manifest.profiles["development"].secrets;
-		assert!(development["DATABASE_URL"].has_default);
-		assert!(development["DATABASE_URL"].as_path);
-		assert_eq!(development["DATABASE_URL"].groups, ["backend"]);
-		assert!(development["REQUIRED_TOKEN"].required);
-		assert!(!development["LOCAL_ONLY"].required);
+		let development = &manifest
+			.profiles
+			.get("development")
+			.expect("development profile present")
+			.secrets;
+		assert!(
+			development
+				.get("DATABASE_URL")
+				.expect("DATABASE_URL")
+				.has_default
+		);
+		assert!(
+			development
+				.get("DATABASE_URL")
+				.expect("DATABASE_URL")
+				.as_path
+		);
+		assert_eq!(
+			development
+				.get("DATABASE_URL")
+				.expect("DATABASE_URL")
+				.groups,
+			["backend"]
+		);
+		assert!(
+			development
+				.get("REQUIRED_TOKEN")
+				.expect("REQUIRED_TOKEN")
+				.required
+		);
+		assert!(!development.get("LOCAL_ONLY").expect("LOCAL_ONLY").required);
 
 		let json = serde_json::to_string(&manifest).expect("serialize manifest");
 		assert!(

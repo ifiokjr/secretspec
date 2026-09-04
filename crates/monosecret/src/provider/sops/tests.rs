@@ -1,3 +1,5 @@
+#![allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
+
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
@@ -13,11 +15,10 @@ use crate::provider::sops::config::SopsConfig;
 /// The SOPS provider shells out to the `sops` CLI. CI runners (notably
 /// Windows) may not have it installed; skip the test rather than fail.
 fn sops_available() -> bool {
-	std::process::Command::new("sops")
+	Command::new("sops")
 		.arg("--version")
 		.output()
-		.map(|out| out.status.success())
-		.unwrap_or(false)
+		.is_ok_and(|out| out.status.success())
 }
 
 fn build_sops_provider(
@@ -376,8 +377,7 @@ fn test_sops_directory_get_json() {
 					}
 					None => {
 						panic!(
-							"'foobar' under profile '{}' in project 'some-project-name' not found",
-							profile,
+							"'foobar' under profile '{profile}' in project 'some-project-name' not found",
 						)
 					}
 				}
@@ -415,8 +415,7 @@ fn test_sops_directory_nested_get_json() {
 					}
 					None => {
 						panic!(
-							"'foobar' under profile '{}' in project 'some-project-name' not found",
-							profile,
+							"'foobar' under profile '{profile}' in project 'some-project-name' not found",
 						)
 					}
 				}
@@ -454,8 +453,7 @@ fn test_sops_directory_get_dotenv() {
 					}
 					None => {
 						panic!(
-							"'foobar' under profile '{}' in project 'some-project-name' not found",
-							profile,
+							"'foobar' under profile '{profile}' in project 'some-project-name' not found",
 						)
 					}
 				}
@@ -599,7 +597,7 @@ fn test_sops_set_directory_creates_file_and_sets_value() {
 	let provider = build_sops_provider(
 		format!(
 			"{}/{{project}}/{{profile}}.enc.json",
-			&base.to_string_lossy()
+			base.to_string_lossy()
 		)
 		.as_str(),
 		None,
@@ -907,7 +905,7 @@ fn test_sops_set_directory_multiple_profiles() {
 	let provider = build_sops_provider(
 		format!(
 			"{}/{{project}}/{{profile}}.enc.yaml",
-			&base.to_string_lossy()
+			base.to_string_lossy()
 		)
 		.as_str(),
 		None,

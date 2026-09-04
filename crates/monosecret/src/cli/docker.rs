@@ -127,13 +127,12 @@ pub(super) enum DockerAction {
 
 pub(super) fn run(
 	action: DockerAction,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	file: Option<&Path>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 	typed: TypedArgs,
 ) -> Result<()> {
-	let file = if typed.file { file.clone() } else { None };
-	let file = &file;
+	let file = if typed.file { file } else { None };
 	match action {
 		DockerAction::Configure {
 			registry,
@@ -159,12 +158,14 @@ pub(super) fn run(
 			})
 		}
 		DockerAction::Login { registry, provider } => {
-			login(registry, provider, file, reason, caller)
+			login(&registry, provider.as_deref(), file, reason, caller)
 		}
 		DockerAction::Logout { registry, provider } => {
-			logout(registry, provider, file, reason, caller)
+			logout(&registry, provider.as_deref(), file, reason, caller)
 		}
-		DockerAction::Unconfigure { registry, all, yes } => unconfigure(registry, all, yes),
+		DockerAction::Unconfigure { registry, all, yes } => {
+			unconfigure(registry.as_deref(), all, yes)
+		}
 	}
 }
 
@@ -176,9 +177,9 @@ struct ConfigureOptions<'a> {
 	profile: Option<String>,
 	provider: Option<String>,
 	yes: bool,
-	file: &'a Option<PathBuf>,
-	reason: &'a Option<String>,
-	caller: &'a Option<CallerContext>,
+	file: Option<&'a Path>,
+	reason: Option<&'a str>,
+	caller: Option<&'a CallerContext>,
 	typed: TypedArgs,
 }
 
@@ -258,11 +259,7 @@ fn configure(options: ConfigureOptions<'_>) -> Result<()> {
 		.provider
 		.then_some(options.provider.as_deref())
 		.flatten();
-	let persisted_reason = options
-		.typed
-		.reason
-		.then_some(options.reason.as_deref())
-		.flatten();
+	let persisted_reason = options.typed.reason.then_some(options.reason).flatten();
 
 	let original_docker = read_optional(&docker_config)?;
 	let mut docker = parse_docker_config(original_docker.as_deref(), &docker_config)?;
@@ -294,9 +291,12 @@ fn configure(options: ConfigureOptions<'_>) -> Result<()> {
 		source,
 	};
 	let state_changed = match existing_index {
-		Some(index) if state.credentials[index] == credential => false,
+		Some(index) if state.credentials.get(index) == Some(&credential) => false,
 		Some(index) => {
-			state.credentials[index] = credential;
+			*state
+				.credentials
+				.get_mut(index)
+				.expect("position yields an in-bounds index") = credential;
 			true
 		}
 		None => {
@@ -367,9 +367,9 @@ fn embedded_cli_secrets(
 	registry: &str,
 	docker_config: &Path,
 	provider: Option<&str>,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	file: Option<&Path>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 	action: &str,
 ) -> Result<EmbeddedDockerCredentials> {
 	if file.is_some() {
@@ -383,9 +383,9 @@ fn embedded_cli_secrets(
 		embedded.secrets.set_provider(provider);
 	}
 	if let Some(reason) = reason {
-		embedded.secrets = embedded.secrets.with_reason(reason.clone());
+		embedded.secrets = embedded.secrets.with_reason(reason);
 	}
-	let caller = caller.clone().unwrap_or_else(|| {
+	let caller = caller.cloned().unwrap_or_else(|| {
 		CallerContext::new("docker")
 			.with_operation(format!("credential_{action}"))
 			.with_resource(registry)
@@ -401,18 +401,18 @@ fn embedded_cli_secrets(
 }
 
 fn login(
-	registry: String,
-	provider: Option<String>,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	registry: &str,
+	provider: Option<&str>,
+	file: Option<&Path>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 ) -> Result<()> {
-	let registry = canonical_registry(&registry).map_err(|error| miette!(error))?;
+	let registry = canonical_registry(registry).map_err(|error| miette!(error))?;
 	let docker_config = docker_config_path().map_err(|error| miette!(error))?;
 	let embedded = embedded_cli_secrets(
 		&registry,
 		&docker_config,
-		provider.as_deref(),
+		provider,
 		file,
 		reason,
 		caller,
@@ -428,18 +428,18 @@ fn login(
 }
 
 fn logout(
-	registry: String,
-	provider: Option<String>,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	registry: &str,
+	provider: Option<&str>,
+	file: Option<&Path>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 ) -> Result<()> {
-	let registry = canonical_registry(&registry).map_err(|error| miette!(error))?;
+	let registry = canonical_registry(registry).map_err(|error| miette!(error))?;
 	let docker_config = docker_config_path().map_err(|error| miette!(error))?;
 	let embedded = embedded_cli_secrets(
 		&registry,
 		&docker_config,
-		provider.as_deref(),
+		provider,
 		file,
 		reason,
 		caller,
@@ -458,9 +458,8 @@ fn logout(
 	Ok(())
 }
 
-fn unconfigure(registry: Option<String>, all: bool, yes: bool) -> Result<()> {
+fn unconfigure(registry: Option<&str>, all: bool, yes: bool) -> Result<()> {
 	let registry = registry
-		.as_deref()
 		.map(canonical_registry)
 		.transpose()
 		.map_err(|error| miette!(error))?;
@@ -590,9 +589,9 @@ fn validate_secret(secrets: &Secrets, name: &str, profile: &str) -> Result<()> {
 	Ok(())
 }
 
-fn manifest_path(file: &Option<PathBuf>) -> Result<PathBuf> {
+fn manifest_path(file: Option<&Path>) -> Result<PathBuf> {
 	let path = match file {
-		Some(path) => path.clone(),
+		Some(path) => path.to_path_buf(),
 		None => crate::secrets::find_config_file().into_diagnostic()?,
 	};
 	if path.is_absolute() {
@@ -829,9 +828,22 @@ mod tests {
 			credential_helper(&config, "existing.example.com").unwrap(),
 			Some("pass")
 		);
-		assert_eq!(config["credsStore"], "desktop");
-		assert_eq!(config["auths"]["example.com"]["auth"], "encoded");
-		assert_eq!(config["plugins"]["debug"]["hooks"], "exec");
+		assert_eq!(
+			config.get("credsStore").and_then(Value::as_str),
+			Some("desktop")
+		);
+		assert_eq!(
+			config
+				.pointer("/auths/example.com/auth")
+				.and_then(Value::as_str),
+			Some("encoded")
+		);
+		assert_eq!(
+			config
+				.pointer("/plugins/debug/hooks")
+				.and_then(Value::as_str),
+			Some("exec")
+		);
 	}
 
 	#[test]
@@ -846,7 +858,7 @@ mod tests {
 		let directory = TempDir::new().unwrap();
 		let path = directory.path().join("monosecret.toml");
 		fs::write(&path, "").unwrap();
-		let resolved = manifest_path(&Some(path)).unwrap();
+		let resolved = manifest_path(Some(path).as_deref()).unwrap();
 		assert!(!resolved.to_string_lossy().starts_with(r"\\?\"));
 	}
 }

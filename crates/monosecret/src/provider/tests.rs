@@ -37,7 +37,7 @@ impl Provider for MockProvider {
 		key: &str,
 	) -> Result<crate::config::NativeAddress> {
 		Ok(crate::config::NativeAddress {
-			item: format!("{}/{}/{}", project, profile, key),
+			item: format!("{project}/{profile}/{key}"),
 			..Default::default()
 		})
 	}
@@ -104,7 +104,7 @@ impl Provider for CountingProvider {
 		key: &str,
 	) -> Result<crate::config::NativeAddress> {
 		Ok(crate::config::NativeAddress {
-			item: format!("{}/{}/{}", project, profile, key),
+			item: format!("{project}/{profile}/{key}"),
 			..Default::default()
 		})
 	}
@@ -177,7 +177,7 @@ impl Provider for MemTestProvider {
 		key: &str,
 	) -> Result<crate::config::NativeAddress> {
 		Ok(crate::config::NativeAddress {
-			item: format!("{}/{}/{}", project, profile, key),
+			item: format!("{project}/{profile}/{key}"),
 			..Default::default()
 		})
 	}
@@ -459,7 +459,7 @@ impl Provider for FailWriteProvider {
 		key: &str,
 	) -> Result<crate::config::NativeAddress> {
 		Ok(crate::config::NativeAddress {
-			item: format!("{}/{}/{}", project, profile, key),
+			item: format!("{project}/{profile}/{key}"),
 			..Default::default()
 		})
 	}
@@ -555,11 +555,11 @@ impl Provider for FailDeleteProvider {
 
 /// The freshness window each `expiring://` write was asked for, keyed by
 /// resolved item.
-static EXPIRING_TTLS: std::sync::LazyLock<Mutex<HashMap<String, std::time::Duration>>> =
+static EXPIRING_TTLS: std::sync::LazyLock<Mutex<HashMap<String, Duration>>> =
 	std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// What `set_expiring` was last asked to bound `item` to, if anything.
-pub(crate) fn recorded_expiry(item: &str) -> Option<std::time::Duration> {
+pub(crate) fn recorded_expiry(item: &str) -> Option<Duration> {
 	EXPIRING_TTLS.lock().unwrap().get(item).copied()
 }
 
@@ -618,7 +618,7 @@ impl Provider for ExpiringProvider {
 		&self,
 		addr: Address<'_>,
 		value: &SecretString,
-		max_age: std::time::Duration,
+		max_age: Duration,
 	) -> Result<()> {
 		let item = super::flat_item(self, addr)?.into_owned();
 		EXPIRING_TTLS.lock().unwrap().insert(item, max_age);
@@ -641,6 +641,7 @@ impl Provider for ExpiringProvider {
 /// A single distinct address (the common case: one secret, or several sharing
 /// one `ref`) is fetched once and its value shared, via the inline fast path.
 #[test]
+#[allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
 fn get_each_dedupes_one_address_across_names() {
 	let p = CountingProvider::new(&[("svc", "val")]);
 	let coords = crate::config::NativeAddress {
@@ -659,6 +660,7 @@ fn get_each_dedupes_one_address_across_names() {
 /// back to the right names, and a secret that does not exist is omitted rather
 /// than surfaced as an empty value.
 #[test]
+#[allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
 fn get_each_fetches_distinct_addresses_and_omits_missing() {
 	let p = CountingProvider::new(&[("one", "v1"), ("two", "v2")]);
 	let a1 = crate::config::NativeAddress {
@@ -765,18 +767,18 @@ fn get_each_concurrency_defaults_and_parses_env() {
 	let _clear = crate::tests::EnvVarGuard::remove(super::GET_EACH_CONCURRENCY_ENV);
 	assert_eq!(super::get_each_concurrency(), 8);
 
-	let _set = crate::tests::EnvVarGuard::set(super::GET_EACH_CONCURRENCY_ENV, "4");
+	let set = crate::tests::EnvVarGuard::set(super::GET_EACH_CONCURRENCY_ENV, "4");
 	assert_eq!(super::get_each_concurrency(), 4);
 
-	drop(_set);
-	let _zero = crate::tests::EnvVarGuard::set(super::GET_EACH_CONCURRENCY_ENV, "0");
+	drop(set);
+	let zero = crate::tests::EnvVarGuard::set(super::GET_EACH_CONCURRENCY_ENV, "0");
 	assert_eq!(
 		super::get_each_concurrency(),
 		8,
 		"zero is invalid and must fall back"
 	);
 
-	drop(_zero);
+	drop(zero);
 	let _bad = crate::tests::EnvVarGuard::set(super::GET_EACH_CONCURRENCY_ENV, "nope");
 	assert_eq!(super::get_each_concurrency(), 8);
 }
@@ -785,6 +787,7 @@ fn get_each_concurrency_defaults_and_parses_env() {
 /// Without the cap, `get_each` used to spawn one thread per address and open
 /// one connection each — the Vault/OpenBao reverse-proxy storm.
 #[test]
+#[allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
 fn get_each_respects_concurrency_cap() {
 	let _lock = crate::tests::scrub_resolution_env();
 	let _env = crate::tests::EnvVarGuard::set(super::GET_EACH_CONCURRENCY_ENV, "3");
@@ -961,7 +964,7 @@ fn test_create_from_string_with_plain_names() {
 	// Test onepassword separately to debug the issue
 	match Box::<dyn Provider>::try_from("onepassword") {
 		Ok(provider) => assert_eq!(provider.name(), "onepassword"),
-		Err(e) => panic!("Failed to create onepassword provider: {}", e),
+		Err(e) => panic!("Failed to create onepassword provider: {e}"),
 	}
 
 	let provider = Box::<dyn Provider>::try_from("lastpass").unwrap();
@@ -1183,8 +1186,8 @@ mod integration_tests {
 			.duration_since(UNIX_EPOCH)
 			.unwrap()
 			.as_micros();
-		let suffix = timestamp % 100000;
-		format!("monosecret_test_{}", suffix)
+		let suffix = timestamp % 100_000;
+		format!("monosecret_test_{suffix}")
 	}
 
 	fn get_test_providers() -> Vec<String> {
@@ -1314,7 +1317,7 @@ mod integration_tests {
 			}
 			_ => {
 				let provider = Box::<dyn Provider>::try_from(provider_name)
-					.unwrap_or_else(|_| panic!("{} provider should exist", provider_name));
+					.unwrap_or_else(|_| panic!("{provider_name} provider should exist"));
 				(provider, None)
 			}
 		}
@@ -1331,19 +1334,17 @@ mod integration_tests {
 			"TEST_PASSWORD",
 		));
 		match result {
-			Ok(None) => {
-				// Expected: key doesn't exist
+			Ok(None) | Err(_) => {
+				// Expected: key doesn't exist; some providers may return an
+				// error instead of None
 			}
 			Ok(Some(_)) => {
-				panic!("[{}] Should not find non-existent secret", provider_name);
-			}
-			Err(_) => {
-				// Some providers may return error instead of None
+				panic!("[{provider_name}] Should not find non-existent secret");
 			}
 		}
 
 		// Test 2: Try to set a secret (may fail for read-only providers)
-		let test_value = SecretString::new(format!("test_password_{}", provider_name).into());
+		let test_value = SecretString::new(format!("test_password_{provider_name}").into());
 
 		let writable = provider
 			.check_writable(Address::convention("proj", "default", "KEY"))
@@ -1356,10 +1357,7 @@ mod integration_tests {
 					&test_value,
 				)
 				.unwrap_or_else(|_| {
-					panic!(
-						"[{}] Provider claims to support set but failed",
-						provider_name
-					)
+					panic!("[{provider_name}] Provider claims to support set but failed")
 				});
 
 			// Verify we can retrieve it
@@ -1370,10 +1368,7 @@ mod integration_tests {
 					"TEST_PASSWORD",
 				))
 				.unwrap_or_else(|_| {
-					panic!(
-						"[{}] Should not error when getting after set",
-						provider_name
-					)
+					panic!("[{provider_name}] Should not error when getting after set")
 				});
 
 			match retrieved {
@@ -1381,12 +1376,11 @@ mod integration_tests {
 					assert_eq!(
 						value.expose_secret(),
 						test_value.expose_secret(),
-						"[{}] Retrieved value should match set value",
-						provider_name
+						"[{provider_name}] Retrieved value should match set value"
 					);
 				}
 				None => {
-					panic!("[{}] Should find secret after setting it", provider_name);
+					panic!("[{provider_name}] Should find secret after setting it");
 				}
 			}
 		} else {
@@ -1395,17 +1389,11 @@ mod integration_tests {
 				Address::convention(&project_name, "default", "TEST_PASSWORD"),
 				&test_value,
 			) {
-				Ok(_) => {
-					panic!(
-						"[{}] Read-only provider should not allow set operations",
-						provider_name
-					);
+				Ok(()) => {
+					panic!("[{provider_name}] Read-only provider should not allow set operations");
 				}
 				Err(_) => {
-					println!(
-						"[{}] Read-only provider correctly rejected set",
-						provider_name
-					);
+					println!("[{provider_name}] Read-only provider correctly rejected set");
 				}
 			}
 		}
@@ -1438,7 +1426,7 @@ mod integration_tests {
 				assert!(
 					error.to_string().contains("does not support deleting"),
 					"[{provider_name}] unexpected delete failure: {error}"
-				)
+				);
 			}
 		}
 	}
@@ -1453,7 +1441,7 @@ mod integration_tests {
 		// Test actual providers if environment variable is set
 		let providers = get_test_providers();
 		for provider_name in providers {
-			println!("Testing provider: {}", provider_name);
+			println!("Testing provider: {provider_name}");
 			let (provider, _temp_dir) = create_provider_with_temp_path(&provider_name);
 			test_provider_basic_workflow(provider.as_ref(), &provider_name);
 		}
@@ -1551,7 +1539,7 @@ mod integration_tests {
 		test_provider_profile_isolation(&mock, "mock");
 
 		for provider_name in get_test_providers() {
-			println!("Testing provider: {}", provider_name);
+			println!("Testing provider: {provider_name}");
 			let (provider, _temp_dir) = create_provider_with_temp_path(&provider_name);
 			test_provider_profile_isolation(provider.as_ref(), &provider_name);
 		}
@@ -1642,7 +1630,7 @@ mod integration_tests {
 		let test_key = "API_KEY";
 
 		for profile in &profiles {
-			let value = SecretString::new(format!("key_for_{}", profile).into());
+			let value = SecretString::new(format!("key_for_{profile}").into());
 			provider
 				.set(
 					Address::convention(&project_name, profile, test_key),
@@ -1666,7 +1654,7 @@ mod integration_tests {
 			let result = provider
 				.get(Address::convention(&project_name, profile, test_key))
 				.expect("Should not error");
-			let expected_value = format!("key_for_{}", profile);
+			let expected_value = format!("key_for_{profile}");
 			assert_eq!(
 				result.map(|s| s.expose_secret().to_string()),
 				Some(expected_value),
@@ -1794,6 +1782,7 @@ mod integration_tests {
 
 	#[cfg(feature = "awssm")]
 	#[test]
+	#[allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
 	fn test_awssm_batch_get() {
 		let providers = get_test_providers();
 		if !providers.contains(&"awssm".to_string()) {
@@ -1841,6 +1830,7 @@ mod integration_tests {
 
 	#[cfg(feature = "awsps")]
 	#[test]
+	#[allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
 	fn test_awsps_batch_get() {
 		let providers = get_test_providers();
 		if !providers.contains(&"awsps".to_string()) {
@@ -2333,7 +2323,7 @@ impl Provider for DeletingProvider {
 		key: &str,
 	) -> Result<crate::config::NativeAddress> {
 		Ok(crate::config::NativeAddress {
-			item: format!("{}/{}/{}", project, profile, key),
+			item: format!("{project}/{profile}/{key}"),
 			..Default::default()
 		})
 	}

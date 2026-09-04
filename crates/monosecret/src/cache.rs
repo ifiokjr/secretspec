@@ -419,8 +419,18 @@ mod tests {
 			.strip_prefix(CACHE_ENVELOPE_MARKER)
 			.expect("marker present");
 		let envelope: serde_json::Value = serde_json::from_str(payload).unwrap();
-		assert_eq!(envelope["expires_at"], EXPIRES_AT);
-		assert_eq!(envelope["max_age_secs"], MAX_AGE);
+		assert_eq!(
+			envelope
+				.get("expires_at")
+				.and_then(serde_json::Value::as_u64),
+			Some(EXPIRES_AT)
+		);
+		assert_eq!(
+			envelope
+				.get("max_age_secs")
+				.and_then(serde_json::Value::as_u64),
+			Some(MAX_AGE)
+		);
 		assert!(envelope.get("cached_at").is_none());
 	}
 

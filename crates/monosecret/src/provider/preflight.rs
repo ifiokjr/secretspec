@@ -55,7 +55,7 @@ impl<K> Default for AuthCheckCache<K> {
 impl<K: std::hash::Hash + Eq + Clone> AuthCheckCache<K> {
 	pub(crate) fn check(
 		&self,
-		key: K,
+		key: &K,
 		probe: impl FnOnce() -> std::result::Result<(), String>,
 	) -> std::result::Result<(), String> {
 		let cell = self
@@ -70,10 +70,10 @@ impl<K: std::hash::Hash + Eq + Clone> AuthCheckCache<K> {
 			// Drop the failed cell so a later retry re-probes, but only if it
 			// is still ours: another thread may have already replaced it.
 			let mut cells = self.cells.lock().unwrap();
-			if let Some(existing) = cells.get(&key)
+			if let Some(existing) = cells.get(key)
 				&& Arc::ptr_eq(existing, &cell)
 			{
-				cells.remove(&key);
+				cells.remove(key);
 			}
 		}
 		result
@@ -111,7 +111,7 @@ impl PreflightGuard {
 		// secret's `providers` chain creates all reuse one probe.
 		if let Some(scope) = self.inner.auth_scope_key() {
 			return PREFLIGHT_AUTH_CACHE
-				.check((self.inner.name(), scope), || {
+				.check(&(self.inner.name(), scope), || {
 					f().map_err(|e| crate::error::display_error_chain(&e))
 				})
 				.map_err(MonosecretError::ProviderOperationFailed);
@@ -326,7 +326,7 @@ mod tests {
 		let cache = AuthCheckCache::default();
 		let probes = Cell::new(0);
 		for _ in 0..3 {
-			let result = cache.check("key", || {
+			let result = cache.check(&"key", || {
 				probes.set(probes.get() + 1);
 				Ok(())
 			});
@@ -339,14 +339,14 @@ mod tests {
 	fn failure_is_not_cached() {
 		let cache = AuthCheckCache::default();
 		assert_eq!(
-			cache.check("key", || Err("not signed in".to_string())),
+			cache.check(&"key", || Err("not signed in".to_string())),
 			Err("not signed in".to_string())
 		);
-		assert_eq!(cache.check("key", || Ok(())), Ok(()));
+		assert_eq!(cache.check(&"key", || Ok(())), Ok(()));
 
 		let probes = Cell::new(0);
 		assert_eq!(
-			cache.check("key", || {
+			cache.check(&"key", || {
 				probes.set(probes.get() + 1);
 				Ok(())
 			}),
@@ -358,12 +358,12 @@ mod tests {
 	#[test]
 	fn keys_are_independent() {
 		let cache = AuthCheckCache::default();
-		assert_eq!(cache.check("a", || Ok(())), Ok(()));
+		assert_eq!(cache.check(&"a", || Ok(())), Ok(()));
 		assert_eq!(
-			cache.check("b", || Err("nope".to_string())),
+			cache.check(&"b", || Err("nope".to_string())),
 			Err("nope".to_string())
 		);
-		assert_eq!(cache.check("a", || Err("unused".to_string())), Ok(()));
+		assert_eq!(cache.check(&"a", || Err("unused".to_string())), Ok(()));
 	}
 
 	#[test]
