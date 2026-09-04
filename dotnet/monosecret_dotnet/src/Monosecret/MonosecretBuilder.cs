@@ -212,3 +212,5 @@ public sealed class MonosecretBuilder
                 $"unsupported {kind} schema version {actual} (expected {expected}); " +
                 "the libmonosecret_ffi library and this SDK are out of sync");
         }
+    }
+}
