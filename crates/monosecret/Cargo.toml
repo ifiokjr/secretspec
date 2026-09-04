@@ -78,12 +78,21 @@ tracing.workspace = true
 url.workspace = true
 uuid.workspace = true
 whoami = { workspace = true, optional = true }
+wait-timeout = { workspace = true, optional = true }
+rand_08.workspace = true
+pgp.workspace = true
+smallvec.workspace = true
+ssh-key.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 signal-hook.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, optional = true }
+
 [features]
+ejson = ["dep:wait-timeout", "dep:windows-sys"]
 default = [
   "cli",
   "keyring",
@@ -100,6 +109,7 @@ default = [
   "infisical",
   "bw",
   "age",
+  "ejson",
   "scaleway",
   "sops",
   "kubernetes",

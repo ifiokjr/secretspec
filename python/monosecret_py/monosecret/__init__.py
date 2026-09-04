@@ -436,7 +436,7 @@ class _Builder:
         return ({
             "request_version": 1,
             "operation": "resolve",
-            "source": {"kind": "inline", "spec_version": 1,
+            "source": {"kind": "inline", "spec_version": 2,
                        "base_dir": base_dir, "spec": spec},
             "options": options,
         }, True)

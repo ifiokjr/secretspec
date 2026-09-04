@@ -71,9 +71,6 @@ use super::ProviderUrl;
 use super::vault_common::KvConfig;
 use super::vault_common::KvProvider;
 use super::vault_common::Product;
-use super::vault_common::ROLE_ID;
-use super::vault_common::SECRET_ID;
-use super::vault_common::TOKEN;
 use crate::MonosecretError;
 use crate::Result;
 use crate::config::NativeAddress;
@@ -105,12 +102,7 @@ pub struct VaultProvider {
 crate::register_provider! {
 	struct: VaultProvider,
 	config: VaultConfig,
-	name: "vault",
-	description: "HashiCorp Vault secret management",
-	schemes: ["vault"],
-	examples: ["vault://vault.example.com:8200/secret"],
-	credential_names: [ROLE_ID, SECRET_ID, TOKEN],
-	deletes: true,
+	metadata: &super::catalog::VAULT,
 }
 
 impl VaultProvider {

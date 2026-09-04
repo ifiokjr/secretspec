@@ -54,12 +54,13 @@ Monosecret fixes this by separating secret **declaration** from secret **storage
   - [SOPS](https://monosecret.dev/providers/sops) (0.17+)
 - **[Type-Safe Rust SDK](https://monosecret.dev/sdk/rust/)**: Generate strongly-typed structs from your `monosecret.toml` for compile-time safety
 - **[Profile Support](https://monosecret.dev/concepts/profiles/)**: Override secret requirements and defaults per profile (development, production, etc.)
-- **[Secret Generation](https://monosecret.dev/concepts/generation/)**: Auto-generate passwords, tokens, UUIDs, and more when secrets are missing — declarative "generate if absent"
+- **[Secret Generation](https://monosecret.dev/concepts/generation/)**: Auto-generate passwords, tokens, UUIDs, and more when secrets are missing — including pure-Rust OpenPGP and OpenSSH private keys in 0.21+
 - **Run prompts (0.19+)**: Set `prompt = true` to request a hidden missing value; writable providers save it, while `null` keeps it invocation-only
 - **Composed Secrets (0.16+)**: Derive read-only values such as DSNs from declared secrets with strict, order-independent `${UPPERCASE_NAME}` references
 - **[Configuration Inheritance](https://monosecret.dev/concepts/inheritance/)**: Extend and override shared configurations using the `extends` feature
 - **[Audit Logging](https://monosecret.dev/concepts/audit/)**: Every secret access recorded locally (who, when, why, outcome) — on by default, secret values never logged
 - **[Discovery](https://monosecret.dev/reference/cli#init)**: `monosecret init` to discover secrets from existing `.env` files
+- **[Claude Code credential integration](https://monosecret.dev/integrations/claude-code/)** (0.21+): Configure, store, and remove API or gateway credentials through Claude Code's native `apiKeyHelper`
 
 ## Quick Start
 
@@ -139,6 +140,10 @@ name = "my-app"  # Inferred from current directory name when using `monosecret i
 revision = "1.0"
 # Optional: extend other configuration files
 extends = ["../shared/common", "../shared/auth"]
+
+# Monosecret 0.21+: use one provider chain unless a profile or secret overrides it.
+[defaults]
+providers = ["developer"]
 
 [profiles.default]
 DATABASE_URL = { description = "PostgreSQL connection string" }
@@ -267,8 +272,12 @@ Beyond Rust, Monosecret ships SDKs for other languages. Each is a thin client
 over the same native core, so every provider, chain, profile, and generator
 works identically with no per-language resolution logic:
 
+The shared embedded ABI is named `monosecret_ffi` in Monosecret 0.20+; it was
+named `monosecret-ffi` through 0.19. Its exported `monosecret_*` symbols and the
+`MONOSECRET_FFI_LIB` override are unchanged.
+
 - [Python](https://monosecret.dev/sdk/python) (via a pyo3 extension)
-- [Go](https://monosecret.dev/sdk/go) (via purego, no cgo, over the `monosecret-ffi` C ABI)
+- [Go](https://monosecret.dev/sdk/go) (via purego, no cgo, over the `monosecret_ffi` C ABI)
 - [Ruby](https://monosecret.dev/sdk/ruby) (via a native C extension)
 - [Node.js / TypeScript](https://monosecret.dev/sdk/nodejs) (napi-rs addon)
 - [Haskell](https://monosecret.dev/sdk/haskell) (build-time FFI link)

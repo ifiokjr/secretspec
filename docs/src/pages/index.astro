@@ -45,6 +45,7 @@ const providerMetadata: ProviderMetadata[] = [
   { slug: 'awsps', label: 'AWS Parameter Store (0.2+)' },
   { icon: 'bitwarden', slug: 'bw', label: 'Bitwarden Password Manager (0.2+)' },
   { icon: 'dashlane', slug: 'dashlane', label: 'Dashlane (0.2+)' },
+  { slug: 'ejson', label: 'EJSON (0.20+)' },
   { slug: 'file', label: 'Plaintext files (0.2+)' },
   { icon: 'gnuprivacyguard', slug: 'gopass', label: 'Gopass (0.2+)' },
   { slug: 'infisical', label: 'Infisical (0.2+)' },
@@ -70,7 +71,7 @@ const sitePath = (path: string) => `${import.meta.env.BASE_URL.replace(/\/$/, ''
 <StarlightPage
   frontmatter={{
     title: 'Declare secrets once. Store them anywhere.',
-    description: 'Declare what your application needs in monosecret.toml — store the values in any of 31 providers. No secrets in git. Same code, every environment.',
+    description: 'Declare what your application needs in monosecret.toml — store the values in any of 32 providers. No secrets in git. Same code, every environment.',
     template: 'splash',
     hero: { tagline: '' },
   }}
@@ -102,7 +103,7 @@ const sitePath = (path: string) => `${import.meta.env.BASE_URL.replace(/\/$/, ''
       <p class="landing-badge">Declarative secrets manager</p>
       <h1 id="_top" class="landing-hero-title">Declare secrets once.<br>Store them anywhere.</h1>
       <p class="landing-hero-subtitle">
-        Stop leaking <code class="inline-code">.env</code> files. Define what your application needs in <code class="inline-code">monosecret.toml</code>, then plug in keyring, 1Password, Vault, AWS, or any of 31 providers — same code, every environment.
+        Stop leaking <code class="inline-code">.env</code> files. Define what your application needs in <code class="inline-code">monosecret.toml</code>, then plug in keyring, 1Password, Vault, AWS, or any of 32 providers — same code, every environment.
       </p>
       <div class="landing-hero-actions">
         <a href={sitePath('/quick-start/')} class="landing-btn landing-btn-primary">Get Started</a>
@@ -291,7 +292,7 @@ println!("{}", s.secrets.database_url);</code></pre>
       <span class="landing-showcase-eyebrow">Declaration vs storage</span>
       <h2 class="landing-section-title">Declare a secret. Swap the source.</h2>
       <p class="landing-section-lead landing-section-lead-narrow">
-        Your <code class="inline-code">monosecret.toml</code> never changes. The same code reads from Keychain, 1Password, Vault, AWS, or any of 31 providers.
+        Your <code class="inline-code">monosecret.toml</code> never changes. The same code reads from Keychain, 1Password, Vault, AWS, or any of 32 providers.
       </p>
     </div>
 
@@ -644,6 +645,27 @@ REDIS_URL=redis://…</code></pre>
         <a href={sitePath('/quick-start/')} class="landing-btn landing-btn-primary">Get Started</a>
         <a href="https://github.com/ifiokjr/monosecret" class="landing-btn landing-btn-secondary">View on GitHub</a>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FENCER PARTNERSHIP ============ -->
+<section class="landing-section landing-partner-section" aria-labelledby="landing-fencer-title">
+  <div class="landing-container">
+    <div class="landing-partner-card">
+      <div class="landing-partner-copy">
+        <span class="landing-showcase-eyebrow">Partner spotlight</span>
+        <h2 id="landing-fencer-title" class="landing-partner-title">Fencer for Open Source</h2>
+        <p class="landing-partner-description">
+          In partnership with SecretSpec, Fencer has expanded its security offering to open-source projects. Public repositories get free static analysis, dependency scanning, secret scanning, and GitHub configuration scanning, with no credit card and no expiry.
+        </p>
+        <p class="landing-partner-recommendation">
+          We recommend Fencer for code security scanning, and Fencer recommends SecretSpec for secrets management.
+        </p>
+      </div>
+      <a href="https://www.fencer.dev/blog/introducing-fencer-for-open-source" class="landing-btn landing-btn-secondary landing-partner-link">
+        Learn about the partnership
+      </a>
     </div>
   </div>
 </section>

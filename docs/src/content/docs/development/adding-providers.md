@@ -211,11 +211,24 @@ the two sections do not repeat one another.
 
 When adding a provider for an upcoming release:
 
-1. Add a version notice near the top of the provider page:
+1. Add a version notice at the very top of the provider page, after its imports,
+   with the shared component. A new feature always uses the self-closing form
+   and renders **New in version 0.16** with no body:
 
    ```md
    :::note[Version compatibility]
    The MyBackend provider is added in Monosecret 0.2.
+   :::
+   ```
+
+   Place a section-level notice directly after its heading. When a release
+   changes existing behavior, explain the change in the note body:
+
+   ```md
+   ## Advanced authentication
+
+   :::caution[Version compatibility]
+   Advanced authentication now requires a token with the `admin` scope.
    :::
    ```
 
@@ -228,11 +241,10 @@ When adding a provider for an upcoming release:
 
 Update every provider location; names otherwise drift out of sync:
 
-1. `docs/src/content/docs/providers/<provider>.md` (or `.mdx` when it renders
-   the provider credential catalog)
+1. `docs/src/content/docs/providers/<provider>.mdx`
 2. `docs/astro.config.ts` — sidebar and `starlightLlmsTxt` provider summary
 3. `docs/src/content/docs/concepts/providers.mdx` — available providers table
-4. `docs/src/content/docs/reference/providers.md` — provider details and
+4. `docs/src/content/docs/reference/providers.mdx` — provider details and
    security considerations
 5. `docs/src/pages/index.astro` — `providerMetadata` and any provider selector
    examples

@@ -263,7 +263,7 @@ fn dispatch(request_json: &str) -> serde_json::Value {
 /// `{"ok": false, "error": {"kind", "message"}}`.
 ///
 /// This is the shared JSON boundary used by every native binding (the C ABI in
-/// `monosecret-ffi` and the napi-rs Node addon), so the envelope contract is
+/// `monosecret_ffi` and the napi-rs Node addon), so the envelope contract is
 /// defined in exactly one place. The request accepts optional `path`,
 /// `provider`, `profile`, `scope`, `reason`, `caller` (Monosecret 0.20+),
 /// `no_values`, and `mode`
@@ -273,7 +273,7 @@ fn dispatch(request_json: &str) -> serde_json::Value {
 /// `report` response never does.
 pub fn resolve_json(request_json: &str) -> String {
 	// Catch panics here, at the one place both native boundaries funnel through
-	// (the C ABI in `monosecret-ffi` and the napi-rs Node addon). Unwinding across
+	// (the C ABI in `monosecret_ffi` and the napi-rs Node addon). Unwinding across
 	// either is undefined behavior, and turning a panic into the same
 	// `{"ok":false,"error":...}` envelope every binding already parses means all
 	// bindings behave identically — the C ABI no longer needs to be the only one

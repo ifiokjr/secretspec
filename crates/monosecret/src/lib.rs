@@ -101,12 +101,14 @@ pub mod __private {
 	pub use crate::config::Profile;
 	pub use crate::config::ProfileDefaults;
 	pub use crate::config::Project;
+	pub use crate::config::ProjectDefaults;
 	pub use crate::config::Secret;
 	pub use crate::spec::load_for_codegen;
 }
 
 // Re-export only the types needed by users and generated code
 pub use config::NativeAddress;
+pub use config::ProjectDefaults;
 pub use config::ProviderConfig;
 pub use config::ProviderConfigStructured;
 pub use config::ProviderDependency;

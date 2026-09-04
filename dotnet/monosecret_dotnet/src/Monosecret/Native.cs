@@ -84,11 +84,11 @@ internal static partial class Native
         if (NativeLibrary.TryLoad(libraryName, assembly, searchPath, out var packaged))
             return packaged;
 
-        var fileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "monosecret_ffi.dll"
+        var fileNames = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? new[] { "monosecret_ffi.dll" }
             : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                ? "libmonosecret_ffi.dylib"
-                : "libmonosecret_ffi.so";
+                ? new[] { "libmonosecret_ffi.dylib" }
+                : new[] { "libmonosecret_ffi.so" };
 
         foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
         {
@@ -102,12 +102,15 @@ internal static partial class Native
                 var newestTime = DateTime.MinValue;
                 foreach (var profile in new[] { "release", "debug" })
                 {
-                    var candidate = new FileInfo(
-                        Path.Combine(directory.FullName, "target", profile, fileName));
-                    if (candidate.Exists && candidate.LastWriteTimeUtc >= newestTime)
+                    foreach (var fileName in fileNames)
                     {
-                        newest = candidate.FullName;
-                        newestTime = candidate.LastWriteTimeUtc;
+                        var candidate = new FileInfo(
+                            Path.Combine(directory.FullName, "target", profile, fileName));
+                        if (candidate.Exists && candidate.LastWriteTimeUtc >= newestTime)
+                        {
+                            newest = candidate.FullName;
+                            newestTime = candidate.LastWriteTimeUtc;
+                        }
                     }
                 }
                 if (newest is not null)

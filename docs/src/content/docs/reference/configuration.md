@@ -81,6 +81,27 @@ The reason is recorded in monosecret's own [audit log](/concepts/audit/) and is
 also forwarded to providers that support auditing (e.g. the
 [Proton Pass](/providers/protonpass/) provider records it in the agent audit log).
 
+### [defaults] Section (0.21+)
+
+Set one project-wide provider chain for provider-backed secrets that do not
+choose providers themselves or through their active profile:
+
+```toml title="monosecret.toml"
+[defaults]
+providers = ["developer"]
+```
+
+| Field       | Type          | Required | Description                                                                                                   |
+| ----------- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------- |
+| `providers` | array[string] | Yes      | Non-empty default provider chain for every profile. Entries may be aliases, provider names, or provider URIs. |
+
+Project defaults deliberately accept only `providers`: a literal fallback value
+or requiredness policy rarely makes sense for every secret in every profile.
+The chain may name an alias defined in the project `[providers]` table or only
+in the current user's `[defaults.providers]` table. A secret-level chain wins,
+followed by `[profiles.<name>.defaults].providers`, this project default, and
+finally the user-global default provider.
+
 ### [profiles.*] Section
 
 Defines secret variables for different environments. At least one profile is
@@ -107,7 +128,7 @@ profile:
 | `inherit` (0.2+) | boolean       | No       | For a non-default profile, whether to inherit declarations and omitted fields from `[profiles.default]` (default: true) |
 | `required`       | boolean       | No       | Default requiredness for secrets declared in this profile                                                               |
 | `default`        | string        | No       | Default value for secrets declared in this profile                                                                      |
-| `providers`      | array[string] | No       | Default provider chain for secrets declared in this profile                                                             |
+| `providers`      | array[string] | No       | Default provider chain for secrets declared in this profile. Overrides project `[defaults].providers` in 0.21+.         |
 
 In Monosecret 0.2+, set `inherit = false` for a standalone profile:
 
@@ -1049,6 +1070,14 @@ MONGO_KEY = { description = "MongoDB keyfile", type = "command", generate = { co
 # RSA private key (PKCS1 PEM)
 JWT_SIGNING_KEY = { description = "JWT signing key", type = "rsa_private_key", generate = true }
 
+# OpenPGP signing key (0.21+)
+RELEASE_KEY = { description = "Release signing key", type = "openpgp_private_key", generate = { user_id = "Release Bot <releases@example.com>", capabilities = [
+  "sign",
+] } }
+
+# OpenSSH Ed25519 private key (0.21+)
+DEPLOY_KEY = { description = "Deployment SSH key", type = "ssh_private_key", generate = true }
+
 # Type without generate: informational only, no auto-generation
 MANUAL_SECRET = { description = "Manually managed", type = "password" }
 ```
@@ -1072,6 +1101,11 @@ MANUAL_SECRET = { description = "Manually managed", type = "password" }
 - Subsequent runs find the stored value and skip generation (idempotent)
 - `generate` and `default` cannot both be set on the same secret
 - `type = "command"` requires `generate = { command = "..." }` (not just `generate = true`)
+- `type = "openpgp_private_key"` (0.21+) requires `generate.user_id`; omitted
+  `algorithm` and `capabilities` default to Ed25519/Curve25519 and both
+  signing and encryption, respectively
+- `type = "ssh_private_key"` (0.21+) defaults to Ed25519; RSA generation is
+  available with `generate = { algorithm = "rsa", bits = 4096 }`
 - The value-free preflights — [`check --json` / `check --explain`](/reference/cli/#resolution-report---json----explain)
   and the SDKs' report/no-values resolutions — never mint a value. Since
   Monosecret 0.20 a **required** generatable secret that no provider holds is

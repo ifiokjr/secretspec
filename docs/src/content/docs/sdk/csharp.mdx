@@ -55,7 +55,11 @@ A one-shot form is also available:
 
 <Code code={oneShotExample} lang="csharp" theme={githubDark} meta='title="OneShot.cs"' />
 
-## Caller context (0.20+)
+## Caller context {/* #caller-context-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 ```csharp
 var builder = Monosecret.Builder().WithCaller(new CallerContext
@@ -70,7 +74,11 @@ var builder = Monosecret.Builder().WithCaller(new CallerContext
 Caller context identifies the invoking integration in audit records but never
 satisfies `require_reason`. Do not put credentials or secret values in it.
 
-## Inline specifications (0.20+)
+## Inline specifications {/* #inline-specifications-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 Use `WithInlineSpec(spec, baseDir)` to resolve strict inline-spec v1 declarations
 from an object serialized by `System.Text.Json`. `baseDir` resolves relative
@@ -132,6 +140,6 @@ to remove these files deterministically:
 ## Native loading
 
 The NuGet runtime asset is selected automatically. For local SDK development,
-`MONOSECRET_FFI_LIB` can point to a particular `libmonosecret_ffi` build. From
+`MONOSECRET_FFI_LIB` can point to a particular `monosecret_ffi` build. From
 a Monosecret source checkout, the SDK also searches an ancestor Cargo
 `target/debug` or `target/release` directory.

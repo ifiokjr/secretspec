@@ -9,6 +9,10 @@ thin client over the shared Rust resolver, so every provider, fallback chain,
 profile, generator, and `as_path` secret behaves exactly like the CLI and the
 other language SDKs.
 
+> The embedded ABI is named `monosecret_ffi` in Monosecret 0.20+. It was named
+> `monosecret-ffi` through 0.19; the 0.20+ native loader accepts both shared
+> library filename families.
+
 ```bash
 dotnet add package Monosecret
 ```
@@ -88,5 +92,5 @@ dotnet publish -c Release -r linux-x64 --self-contained \
 ```
 
 During local SDK development, `MONOSECRET_FFI_LIB` can point to an explicit
-`libmonosecret_ffi` build; the SDK also discovers a Cargo `target` directory
+`monosecret_ffi` build; the SDK also discovers a Cargo `target` directory
 when used from a Monosecret source checkout.

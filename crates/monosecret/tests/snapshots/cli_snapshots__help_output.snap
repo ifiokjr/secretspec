@@ -27,6 +27,7 @@ Commands:
   config       Manage Monosecret configuration
   docker       Manage Docker registry credential integration (0.20+)
   git          Configure Git HTTP(S) or SMTP credentials through Monosecret (0.20+)
+  claude       Manage Claude Code API credential integration (0.21+)
   import       Import secrets from a provider to another provider
   cache        Manage cached provider values (0.17+)
   audit        Show the local audit log of secret access

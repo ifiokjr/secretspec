@@ -77,7 +77,10 @@ pub(crate) fn provider_from_spec(
 	// resolution uses.
 	if !spec_names_known_provider(s)? {
 		// Check if it's a known provider name to give a better error
-		if PROVIDER_REGISTRY.iter().any(|reg| reg.info.name == scheme) {
+		if PROVIDER_REGISTRY
+			.iter()
+			.any(|reg| reg.metadata.info.name == scheme)
+		{
 			return Err(MonosecretError::ProviderOperationFailed(format!(
 				"Provider '{scheme}' exists but URI parsing failed"
 			)));
@@ -182,8 +185,9 @@ fn reject_uri_credential(url: &ProviderUrl) -> Result<()> {
 	// general mechanism. A provider that accepts none never had a use for the
 	// password either, so say that instead of suggesting a credential.
 	let remedy = match registration {
-		Some(reg) if !reg.credential_names.is_empty() => {
+		Some(reg) if !reg.metadata.credential_names.is_empty() => {
 			let names = reg
+				.metadata
 				.credential_names
 				.iter()
 				.map(|name| format!("`{name}`"))
@@ -194,14 +198,14 @@ fn reject_uri_credential(url: &ProviderUrl) -> Result<()> {
                  (`monosecret config provider login <alias>`, or `credentials = \
                  {{ ... }}` on the alias), or use the provider's environment \
                  variable. See https://monosecret.dev/providers/{}/",
-				reg.info.name
+				reg.metadata.info.name
 			)
 		}
 		Some(reg) => {
 			format!(
 				"The {} provider takes no credentials, so remove the userinfo from \
              the URI. See https://monosecret.dev/providers/{}/",
-				reg.info.name, reg.info.name
+				reg.metadata.info.name, reg.metadata.info.name
 			)
 		}
 		None => "See https://monosecret.dev/reference/provider-credentials/".to_string(),

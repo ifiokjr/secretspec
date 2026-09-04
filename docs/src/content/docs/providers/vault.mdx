@@ -5,8 +5,9 @@ description: HashiCorp Vault integration
 
 import ProviderCredentials from '../../../components/ProviderCredentials.astro';
 
-The Vault provider integrates with HashiCorp Vault for centralized secret
-management using the KV (Key-Value) secrets engine.
+The [Vault](https://developer.hashicorp.com/vault) provider integrates with
+HashiCorp Vault for centralized secret management using the KV (Key-Value)
+secrets engine.
 
 ## At a glance
 
@@ -49,6 +50,12 @@ $ export VAULT_TOKEN=hvs.your-token-here
 
 ### AppRole authentication
 
+:::note[Version compatibility]
+`VAULT_SECRET_ID` or the `secret_id` provider
+credential may be omitted when the AppRole is configured with
+`bind_secret_id=false`. Monosecret then sends only `role_id` and lets Vault
+apply the role's remaining login constraints.
+:::
 Select AppRole with `?auth=approle`. Vault roles bind a SecretID by default, so
 the usual configuration provides both environment variables:
 

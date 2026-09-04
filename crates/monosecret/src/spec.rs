@@ -19,6 +19,7 @@ use crate::config::NativeAddress;
 use crate::config::Profile as ConfigProfile;
 use crate::config::ProfileDefaults;
 use crate::config::Project;
+use crate::config::ProjectDefaults;
 use crate::config::ProviderAlias;
 use crate::config::ProviderConfig;
 use crate::config::ProviderRef;
@@ -241,6 +242,7 @@ impl SpecBuilder {
 					..Project::default()
 				},
 				profiles: HashMap::new(),
+				defaults: None,
 				providers: None,
 				groups: None,
 				scopes: None,
@@ -259,6 +261,26 @@ impl SpecBuilder {
 	pub fn require_reason(mut self, policy: RequireReason) -> Self {
 		self.source = None;
 		self.declarations_mut().project.require_reason = Some(policy);
+		self.refresh_effective_config();
+		self
+	}
+
+	/// Set the provider chain used across profiles when neither a profile nor
+	/// a secret selects one. Available starting with Monosecret 0.21.
+	///
+	/// This semantic edit clears any retained source document.
+	pub fn default_providers<I, S>(mut self, providers: I) -> Self
+	where
+		I: IntoIterator<Item = S>,
+		S: Into<String>,
+	{
+		self.source = None;
+		self.declarations_mut().defaults = Some(ProjectDefaults {
+			providers: providers
+				.into_iter()
+				.map(|s| ProviderRef::from(s.into()))
+				.collect(),
+		});
 		self.refresh_effective_config();
 		self
 	}

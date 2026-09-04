@@ -918,6 +918,9 @@ pub struct Config {
 	pub project: Project,
 	/// Map of profile names to their configurations (e.g., "default", "production", "staging")
 	pub profiles: HashMap<String, Profile>,
+	/// Project-wide defaults applied to every provider-backed secret (0.21+).
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub defaults: Option<ProjectDefaults>,
 	/// Project-level provider aliases that map alias names to provider URIs.
 	///
 	/// Take precedence over aliases in the user-global config
@@ -981,6 +984,10 @@ impl Config {
 			return Err(ParseError::Validation(
 				"At least one profile must be defined".into(),
 			));
+		}
+
+		if let Some(defaults) = &self.defaults {
+			defaults.validate().map_err(ParseError::Validation)?;
 		}
 
 		// Raw syntax checks stay on the document model; effective semantic
@@ -1137,6 +1144,10 @@ impl Config {
 					self.profiles.insert(profile_name, later_profile);
 				}
 			}
+		}
+
+		if later.defaults.is_some() {
+			self.defaults = later.defaults;
 		}
 
 		if let Some(later_providers) = later.providers {
@@ -1652,6 +1663,35 @@ fn home_dir() -> Option<PathBuf> {
 		.or_else(|| std::env::var_os("HOME").map(PathBuf::from))
 }
 
+/// Project-wide defaults for provider-backed secrets (0.21+).
+///
+/// This is deliberately narrower than [`ProfileDefaults`]: a project can
+/// select one provider chain without assigning the same fallback value or
+/// requiredness policy to every secret in every profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectDefaults {
+	/// Provider aliases, names, or URIs used when neither a secret nor its
+	/// profile declares a provider chain.
+	pub providers: Vec<ProviderRef>,
+}
+
+impl ProjectDefaults {
+	fn validate(&self) -> Result<(), String> {
+		if self.providers.is_empty() {
+			return Err("project defaults must name at least one provider".to_string());
+		}
+		if self
+			.providers
+			.iter()
+			.any(|provider| provider.provider_alias().trim().is_empty())
+		{
+			return Err("project default providers cannot be empty or whitespace".to_string());
+		}
+		Ok(())
+	}
+}
+
 /// Configuration for a specific profile (environment).
 ///
 /// A profile represents a specific environment or context (e.g., "default", "production", "staging").
@@ -1861,10 +1901,30 @@ pub struct GenerateOptions {
 	/// Shell command to run (for `command` type)
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub command: Option<String>,
-	/// Key size in bits (for `rsa` type, default 2048)
+	/// Key size in bits (for `rsa_private_key`; RSA keys default to 2048,
+	/// OpenPGP and SSH RSA keys to 3072)
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub bits: Option<usize>,
+	/// OpenPGP or SSH key algorithm (`ed25519` or `rsa`, default `ed25519`; 0.21+).
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub algorithm: Option<String>,
+	/// OpenPGP User ID bound to a generated certificate (0.21+).
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub user_id: Option<String>,
+	/// OpenPGP subkey capabilities (`sign` and/or `encrypt`, 0.21+).
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub capabilities: Option<Vec<String>>,
+	/// Comment embedded in a generated OpenSSH private key (0.21+).
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub comment: Option<String>,
 }
+
+pub(crate) const OPENPGP_RSA_DEFAULT_BITS: usize = 3072;
+pub(crate) const OPENPGP_RSA_MIN_BITS: usize = 2048;
+pub(crate) const OPENPGP_RSA_MAX_BITS: usize = 8192;
+pub(crate) const SSH_RSA_DEFAULT_BITS: usize = 3072;
+pub(crate) const SSH_RSA_MIN_BITS: usize = 2048;
+pub(crate) const SSH_RSA_MAX_BITS: usize = 8192;
 
 /// Native coordinates of one externally managed secret: the value of a
 /// secret's `ref` field.
@@ -2769,10 +2829,139 @@ impl Secret {
 				}
 			}
 
+			if self.secret_type.as_deref() == Some("openpgp_private_key") {
+				let opts = match gen_config {
+					GenerateConfig::Options(opts) => opts,
+					GenerateConfig::Bool(true) => {
+						return Err(
+							"type = \"openpgp_private_key\" requires generate = { user_id = \"Name <email>\" }"
+								.into(),
+						);
+					}
+					GenerateConfig::Bool(false) => {
+						unreachable!("disabled generation handled above")
+					}
+				};
+				let user_id = opts.user_id.as_deref().ok_or_else(|| {
+					"type = \"openpgp_private_key\" requires generate.user_id".to_string()
+				})?;
+				if user_id.trim().is_empty() {
+					return Err("generate.user_id cannot be empty or whitespace".into());
+				}
+				if user_id.chars().any(char::is_control) {
+					return Err("generate.user_id cannot contain control characters".into());
+				}
+				if opts.comment.is_some() {
+					return Err(
+						"generate.comment is only valid for type = \"ssh_private_key\"".into(),
+					);
+				}
+
+				match opts.algorithm.as_deref().unwrap_or("ed25519") {
+					"ed25519" => {
+						if opts.bits.is_some() {
+							return Err(
+								"generate.bits is only valid when generate.algorithm = \"rsa\""
+									.into(),
+							);
+						}
+					}
+					"rsa" => {
+						let bits = opts.bits.unwrap_or(OPENPGP_RSA_DEFAULT_BITS);
+						if !(OPENPGP_RSA_MIN_BITS..=OPENPGP_RSA_MAX_BITS).contains(&bits) {
+							return Err(
+								"OpenPGP RSA generate.bits must be between 2048 and 8192".into()
+							);
+						}
+					}
+					algorithm => {
+						return Err(format!(
+							"unknown OpenPGP algorithm '{algorithm}'; expected `ed25519` or `rsa`"
+						));
+					}
+				}
+
+				if let Some(capabilities) = &opts.capabilities {
+					if capabilities.is_empty() {
+						return Err(
+							"generate.capabilities must contain `sign`, `encrypt`, or both".into(),
+						);
+					}
+					let mut seen = HashSet::new();
+					for capability in capabilities {
+						if !matches!(capability.as_str(), "sign" | "encrypt") {
+							return Err(format!(
+								"unknown OpenPGP capability '{capability}'; expected `sign` or `encrypt`"
+							));
+						}
+						if !seen.insert(capability) {
+							return Err(format!(
+								"generate.capabilities contains duplicate capability '{capability}'"
+							));
+						}
+					}
+				}
+			}
+
+			if self.secret_type.as_deref() == Some("ssh_private_key") {
+				let opts = match gen_config {
+					GenerateConfig::Bool(true) => None,
+					GenerateConfig::Options(opts) => Some(opts),
+					GenerateConfig::Bool(false) => {
+						unreachable!("disabled generation handled above")
+					}
+				};
+				if let Some(opts) = opts {
+					if opts.user_id.is_some() || opts.capabilities.is_some() {
+						return Err(
+							"generate.user_id and generate.capabilities are only valid for type = \"openpgp_private_key\""
+								.into(),
+						);
+					}
+					if opts
+						.comment
+						.as_deref()
+						.is_some_and(|comment| comment.chars().any(char::is_control))
+					{
+						return Err("generate.comment cannot contain control characters".into());
+					}
+					match opts.algorithm.as_deref().unwrap_or("ed25519") {
+						"ed25519" => {
+							if opts.bits.is_some() {
+								return Err(
+									"generate.bits is only valid when generate.algorithm = \"rsa\""
+										.into(),
+								);
+							}
+						}
+						"rsa" => {
+							let bits = opts.bits.unwrap_or(SSH_RSA_DEFAULT_BITS);
+							if !(SSH_RSA_MIN_BITS..=SSH_RSA_MAX_BITS).contains(&bits) {
+								return Err(
+									"SSH RSA generate.bits must be between 2048 and 8192".into()
+								);
+							}
+						}
+						algorithm => {
+							return Err(format!(
+								"unknown SSH algorithm '{algorithm}'; expected `ed25519` or `rsa`"
+							));
+						}
+					}
+				}
+			}
+
 			// Validate known types
 			if let Some(ref t) = self.secret_type {
 				match t.as_str() {
-					"password" | "hex" | "base64" | "uuid" | "command" | "rsa_private_key" => {}
+					"password"
+					| "hex"
+					| "base64"
+					| "uuid"
+					| "command"
+					| "rsa_private_key"
+					| "openpgp_private_key"
+					| "ssh_private_key" => {}
 					unknown => {
 						return Err(format!("unknown secret type '{unknown}'"));
 					}
@@ -2786,7 +2975,14 @@ impl Secret {
 		{
 			// Type is informational when not generating, but still validate known values
 			match t.as_str() {
-				"password" | "hex" | "base64" | "uuid" | "command" | "rsa_private_key" => {}
+				"password"
+				| "hex"
+				| "base64"
+				| "uuid"
+				| "command"
+				| "rsa_private_key"
+				| "openpgp_private_key"
+				| "ssh_private_key" => {}
 				unknown => {
 					return Err(format!("unknown secret type '{unknown}'"));
 				}
@@ -2808,6 +3004,7 @@ impl Secret {
 		current: Option<&Secret>,
 		default: Option<&Secret>,
 		defaults: Option<&ProfileDefaults>,
+		project_defaults: Option<&ProjectDefaults>,
 	) -> Option<Secret> {
 		if current.is_none() && default.is_none() {
 			return None;
@@ -2840,9 +3037,14 @@ impl Secret {
 		} else {
 			(defaults.and_then(|d| d.required), None, None)
 		};
-		// A composed secret's source is its dependency graph, so the
-		// `[defaults]` storage fields (`default`, `providers`) do not apply.
+		// A composed secret's source is its dependency graph, so neither the
+		// profile's storage defaults nor project default providers apply.
 		let storage_defaults = if composed.is_some() { None } else { defaults };
+		let project_providers = if composed.is_none() {
+			project_defaults.map(|defaults| defaults.providers.clone())
+		} else {
+			None
+		};
 		// `ref` and `refs` are two serialized forms of one address-model
 		// setting. Select the pair from one profile entry so an explicit switch
 		// in either direction replaces, rather than combines with, the inherited
@@ -2865,7 +3067,8 @@ impl Secret {
 			groups: inherit(current, default, |s| s.groups.clone()),
 			composed,
 			providers: inherit(current, default, |s| s.providers.clone())
-				.or_else(|| storage_defaults.and_then(|d| d.providers.clone())),
+				.or_else(|| storage_defaults.and_then(|d| d.providers.clone()))
+				.or(project_providers),
 			reference,
 			refs,
 			as_path: inherit(current, default, |s| s.as_path),
@@ -3265,6 +3468,7 @@ mod require_reason_tests {
 		use std::collections::HashMap;
 		let cfg = |rr: Option<RequireReason>| {
 			Config {
+				defaults: None,
 				project: Project {
 					name: "t".to_string(),
 					require_reason: rr,
@@ -3471,6 +3675,7 @@ mod validation_tests {
 			})
 			.collect();
 		Config {
+			defaults: None,
 			project: Project {
 				name: name.to_string(),
 				..Default::default()
@@ -4117,7 +4322,7 @@ default = "placeholder"
 		let rendered = toml::to_string(&parsed).unwrap();
 		assert!(rendered.contains("prompt = true"), "{rendered}");
 
-		let inherited = Secret::resolved(None, Some(&parsed), None).unwrap();
+		let inherited = Secret::resolved(None, Some(&parsed), None, None).unwrap();
 		assert_eq!(inherited.prompt, Some(true));
 		let disabled = Secret::resolved(
 			Some(&Secret {
@@ -4125,6 +4330,7 @@ default = "placeholder"
 				..Default::default()
 			}),
 			Some(&parsed),
+			None,
 			None,
 		)
 		.unwrap();
@@ -4248,7 +4454,7 @@ refs = { remote = { item = "scoped" } }"#,
 			..Default::default()
 		};
 
-		let resolved = Secret::resolved(Some(&scoped), Some(&legacy), None).unwrap();
+		let resolved = Secret::resolved(Some(&scoped), Some(&legacy), None, None).unwrap();
 		assert!(
 			resolved.reference.is_none(),
 			"an explicit `refs` override must replace an inherited legacy `ref`"
@@ -4256,7 +4462,7 @@ refs = { remote = { item = "scoped" } }"#,
 		assert_eq!(resolved.refs, scoped.refs);
 		resolved.validate().unwrap();
 
-		let resolved = Secret::resolved(Some(&legacy), Some(&scoped), None).unwrap();
+		let resolved = Secret::resolved(Some(&legacy), Some(&scoped), None, None).unwrap();
 		assert_eq!(resolved.reference, legacy.reference);
 		assert!(
 			resolved.refs.is_none(),
@@ -4395,6 +4601,7 @@ refs = { remote = { item = "scoped" } }"#,
 				..Default::default()
 			}),
 			None,
+			None,
 		)
 		.unwrap();
 		assert_eq!(inherited.encoding, Some(SecretEncoding::Base64));
@@ -4438,6 +4645,7 @@ encoding = "rot13""#,
 				extract: secret.extract.clone(),
 				..Default::default()
 			}),
+			None,
 			None,
 		)
 		.unwrap();
@@ -5162,6 +5370,135 @@ LOCAL_ONLY = { required = false }
 		assert!(
 			!json.contains("password@host"),
 			"default value leaked: {json}"
+		);
+	}
+}
+
+#[cfg(test)]
+mod project_defaults_tests {
+	use super::*;
+	use crate::compiled_spec::CompiledSecret;
+
+	#[test]
+	fn project_default_providers_apply_with_narrow_precedence() {
+		let config: Config = toml::from_str(
+			r#"
+[project]
+name = "payments"
+revision = "1.0"
+
+[defaults]
+providers = ["project"]
+
+[profiles.default]
+SHARED = { description = "Shared secret" }
+
+[profiles.production.defaults]
+providers = ["profile"]
+
+[profiles.production]
+DIRECT = { description = "Direct secret", providers = ["secret"] }
+"#,
+		)
+		.unwrap();
+
+		let aliases = |secret: &CompiledSecret| -> Option<Vec<String>> {
+			secret.config.providers.as_deref().map(|providers| {
+				providers
+					.iter()
+					.map(|provider| provider.provider_alias().to_string())
+					.collect()
+			})
+		};
+		let compiled = config.validate_and_compile().unwrap();
+		let default = compiled.profile("default").unwrap();
+		assert_eq!(
+			aliases(&default.secrets["SHARED"]),
+			Some(vec!["project".to_string()])
+		);
+		let production = compiled.profile("production").unwrap();
+		assert_eq!(
+			aliases(&production.secrets["SHARED"]),
+			Some(vec!["profile".to_string()])
+		);
+		assert_eq!(
+			aliases(&production.secrets["DIRECT"]),
+			Some(vec!["secret".to_string()])
+		);
+	}
+
+	#[test]
+	fn project_defaults_accept_only_a_nonempty_provider_chain() {
+		for body in [
+			"[defaults]\nproviders = []",
+			"[defaults]\nproviders = [\"  \"]",
+		] {
+			let source = format!(
+				r#"
+[project]
+name = "payments"
+revision = "1.0"
+
+{body}
+
+[profiles.default]
+TOKEN = {{ description = "Token" }}
+"#
+			);
+			let config: Config = toml::from_str(&source).unwrap();
+			assert!(config.validate().is_err(), "{source}");
+		}
+
+		let error = toml::from_str::<Config>(
+			r#"
+[project]
+name = "payments"
+revision = "1.0"
+
+[defaults]
+default = "same value for every secret"
+
+[profiles.default]
+TOKEN = { description = "Token" }
+"#,
+		)
+		.unwrap_err()
+		.to_string();
+		assert!(error.contains("unknown field `default`"), "{error}");
+	}
+
+	#[test]
+	fn later_documents_override_project_defaults_only_when_present() {
+		let parse = |providers: Option<&str>| {
+			let defaults = providers
+				.map(|provider| format!("[defaults]\nproviders = [\"{provider}\"]\n"))
+				.unwrap_or_default();
+			toml::from_str::<Config>(&format!(
+				r#"
+[project]
+name = "payments"
+revision = "1.0"
+
+{defaults}
+[profiles.default]
+TOKEN = {{ description = "Token" }}
+"#
+			))
+			.unwrap()
+		};
+
+		let mut inherited = parse(Some("parent"));
+		inherited.overlay_with(parse(None));
+		assert_eq!(
+			inherited.defaults.unwrap().providers,
+			vec![ProviderRef::from("parent")]
+		);
+
+		let mut overridden = parse(Some("parent"));
+		overridden.overlay_with(parse(Some("child")));
+		assert_eq!(
+			overridden.defaults.unwrap().providers,
+			vec![ProviderRef::from("child")]
 		);
 	}
 }

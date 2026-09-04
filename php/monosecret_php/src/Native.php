@@ -185,7 +185,7 @@ final class Native
     }
 
     /**
-     * Find `libmonosecret_ffi`: the `MONOSECRET_FFI_LIB` override first, then a
+     * Find `monosecret_ffi`: the `MONOSECRET_FFI_LIB` override first, then a
      * copy bundled in the package's `lib/` directory (the installed layout), then
      * the nearest Cargo `target/` directory (a source checkout).
      *
@@ -198,12 +198,15 @@ final class Native
             return $env;
         }
 
-        $name = self::libraryFileName();
+        $names = self::libraryFileNames();
 
         // A copy bundled alongside the package (distribution layout).
-        $bundled = \dirname(__DIR__) . \DIRECTORY_SEPARATOR . 'lib' . \DIRECTORY_SEPARATOR . $name;
-        if (\is_file($bundled)) {
-            return $bundled;
+        foreach ($names as $name) {
+            $bundled = \dirname(__DIR__) . \DIRECTORY_SEPARATOR . 'lib'
+                . \DIRECTORY_SEPARATOR . $name;
+            if (\is_file($bundled)) {
+                return $bundled;
+            }
         }
 
         // Walk up from the package looking for a Cargo target dir; pick the most
@@ -214,13 +217,15 @@ final class Native
             $best = null;
             $bestMtime = -1;
             foreach (['release', 'debug'] as $profile) {
-                $candidate = $dir . \DIRECTORY_SEPARATOR . 'target'
-                    . \DIRECTORY_SEPARATOR . $profile . \DIRECTORY_SEPARATOR . $name;
-                if (\is_file($candidate)) {
-                    $mtime = \filemtime($candidate);
-                    if ($mtime !== false && $mtime > $bestMtime) {
-                        $best = $candidate;
-                        $bestMtime = $mtime;
+                foreach ($names as $name) {
+                    $candidate = $dir . \DIRECTORY_SEPARATOR . 'target'
+                        . \DIRECTORY_SEPARATOR . $profile . \DIRECTORY_SEPARATOR . $name;
+                    if (\is_file($candidate)) {
+                        $mtime = \filemtime($candidate);
+                        if ($mtime !== false && $mtime > $bestMtime) {
+                            $best = $candidate;
+                            $bestMtime = $mtime;
+                        }
                     }
                 }
             }
@@ -241,16 +246,22 @@ final class Native
     }
 
     /**
-     * The platform-specific `libmonosecret_ffi` file name the loader looks for.
+     * The platform-specific `monosecret_ffi` file name the loader looks for.
      * Shared with the `monosecret-install-lib` script so the downloaded copy and
      * the loader agree on one name.
      */
     public static function libraryFileName(): string
     {
+        return self::libraryFileNames()[0];
+    }
+
+    /** @return list<string> The monosecret_ffi artifact names for this platform. */
+    private static function libraryFileNames(): array
+    {
         return match (\PHP_OS_FAMILY) {
-            'Darwin' => 'libmonosecret_ffi.dylib',
-            'Windows' => 'monosecret_ffi.dll',
-            default => 'libmonosecret_ffi.so',
+            'Darwin' => ['libmonosecret_ffi.dylib'],
+            'Windows' => ['monosecret_ffi.dll'],
+            default => ['libmonosecret_ffi.so'],
         };
     }
 }

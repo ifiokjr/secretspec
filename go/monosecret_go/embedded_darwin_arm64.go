@@ -4,7 +4,7 @@ package monosecret
 
 import _ "embed"
 
-//go:embed lib/monosecret_ffi_darwin_arm64.dylib
+//go:embed lib/monosecret_darwin_arm64.dylib
 var embeddedLib []byte
 
 const embeddedLibName = "libmonosecret_ffi.dylib"

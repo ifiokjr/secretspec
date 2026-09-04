@@ -20,6 +20,7 @@ use crate::config::GenerateOptions;
 use crate::config::Profile as ConfigProfile;
 use crate::config::ProfileDefaults;
 use crate::config::Project;
+use crate::config::ProjectDefaults;
 use crate::config::ProviderAlias;
 use crate::config::ProviderConfig;
 use crate::config::ProviderRef;
@@ -32,7 +33,7 @@ use crate::config::SecretExtract;
 /// The version of the native call envelope understood by this library.
 pub const NATIVE_CALL_REQUEST_VERSION: u32 = 1;
 /// The version of the JSON inline-declaration document understood by this library.
-pub const INLINE_SPEC_SCHEMA_VERSION: u32 = 1;
+pub const INLINE_SPEC_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -126,9 +127,17 @@ struct InlineSpec {
 	project: InlineProject,
 	profiles: BTreeMap<String, InlineProfile>,
 	#[serde(default)]
+	defaults: Option<InlineProjectDefaults>,
+	#[serde(default)]
 	providers: Option<HashMap<String, ProviderAlias>>,
 	#[serde(default)]
 	scopes: Option<HashMap<String, InlineScope>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InlineProjectDefaults {
+	providers: Vec<ProviderRef>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -256,6 +265,14 @@ struct InlineGenerateOptions {
 	command: Option<String>,
 	#[serde(default)]
 	bits: Option<usize>,
+	#[serde(default)]
+	algorithm: Option<String>,
+	#[serde(default)]
+	user_id: Option<String>,
+	#[serde(default)]
+	capabilities: Option<Vec<String>>,
+	#[serde(default)]
+	comment: Option<String>,
 }
 
 impl InlineSpec {
@@ -295,6 +312,11 @@ impl InlineSpec {
 				})
 				.collect::<Result<_, _>>()?,
 			groups: None,
+			defaults: self.defaults.map(|defaults| {
+				ProjectDefaults {
+					providers: defaults.providers,
+				}
+			}),
 			providers: self.providers.map(|providers| {
 				providers
 					.into_iter()
@@ -357,6 +379,10 @@ impl InlineSecret {
 							charset: options.charset,
 							command: options.command,
 							bits: options.bits,
+							algorithm: options.algorithm,
+							user_id: options.user_id,
+							capabilities: options.capabilities,
+							comment: options.comment,
 						})
 					}
 				}
@@ -537,7 +563,7 @@ mod tests {
 	fn inline_declaration_rejects_unknown_secret_fields() {
 		let response: serde_json::Value = serde_json::from_str(&call_json(r#"{
           "request_version": 1, "operation": "resolve",
-          "source": { "kind": "inline", "spec_version": 1, "base_dir": ".", "spec": {
+          "source": { "kind": "inline", "spec_version": 2, "base_dir": ".", "spec": {
             "project": { "name": "inline" },
             "profiles": { "default": { "secrets": { "TOKEN": { "description": "token", "typo": true } } } }
           }}

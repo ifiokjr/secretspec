@@ -191,7 +191,7 @@ public sealed class MonosecretBuilder
             writer.WritePropertyName("source");
             writer.WriteStartObject();
             writer.WriteString("kind", "inline");
-            writer.WriteNumber("spec_version", 1);
+            writer.WriteNumber("spec_version", 2);
             writer.WriteString("base_dir", _inlineBaseDir);
             writer.WritePropertyName("spec");
             _inlineSpec.WriteTo(writer);
@@ -212,5 +212,3 @@ public sealed class MonosecretBuilder
                 $"unsupported {kind} schema version {actual} (expected {expected}); " +
                 "the libmonosecret_ffi library and this SDK are out of sync");
         }
-    }
-}
