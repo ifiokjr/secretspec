@@ -17,6 +17,12 @@ import asPathExample from './examples/php/as-path.php?raw';
 > but Composer and native artifact publication remain deferred. Installation
 > commands below describe the intended post-release workflow.
 
+:::note[Version compatibility]
+`monosecret_ffi` was named `monosecret-ffi` through Monosecret 0.19. The PHP
+loader prefers the new artifact name and still accepts pre-0.20 shared
+libraries.
+:::
+
 The PHP SDK (`ifiokjr/monosecret`) is a thin client over the same Rust resolver
 every other Monosecret SDK uses, so it inherits every provider, chain, profile,
 and generator with no PHP-side logic. It reaches the resolver through one of two
@@ -105,7 +111,11 @@ There is also a one-shot form using named arguments:
 
 <Code code={oneShotExample} lang="php" meta='title="one_shot.php"' />
 
-## Caller context (0.20+)
+## Caller context {/* #caller-context-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 ```php
 use Monosecret\CallerContext;
@@ -122,7 +132,11 @@ $builder = Monosecret::builder()->withCaller(new CallerContext(
 Caller context identifies the invoking integration in audit records but never
 satisfies `require_reason`. Do not put credentials or secret values in it.
 
-## Inline specifications (0.20+)
+## Inline specifications {/* #inline-specifications-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 Use `withInlineSpec($spec, $baseDir)` to resolve a strict inline-spec v1 PHP
 array. The embedded extension or FFI fallback uses the versioned native call;

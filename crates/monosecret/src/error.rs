@@ -61,6 +61,13 @@ pub enum MonosecretError {
 	NoProviderConfigured,
 	#[error("Provider backend '{0}' not found")]
 	ProviderNotFound(String),
+	#[error(
+		"Provider backend '{provider}' is not available because the '{feature}' feature was not enabled when Monosecret was built"
+	)]
+	ProviderFeatureDisabled {
+		provider: String,
+		feature: &'static str,
+	},
 	#[error("Secret '{0}' not found")]
 	SecretNotFound(String),
 	#[error("Secret '{0}' is required but not set")]
@@ -136,6 +143,7 @@ impl MonosecretError {
 			MonosecretError::Dotenv(_) | MonosecretError::DotenvRender(_) => "dotenv",
 			MonosecretError::NoProviderConfigured => "no_provider_configured",
 			MonosecretError::ProviderNotFound(_) => "provider_not_found",
+			MonosecretError::ProviderFeatureDisabled { .. } => "provider_feature_disabled",
 			MonosecretError::SecretNotFound(_) => "secret_not_found",
 			MonosecretError::RequiredSecretMissing(_) => "required_secret_missing",
 			MonosecretError::PromptUnavailable(_) => "prompt_unavailable",

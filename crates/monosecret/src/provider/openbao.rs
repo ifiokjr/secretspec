@@ -83,9 +83,6 @@ use super::ProviderUrl;
 use super::vault_common::KvConfig;
 use super::vault_common::KvProvider;
 use super::vault_common::Product;
-use super::vault_common::ROLE_ID;
-use super::vault_common::SECRET_ID;
-use super::vault_common::TOKEN;
 use crate::MonosecretError;
 use crate::Result;
 use crate::config::NativeAddress;
@@ -117,12 +114,7 @@ pub struct OpenBaoProvider {
 crate::register_provider! {
 	struct: OpenBaoProvider,
 	config: OpenBaoConfig,
-	name: "openbao",
-	description: "OpenBao secret management (0.17+)",
-	schemes: ["openbao"],
-	examples: ["openbao://bao.example.com:8200/secret"],
-	credential_names: [ROLE_ID, SECRET_ID, TOKEN],
-	deletes: true,
+	metadata: &super::catalog::OPENBAO,
 }
 
 impl OpenBaoProvider {

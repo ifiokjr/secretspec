@@ -101,6 +101,14 @@ impl ProviderUrl {
 		self.0.port()
 	}
 
+	pub(crate) fn has_fragment(&self) -> bool {
+		self.0.fragment().is_some()
+	}
+
+	pub(crate) fn has_port(&self) -> bool {
+		self.0.port().is_some()
+	}
+
 	pub fn query_pairs(&self) -> url::form_urlencoded::Parse<'_> {
 		self.0.query_pairs()
 	}

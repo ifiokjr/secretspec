@@ -263,6 +263,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		);
 
 		let valid_config = Config {
+			defaults: None,
 			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
@@ -312,6 +313,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		);
 
 		let invalid_config = Config {
+			defaults: None,
 			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
@@ -396,6 +398,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		);
 
 		let keyword_config = Config {
+			defaults: None,
 			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
@@ -478,6 +481,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		);
 
 		let duplicate_config = Config {
+			defaults: None,
 			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
@@ -537,6 +541,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		);
 
 		let valid_config = Config {
+			defaults: None,
 			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
@@ -571,6 +576,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		);
 
 		let invalid_config = Config {
+			defaults: None,
 			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
@@ -708,6 +714,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		);
 
 		let valid_config = Config {
+			defaults: None,
 			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
@@ -754,6 +761,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		);
 
 		let invalid_config = Config {
+			defaults: None,
 			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),

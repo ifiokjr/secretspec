@@ -20,7 +20,11 @@ provider with no Python-side logic.
 A missing required secret raises `MissingRequiredError`; any other failure
 raises `MonosecretError` (with a stable `.kind`).
 
-## Caller context (0.20+)
+## Caller context {/* #caller-context-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 ```python
 from monosecret import CallerContext, Monosecret
@@ -36,7 +40,11 @@ builder = Monosecret.builder().with_caller(CallerContext(
 Caller context identifies the invoking integration in audit records but never
 satisfies `require_reason`. Do not put credentials or secret values in it.
 
-## Inline specifications (0.20+)
+## Inline specifications {/* #inline-specifications-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 Use `.with_inline_spec(spec, base_dir)` to resolve a strict inline-spec v1
 dictionary without a manifest file. `base_dir` resolves relative provider paths.

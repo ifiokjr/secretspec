@@ -89,7 +89,7 @@ fn call_resolves_a_strict_inline_spec_at_its_logical_base_directory() {
 		"operation": "resolve",
 		"source": {
 			"kind": "inline",
-			"spec_version": 1,
+			"spec_version": 2,
 			"base_dir": dir.path(),
 			"spec": {
 				"project": { "name": "inline-ffi" },
@@ -138,7 +138,7 @@ TOKEN = { description = "inherited token", providers = ["env"] }
 		"operation": "resolve",
 		"source": {
 			"kind": "inline",
-			"spec_version": 1,
+			"spec_version": 2,
 			"base_dir": dir.path(),
 			"spec": {
 				"project": { "name": "child", "extends": ["parent"] },
@@ -187,7 +187,7 @@ fn call_rejects_unknown_inline_declaration_fields() {
 		"request_version": 1,
 		"operation": "resolve",
 		"source": {
-			"kind": "inline", "spec_version": 1, "base_dir": ".",
+			"kind": "inline", "spec_version": 2, "base_dir": ".",
 			"spec": {
 				"project": { "name": "inline" },
 				"profiles": { "default": { "secrets": {
@@ -211,7 +211,7 @@ fn call_accepts_scalar_required_group_names() {
 		"request_version": 1,
 		"operation": "resolve",
 		"source": {
-			"kind": "inline", "spec_version": 1, "base_dir": ".",
+			"kind": "inline", "spec_version": 2, "base_dir": ".",
 			"spec": {
 				"project": { "name": "inline-groups" },
 				"profiles": { "default": { "secrets": {
@@ -243,7 +243,7 @@ fn call_rejects_empty_required_groups() {
 		"request_version": 1,
 		"operation": "resolve",
 		"source": {
-			"kind": "inline", "spec_version": 1, "base_dir": ".",
+			"kind": "inline", "spec_version": 2, "base_dir": ".",
 			"spec": {
 				"project": { "name": "inline-groups" },
 				"profiles": { "default": { "secrets": {

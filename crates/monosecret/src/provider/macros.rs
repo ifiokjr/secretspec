@@ -4,9 +4,10 @@ use super::ProviderUrl;
 use super::ProviderWithPreflight;
 use crate::Result;
 
-/// Internal registration structure used by the macro.
+/// Provider identity and capability metadata shared by enabled and disabled
+/// registrations.
 #[doc(hidden)]
-pub struct ProviderRegistration {
+pub struct ProviderMetadata {
 	pub info: ProviderInfo,
 	pub schemes: &'static [&'static str],
 	/// Semantic credential names accepted by the provider. Empty for providers
@@ -25,6 +26,12 @@ pub struct ProviderRegistration {
 	/// invalidatable store can be checked while planning — which never
 	/// constructs a provider, because construction fetches credentials.
 	pub deletes: bool,
+}
+
+/// Internal registration structure used by the macro.
+#[doc(hidden)]
+pub struct ProviderRegistration {
+	pub metadata: &'static ProviderMetadata,
 	pub factory: fn(&ProviderUrl, ProviderCredentials) -> Result<ProviderWithPreflight>,
 }
 
@@ -49,6 +56,30 @@ pub const fn declared_read_capability(values: &[bool]) -> bool {
 #[doc(hidden)]
 #[linkme::distributed_slice]
 pub static PROVIDER_REGISTRY: [ProviderRegistration];
+
+/// Registers the metadata for a provider whose implementation was omitted at
+/// compile time. Keeping these entries in the normal registry lets provider
+/// lookup distinguish a disabled feature from an unknown provider.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! register_disabled_provider {
+	(feature: $feature:literal,metadata: $metadata:expr $(,)?) => {
+		const _: () = {
+			#[linkme::distributed_slice($crate::provider::PROVIDER_REGISTRY)]
+			#[doc(hidden)]
+			static PROVIDER_REGISTRATION: $crate::provider::ProviderRegistration =
+				$crate::provider::ProviderRegistration {
+					metadata: $metadata,
+					factory: |_url, _credentials| {
+						Err($crate::MonosecretError::ProviderFeatureDisabled {
+							provider: $metadata.info.name.to_string(),
+							feature: $feature,
+						})
+					},
+				};
+		};
+	};
+}
 
 /// Declarative macro for registering providers.
 ///
@@ -131,6 +162,41 @@ pub static PROVIDER_REGISTRY: [ProviderRegistration];
 #[doc(hidden)]
 #[macro_export]
 macro_rules! register_provider {
+    // Shared catalog metadata, without preflight.
+    (
+        struct: $struct_name:ident,
+        config: $config_type:ty,
+        metadata: $metadata:expr $(,)?) => {
+        $crate::register_provider!(@register
+            $struct_name, $config_type, $metadata,
+            |provider| {
+                Ok($crate::provider::ProviderWithPreflight {
+                    provider: Box::new(provider),
+                    preflight: None,
+                })
+            }
+        );
+    };
+
+    // Shared catalog metadata, with preflight.
+    (
+        struct: $struct_name:ident,
+        config: $config_type:ty,
+        metadata: $metadata:expr,
+        preflight: $preflight:ident $(,)?) => {
+        $crate::register_provider!(@register
+            $struct_name, $config_type, $metadata,
+            |provider| {
+                let provider = std::sync::Arc::new(provider);
+                let preflight_provider = std::sync::Arc::clone(&provider);
+                Ok($crate::provider::ProviderWithPreflight {
+                    provider: Box::new(provider),
+                    preflight: Some(Box::new(move || preflight_provider.$preflight())),
+                })
+            }
+        );
+    };
+
     // Without preflight
     (
         struct: $struct_name:ident,
@@ -144,11 +210,18 @@ macro_rules! register_provider {
         $(, deletes: $deletes:literal)? $(,)?
     ) => {
         $crate::register_provider!(@register
-            $struct_name, $config_type, $name, $description,
-            [$($scheme,)*], [$($example,)*],
-            [$($($credential_name,)*)?],
-            [$($reads,)?],
-            [$($deletes,)?],
+            $struct_name, $config_type,
+            &$crate::provider::ProviderMetadata {
+                info: $crate::provider::ProviderInfo {
+                    name: $name,
+                    description: $description,
+                    examples: &[$($example,)*],
+                },
+                schemes: &[$($scheme,)*],
+                credential_names: &[$($($credential_name,)*)?],
+                reads: $crate::provider::declared_read_capability(&[$($reads,)?]),
+                deletes: $crate::provider::declared_flag(&[$($deletes,)?]),
+            },
             |provider| {
                 Ok($crate::provider::ProviderWithPreflight {
                     provider: Box::new(provider),
@@ -172,11 +245,18 @@ macro_rules! register_provider {
         preflight: $preflight:ident $(,)?
     ) => {
         $crate::register_provider!(@register
-            $struct_name, $config_type, $name, $description,
-            [$($scheme,)*], [$($example,)*],
-            [$($($credential_name,)*)?],
-            [$($reads,)?],
-            [$($deletes,)?],
+            $struct_name, $config_type,
+            &$crate::provider::ProviderMetadata {
+                info: $crate::provider::ProviderInfo {
+                    name: $name,
+                    description: $description,
+                    examples: &[$($example,)*],
+                },
+                schemes: &[$($scheme,)*],
+                credential_names: &[$($($credential_name,)*)?],
+                reads: $crate::provider::declared_read_capability(&[$($reads,)?]),
+                deletes: $crate::provider::declared_flag(&[$($deletes,)?]),
+            },
             |provider| {
                 let provider = std::sync::Arc::new(provider);
                 let preflight_provider = std::sync::Arc::clone(&provider);
@@ -190,30 +270,18 @@ macro_rules! register_provider {
 
     // Internal: shared registration logic
     (@register
-        $struct_name:ident, $config_type:ty, $name:expr, $description:expr,
-        [$($scheme:expr,)*], [$($example:expr,)*],
-        [$($credential_name:expr,)*],
-        [$($reads:literal,)?],
-        [$($deletes:literal,)?],
+        $struct_name:ident, $config_type:ty, $metadata:expr,
         $wrap:expr
     ) => {
         impl $struct_name {
-            const PROVIDER_NAME: &'static str = $name;
+            const PROVIDER_NAME: &'static str = $metadata.info.name;
         }
 
         const _: () = {
             #[linkme::distributed_slice($crate::provider::PROVIDER_REGISTRY)]
             #[doc(hidden)]
             static PROVIDER_REGISTRATION: $crate::provider::ProviderRegistration = $crate::provider::ProviderRegistration {
-                info: $crate::provider::ProviderInfo {
-                    name: $name,
-                    description: $description,
-                    examples: &[$($example,)*],
-                },
-                schemes: &[$($scheme,)*],
-                credential_names: &[$($credential_name,)*],
-                reads: $crate::provider::declared_read_capability(&[$($reads,)?]),
-                deletes: $crate::provider::declared_flag(&[$($deletes,)?]),
+                metadata: $metadata,
                 factory: |url, credentials| {
                     let config = <$config_type>::try_from(url)?;
                     let mut provider = <$struct_name>::new(config);

@@ -4,7 +4,7 @@ package monosecret
 
 import _ "embed"
 
-//go:embed lib/monosecret_ffi_windows_amd64.dll
+//go:embed lib/monosecret_windows_amd64.dll
 var embeddedLib []byte
 
-const embeddedLibName = "monosecret_ffi.dll"
+const embeddedLibName = "libmonosecret_ffi.dll"

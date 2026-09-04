@@ -22,7 +22,11 @@ Windows x64. TypeScript declarations ship in `index.d.ts`.
 A missing required secret throws `MissingRequiredError`; any other failure
 throws `MonosecretError` (with a stable `.kind`).
 
-## Caller context (0.20+)
+## Caller context {/* #caller-context-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 ```js
 const builder = Monosecret.builder().withCaller({
@@ -36,7 +40,11 @@ const builder = Monosecret.builder().withCaller({
 Caller context identifies the invoking integration in audit records but never
 satisfies `require_reason`. Do not put credentials or secret values in it.
 
-## Inline specifications (0.20+)
+## Inline specifications {/* #inline-specifications-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 Use `.withInlineSpec(spec, baseDir)` (or `loadAsync`/`reportAsync`) to resolve a
 strict inline-spec v1 object. `baseDir` resolves relative provider paths; the

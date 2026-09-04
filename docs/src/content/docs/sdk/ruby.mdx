@@ -8,9 +8,11 @@ import quickStartExample from '../../../../../ruby/monosecret_rb/examples/quick_
 import scopesExample from '../../../../../ruby/monosecret_rb/examples/scopes.rb?raw';
 import typedAccessExample from '../../../../../ruby/monosecret_rb/examples/typed_access.rb?raw';
 
-The Ruby SDK (`monosecret`) is a thin client over the `monosecret_ffi` C ABI,
-linked into a native C extension at build time. Resolution happens in the Rust
-core, so the SDK inherits every provider with no Ruby-side logic.
+:::note[Version compatibility]
+Upgrade the `monosecret_ffi` extension source and `libmonosecret_ffi.a`
+archive together: Monosecret 0.20 adds the versioned `monosecret_call`
+envelope, and the extension links that separate native call symbol.
+:::
 
 ## Quick start
 
@@ -19,7 +21,11 @@ core, so the SDK inherits every provider with no Ruby-side logic.
 A missing required secret raises `Monosecret::MissingRequiredError`; any other
 failure raises `Monosecret::Error` (with a stable `#kind`).
 
-## Caller context (0.20+)
+## Caller context {/* #caller-context-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 ```ruby
 builder = Monosecret::Monosecret.builder.with_caller(
@@ -35,7 +41,11 @@ builder = Monosecret::Monosecret.builder.with_caller(
 Caller context identifies the invoking integration in audit records but never
 satisfies `require_reason`. Do not put credentials or secret values in it.
 
-## Inline specifications (0.20+)
+## Inline specifications {/* #inline-specifications-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 Use `.with_inline_spec(spec, base_dir)` to resolve a strict inline-spec v1 hash
 at its logical provider-path base directory. The extension links the separate

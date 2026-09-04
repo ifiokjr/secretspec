@@ -19,6 +19,11 @@ Rust types for its profiles and secrets.
 
 ## Quick start
 
+:::note[Version compatibility]
+On 0.19 and earlier, also depend on `secrecy = { version =
+"0.10", features = ["serde"] }` and `serde = { version = "1", features =
+["derive"] }`.
+:::
 Add the runtime and derive macro from the command line:
 
 ```shell
@@ -32,13 +37,6 @@ Alternatively, add both dependencies to your `Cargo.toml`:
 monosecret = "0.20"
 monosecret_derive = "0.20"
 ```
-
-:::caution[Version compatibility]
-Generated code reaches `serde` and `secrecy` through `monosecret` starting in
-Monosecret 0.20. On 0.19 and earlier, also depend on `secrecy = { version =
-"0.10", features = ["serde"] }` and `serde = { version = "1", features =
-["derive"] }`.
-:::
 
 The examples on this page are compiled as Cargo examples in
 `monosecret_derive`. They generate their types from this manifest:
@@ -55,7 +53,11 @@ Required and defaulted secrets are generated as `String`; secrets that may be
 absent are `Option<String>`. Field names use Rust snake case, so `DATABASE_URL`
 becomes `database_url`.
 
-## Describing secrets in Rust (0.20+)
+## Describing secrets in Rust {/* #describing-secrets-in-rust-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 Starting with Monosecret 0.20, `Spec` is the format-independent declaration
 API. Build one directly in Rust when an application owns its secret contract
@@ -165,7 +167,11 @@ When a wrapper only needs to identify the software integration, use the separate
 caller context below; unlike a default reason, it cannot satisfy
 `require_reason`.
 
-## Caller context (0.20+)
+## Caller context {/* #caller-context-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 Software integrations can record what invoked Monosecret without replacing the
 user-supplied access reason:
@@ -185,7 +191,11 @@ Generated builders expose the same `with_caller()` method. Caller context is
 caller-asserted audit metadata, not an authenticated identity, and never
 satisfies `require_reason`. Do not put credentials or secret values in it.
 
-## Interactive prompting (0.20+)
+## Interactive prompting {/* #interactive-prompting-020 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.20.
+:::
 
 `Secrets::ensure_secrets` prompts for and stores any missing required secret
 when stdin is a real terminal. Generated builders opt into the same behavior

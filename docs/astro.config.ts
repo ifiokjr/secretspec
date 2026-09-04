@@ -5,6 +5,7 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import starlightLlmsTxt from "starlight-llms-txt";
 import starlightBlog from "starlight-blog";
+import { preserveHeadingIdPlugin } from "./src/lib/preserve-heading-id.mjs";
 import { terminalCopyPlugin } from "./src/lib/terminal-copy.mjs";
 
 const rustSdkBasicExample = readFileSync(
@@ -61,6 +62,7 @@ export default defineConfig({
     plugins: [devGitHubApi],
   },
   markdown: {
+    remarkPlugins: [preserveHeadingIdPlugin],
     shikiConfig: {
       themes: {
         light: "github-light",
@@ -139,7 +141,7 @@ $ monosecret import dotenv://.env.production
 
 ## Providers
 
-Values can be resolved from: keyring (default), KeePass KDBX (0.17+), dotenv files, plaintext file directories (0.19+), environment variables, systemd service credentials (0.17+), 1Password, Gopass (0.15+), LastPass, Dashlane (0.18+, read-only), Pass, Proton Pass, Passbolt (0.19+), Keeper Secrets Manager (0.18+), Google Cloud Secret Manager, AWS Secrets Manager, AWS Systems Manager Parameter Store (0.18+), Scaleway Secret Manager (0.17+), HashiCorp Vault, OpenBao (0.17+), Bitwarden Password Manager (0.18+), Bitwarden Secrets Manager, Azure Key Vault, Azure App Configuration (0.20+), Infisical (0.16+), age (0.17+), SOPS (0.17+), or Kubernetes (0.20+). Fly.io application secrets and Cloudflare Secrets Store entries can be published through the write-only fly and cloudflare providers (0.20+). The null provider (0.19+) uses manifest defaults, ephemeral generation, or ephemeral run prompts without storage.`,
+Values can be resolved from: keyring (default), KeePass KDBX (0.17+), dotenv files, plaintext file directories (0.19+), EJSON files (0.20+, read-only), environment variables, systemd service credentials (0.17+), 1Password, Gopass (0.15+), LastPass, Dashlane (0.18+, read-only), Pass, Proton Pass, Passbolt (0.19+), Keeper Secrets Manager (0.18+), Google Cloud Secret Manager, AWS Secrets Manager, AWS Systems Manager Parameter Store (0.18+), Scaleway Secret Manager (0.17+), HashiCorp Vault, OpenBao (0.17+), Bitwarden Password Manager (0.18+), Bitwarden Secrets Manager, Azure Key Vault, Azure App Configuration (0.20+), Infisical (0.16+), age (0.17+), SOPS (0.17+), or Kubernetes (0.20+). Fly.io application secrets and Cloudflare Secrets Store entries can be published through the write-only fly and cloudflare providers (0.20+). The null provider (0.19+) uses manifest defaults, ephemeral generation, or ephemeral run prompts without storage.`,
         }),
       ],
       title: "Monosecret",
@@ -291,6 +293,11 @@ Values can be resolved from: keyring (default), KeePass KDBX (0.17+), dotenv fil
             },
             { label: "Environment Variables", slug: "providers/env" },
             {
+              label: "EJSON",
+              slug: "providers/ejson",
+              badge: { text: "0.20+", variant: "note" },
+            },
+            {
               label: "Null",
               slug: "providers/null",
               badge: { text: "0.2+", variant: "note" },
@@ -414,6 +421,11 @@ Values can be resolved from: keyring (default), KeePass KDBX (0.17+), dotenv fil
               label: "Docker credentials",
               slug: "integrations/docker",
               badge: { text: "0.20+", variant: "note" },
+            },
+            {
+              label: "Claude Code",
+              slug: "integrations/claude-code",
+              badge: { text: "0.21+", variant: "note" },
             },
           ],
         },

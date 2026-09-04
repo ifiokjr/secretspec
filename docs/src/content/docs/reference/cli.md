@@ -386,6 +386,99 @@ Use `--global` to select global configuration and `--yes` to confirm that
 global change non-interactively. `--all` removes only entries Monosecret owns;
 it does not remove existing helpers, usernames, or unrelated includes.
 
+### claude configure {/* #claude-configure-021 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.21.
+:::
+
+Configure Claude Code's `apiKeyHelper` to retrieve an API or gateway credential
+through Monosecret. Personal project settings in the Git repository's main
+checkout `.claude/settings.local.json` are the default; outside Git, the command
+uses the current directory.
+
+```bash
+$ monosecret claude configure [OPTIONS]
+```
+
+**Options:**
+
+- `--token-secret <KEY>` - Custom manifest key containing the credential;
+  requires `--file`
+- `-P, --profile <PROFILE>` - Custom manifest profile; requires `--file`
+- `-p, --provider <PROVIDER>` - Provider override the helper should use
+- `--resource <RESOURCE>` - Non-secret API host recorded in audit caller
+  context; defaults to `api.anthropic.com`
+- `--global` - Configure `$CLAUDE_CONFIG_DIR/settings.json`, or the current
+  user's `~/.claude/settings.json` when the variable is unset
+- `-y, --yes` - Confirm a user-level change non-interactively; requires
+  `--global`
+
+Without `--file`, the command creates an embedded credential identity isolated
+by settings scope and audit resource, then prints the corresponding
+`monosecret claude login` command. Changing the resource selects a new embedded
+credential without deleting the previous one, so log out before reconfiguring
+when the old credential should be removed. With `--file`, `--token-secret` is
+required. The command preserves unrelated Claude settings and refuses to
+replace an `apiKeyHelper` it does not manage.
+User-level changes prompt with a default of **No**. See
+[Claude Code](/integrations/claude-code/) for API, gateway, custom-manifest, and
+authentication-precedence details.
+
+### claude login {/* #claude-login-021 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.21.
+:::
+
+Store an API or gateway credential in the embedded Claude Code credential
+store, prompting securely on a terminal or reading it from piped standard
+input.
+
+```bash
+$ monosecret claude login [--global] [--provider <PROVIDER>]
+```
+
+The command selects the current project's managed configuration, or the user
+configuration with `--global`, and automatically uses its provider and audit
+resource. An explicit provider overrides the recorded provider for this
+operation. `claude login` rejects `--file`; use `monosecret set` for a custom
+manifest.
+
+### claude logout {/* #claude-logout-021 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.21.
+:::
+
+Remove the embedded Claude Code credential without removing `apiKeyHelper`:
+
+```bash
+$ monosecret claude logout [--global] [--provider <PROVIDER>]
+```
+
+The command uses the same scope, provider, and audit resource selection as
+`login`, and remains available after `unconfigure`. `claude logout` rejects
+`--file`; use `monosecret delete` for a custom manifest.
+
+### claude unconfigure {/* #claude-unconfigure-021 */}
+
+:::note[Version compatibility]
+Added in Monosecret 0.21.
+:::
+
+Remove the Monosecret-managed `apiKeyHelper` from the selected Claude Code
+settings file.
+
+```bash
+$ monosecret claude unconfigure
+$ monosecret claude unconfigure --global
+```
+
+Use `--yes` to confirm a user-level change non-interactively. The command
+preserves the stored credential and unrelated Claude settings. It refuses to
+remove an `apiKeyHelper` that changed outside Monosecret.
+
 ### check
 
 Check if all required secrets are available, with interactive prompting for missing secrets.

@@ -1,3 +1,4 @@
+mod claude;
 mod completion;
 mod docker;
 mod git;
@@ -63,7 +64,6 @@ impl crate::MonosecretError {
 		Self::Io(std::io::Error::other(message))
 	}
 }
-
 /// Main CLI structure for the monosecret application.
 ///
 /// This is the entry point for the command-line interface, parsing user commands
@@ -350,6 +350,11 @@ enum Commands {
 	Git {
 		#[command(subcommand)]
 		action: GitAction,
+	},
+	#[command(about = "Manage Claude Code API credential integration (0.21+)")]
+	Claude {
+		#[command(subcommand)]
+		action: claude::ClaudeAction,
 	},
 	/// Import secrets from a provider to another provider
 	Import {
@@ -1429,6 +1434,15 @@ pub fn main() -> Result<()> {
 	let caller = caller_context(&cli)?;
 
 	match cli.command {
+		Commands::Claude { action } => {
+			claude::run(
+				action,
+				cli.file.as_ref(),
+				cli.reason.as_deref(),
+				caller.as_ref(),
+				typed,
+			)
+		}
 		Commands::Docker { action } => {
 			docker::run(
 				action,
@@ -1504,6 +1518,7 @@ pub fn main() -> Result<()> {
 					..Default::default()
 				},
 				profiles,
+				defaults: None,
 				providers: None,
 				groups: None,
 				scopes: None,
@@ -2391,6 +2406,7 @@ mod tests {
 		let mut secrets = HashMap::new();
 		secrets.insert("S".to_string(), secret);
 		Config {
+			defaults: None,
 			project: Project {
 				name: "myproj".to_string(),
 				..Default::default()
@@ -2637,6 +2653,7 @@ mod tests {
 		// project name contains a quote. Before escaping was added these produced
 		// malformed TOML that failed to parse back.
 		let config = Config {
+			defaults: None,
 			project: Project {
 				name: "weird \"name\"".to_string(),
 				..Default::default()

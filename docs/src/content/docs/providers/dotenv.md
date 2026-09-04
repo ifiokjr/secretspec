@@ -3,6 +3,12 @@ title: Dotenv Provider
 description: Traditional .env file storage for secrets
 ---
 
+:::caution
+We do not recommend the Dotenv provider for new projects. Use it only for
+legacy workflows that still require `.env` compatibility. Read
+[Where .env Went Wrong](/blog/where-env-went-wrong/) to learn why.
+:::
+
 The Dotenv provider stores secrets in local `.env` files for development setups and compatibility with existing tools.
 
 ## At a glance

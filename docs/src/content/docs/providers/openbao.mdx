@@ -5,8 +5,9 @@ description: OpenBao integration, available in Monosecret 0.2+
 
 import ProviderCredentials from '../../../components/ProviderCredentials.astro';
 
-The OpenBao provider integrates with OpenBao's KV (Key-Value) secrets engine
-using OpenBao's own provider identity and configuration conventions.
+The [OpenBao](https://openbao.org/) provider integrates with OpenBao's KV
+(Key-Value) secrets engine using OpenBao's own provider identity and
+configuration conventions.
 
 :::caution[Version compatibility]
 The `openbao` provider is added in Monosecret 0.2.
@@ -68,6 +69,12 @@ $ export BAO_TOKEN=hvs.your-token-here
 
 ### AppRole authentication
 
+:::note[Version compatibility]
+`BAO_SECRET_ID` (or its `VAULT_SECRET_ID`
+fallback) and the `secret_id` provider credential may be omitted when the
+AppRole is configured with `bind_secret_id=false`. Monosecret then sends only
+`role_id` and lets OpenBao apply the role's remaining login constraints.
+:::
 Select AppRole with `?auth=approle`. OpenBao roles bind a SecretID by default,
 so the usual configuration provides both inputs:
 

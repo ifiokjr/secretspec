@@ -115,7 +115,7 @@ carries a logical `base_dir`, used for relative provider paths as
 `Secrets::from_spec_at` does.
 
 The inline specification is strict JSON, not the private Rust `Config` or a
-serialized compiled manifest. Its v1 shape contains `project`, `profiles`, and
+serialized compiled manifest. Its v2 shape contains `project`, `profiles`, and
 a `secrets` object per profile, with optional provider aliases, scopes, and
 the normal secret declaration fields. `project.extends` uses paths relative to
 the inline declaration's `base_dir`, so the full configuration model—including
@@ -124,6 +124,8 @@ versions, and unsupported operations are rejected. SDKs bind `monosecret_call`
 only when using inline specs: an older library therefore reports the missing
 capability instead of silently ignoring an unknown field and loading a
 filesystem manifest.
+
+Inline schema v2 adds project-level `defaults.providers` in Monosecret 0.21+.
 
 ## Windows toolchains
 
