@@ -100,6 +100,7 @@ impl ResolveResponse {
 
 	/// Drop every inline value, keeping structure and provenance. Useful for an
 	/// inventory/policy consumer that wants the resolve shape without secrets.
+	#[must_use]
 	pub fn without_values(mut self) -> Self {
 		for secret in self.secrets.values_mut() {
 			secret.value = None;
@@ -320,7 +321,13 @@ mod tests {
 			r#"{"caller":{"operation":"credential_get"}}"#,
 		))
 		.unwrap();
-		assert_eq!(response["ok"], false);
-		assert_eq!(response["error"]["kind"], "invalid_request");
+		assert_eq!(response.get("ok"), Some(&serde_json::Value::Bool(false)));
+		assert_eq!(
+			response
+				.get("error")
+				.and_then(|error| error.get("kind"))
+				.and_then(serde_json::Value::as_str),
+			Some("invalid_request")
+		);
 	}
 }

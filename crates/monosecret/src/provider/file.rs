@@ -54,7 +54,11 @@ impl TryFrom<&ProviderUrl> for FileConfig {
 			&& path.as_bytes().get(2) == Some(&b':')
 			&& path.as_bytes().get(1).is_some_and(u8::is_ascii_alphabetic)
 		{
-			path[1..].to_string()
+			// The leading `/` is ASCII, so `get(1..)` is always a char boundary
+			// here; the guard above guarantees it exists.
+			path.get(1..)
+				.expect("guarded: path starts with an ASCII slash")
+				.to_string()
 		} else {
 			path
 		};

@@ -1,4 +1,4 @@
-//! HashiCorp Vault provider.
+//! `HashiCorp` Vault provider.
 //!
 //! This provider stores and retrieves secrets through the Vault KV (Key-Value)
 //! secrets engine, version 1 or 2.
@@ -9,10 +9,10 @@
 //!
 //! - Token (default) -- reads the `token` provider credential, `VAULT_TOKEN`,
 //!   or `~/.vault-token`, in that order.
-//! - AppRole (`?auth=approle`) -- exchanges the required `role_id` and optional
+//! - `AppRole` (`?auth=approle`) -- exchanges the required `role_id` and optional
 //!   `secret_id` provider credentials, or `VAULT_ROLE_ID` and
 //!   `VAULT_SECRET_ID`, for a client token. Starting with Monosecret 0.18, the
-//!   SecretID may be omitted when the AppRole has `bind_secret_id=false`.
+//!   `SecretID` may be omitted when the `AppRole` has `bind_secret_id=false`.
 //! - JWT/OIDC (Monosecret 0.17+, `?auth=jwt`) -- logs in using `VAULT_JWT` or a
 //!   short-lived GitHub Actions / Forgejo Actions OIDC token. Starting with
 //!   Monosecret 0.18, the role may be omitted when the auth mount has a
@@ -27,7 +27,7 @@
 //! - `auth` -- `token` (default), `approle`, or `jwt` (0.17+)
 //! - `kv` -- KV engine version: `1` or `2` (default)
 //! - `tls` -- `true` (default) or `false`; the latter is intended for dev mode
-//! - `auth_mount` -- non-default AppRole or JWT mount beneath `/v1/auth`
+//! - `auth_mount` -- non-default `AppRole` or JWT mount beneath `/v1/auth`
 //!   (Monosecret 0.18+)
 //! - `role` -- Vault role for JWT auth, falling back to `VAULT_JWT_ROLE`;
 //!   optional with a server-configured `default_role` (Monosecret 0.18+)
@@ -37,9 +37,9 @@
 //! Examples:
 //!
 //! - `vault://vault.example.com:8200/secret` -- KV v2 with token auth
-//! - `vault://vault.example.com:8200/secret?auth=approle` -- AppRole auth
+//! - `vault://vault.example.com:8200/secret?auth=approle` -- `AppRole` auth
 //! - `vault://vault.example.com:8200/secret?auth=approle&auth_mount=platform-approle`
-//!   -- custom AppRole mount (Monosecret 0.18+)
+//!   -- custom `AppRole` mount (Monosecret 0.18+)
 //! - `vault://vault.example.com:8200/secret?auth=jwt&role=ci` -- JWT auth
 //! - `vault://vault.example.com:8200/secret?auth=jwt` -- JWT auth using the
 //!   mount's `default_role` (Monosecret 0.18+)
@@ -78,10 +78,10 @@ use crate::MonosecretError;
 use crate::Result;
 use crate::config::NativeAddress;
 
-/// HashiCorp Vault provider configuration.
+/// `HashiCorp` Vault provider configuration.
 ///
 /// Parsing is intentionally product-specific even though the resulting KV
-/// coordinates are compatible with OpenBao. This keeps Vault's URI and
+/// coordinates are compatible with `OpenBao`. This keeps Vault's URI and
 /// environment contract from acquiring OpenBao-only behavior.
 #[derive(Debug, Clone, Default)]
 pub struct VaultConfig(KvConfig);
@@ -94,7 +94,7 @@ impl TryFrom<&ProviderUrl> for VaultConfig {
 	}
 }
 
-/// HashiCorp Vault KV provider.
+/// `HashiCorp` Vault KV provider.
 ///
 /// The wrapper owns Vault's public identity and delegates compatible protocol
 /// operations to [`KvProvider`].
@@ -125,7 +125,7 @@ impl VaultProvider {
 impl Provider for VaultProvider {
 	/// Convention secrets use one KV path per secret and the `value` map field.
 	fn convention_address(&self, project: &str, profile: &str, key: &str) -> Result<NativeAddress> {
-		self.core.convention_address(project, profile, key)
+		KvProvider::convention_address(project, profile, key)
 	}
 
 	fn with_credentials(&mut self, credentials: ProviderCredentials) {
@@ -145,7 +145,7 @@ impl Provider for VaultProvider {
 	}
 
 	fn supported_coords(&self) -> &'static [&'static str] {
-		self.core.supported_coords()
+		KvProvider::supported_coords()
 	}
 
 	/// A native reference must identify the field inside the KV entry's map.

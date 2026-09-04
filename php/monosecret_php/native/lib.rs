@@ -15,6 +15,9 @@
 // gated per crate (nightly only): ext-php-rs's macros emit
 // `extern "vectorcall"` items into this crate, so the gate must be enabled
 // here. Other platforms build on stable, where the cfg_attr stays inert.
+// The workspace denies `unstable_features`; this crate's Windows ABI is the
+// documented exception (see the comment above).
+#![allow(unstable_features)]
 #![cfg_attr(windows, feature(abi_vectorcall))]
 
 use ext_php_rs::prelude::*;

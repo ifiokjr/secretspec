@@ -281,7 +281,7 @@ impl JsonlSink {
 	/// Resets the log file to empty at the size cap. The append handle's next
 	/// write then lands at the new end-of-file (offset 0).
 	#[cfg(not(windows))]
-	fn truncate(&self, file: &std::fs::File) -> std::io::Result<()> {
+	fn truncate(file: &std::fs::File) -> std::io::Result<()> {
 		file.set_len(0)
 	}
 
@@ -315,7 +315,11 @@ impl AuditSink for JsonlSink {
 		match guard.metadata().map(|m| m.len()) {
 			Ok(size) if size > 0 && size + projected > self.max_size_bytes => {
 				// With O_APPEND the next write lands at the new end-of-file (0).
-				if let Err(e) = self.truncate(&guard) {
+				#[cfg(not(windows))]
+				let truncated = Self::truncate(&guard);
+				#[cfg(windows)]
+				let truncated = self.truncate(&guard);
+				if let Err(e) = truncated {
 					warn_audit_failure(&self.path, &e);
 				}
 			}
@@ -402,7 +406,7 @@ impl AuditLogger {
 	}
 
 	/// Records one event. Fail-open: serialization errors are reported and dropped.
-	pub(crate) fn record(&self, action: AuditAction, ctx: AuditContext<'_>) {
+	pub(crate) fn record(&self, action: AuditAction, ctx: &AuditContext<'_>) {
 		let event = AuditEvent {
 			v: SCHEMA_VERSION,
 			id: uuid::Uuid::new_v4().to_string(),
@@ -663,7 +667,7 @@ mod tests {
 
 		logger.record(
 			AuditAction::Get,
-			AuditContext {
+			&AuditContext {
 				project: "demo",
 				profile: "production",
 				scope: None,
@@ -686,26 +690,57 @@ mod tests {
 
 		let lines = sink.lines.lock().unwrap();
 		assert_eq!(lines.len(), 1);
-		let event: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+		let event: serde_json::Value =
+			serde_json::from_str(lines.first().expect("one event")).unwrap();
 
-		assert_eq!(event["v"], SCHEMA_VERSION);
-		assert_eq!(event["action"], "get");
-		assert_eq!(event["outcome"], "found");
-		assert_eq!(event["project"], "demo");
-		assert_eq!(event["profile"], "production");
-		assert_eq!(event["key"], "DATABASE_URL");
-		assert_eq!(event["reason"], "deploy web frontend");
-		assert_eq!(event["caller"]["name"], "git");
-		assert_eq!(event["caller"]["version"], "2.51.0");
-		assert_eq!(event["caller"]["operation"], "credential_get");
-		assert_eq!(event["caller"]["resource"], "github.com");
-		assert_eq!(event["session_id"], "test-session");
-		assert_eq!(event["seq"], 0);
+		assert_eq!(
+			event.get("v").and_then(serde_json::Value::as_u64),
+			Some(u64::from(SCHEMA_VERSION))
+		);
+		assert_eq!(event.get("action").unwrap(), "get");
+		assert_eq!(event.get("outcome").unwrap(), "found");
+		assert_eq!(event.get("project").unwrap(), "demo");
+		assert_eq!(event.get("profile").unwrap(), "production");
+		assert_eq!(event.get("key").unwrap(), "DATABASE_URL");
+		assert_eq!(event.get("reason").unwrap(), "deploy web frontend");
+		assert_eq!(
+			event
+				.get("caller")
+				.and_then(|caller| caller.get("name"))
+				.unwrap(),
+			"git"
+		);
+		assert_eq!(
+			event
+				.get("caller")
+				.and_then(|caller| caller.get("version"))
+				.unwrap(),
+			"2.51.0"
+		);
+		assert_eq!(
+			event
+				.get("caller")
+				.and_then(|caller| caller.get("operation"))
+				.unwrap(),
+			"credential_get"
+		);
+		assert_eq!(
+			event
+				.get("caller")
+				.and_then(|caller| caller.get("resource"))
+				.unwrap(),
+			"github.com"
+		);
+		assert_eq!(event.get("session_id").unwrap(), "test-session");
+		assert_eq!(
+			event.get("seq").and_then(serde_json::Value::as_u64),
+			Some(0)
+		);
 		// Provider credentials (the `:password`) are redacted; the username,
 		// host and path — provider attribution — are kept.
-		assert_eq!(event["provider"], "vault://user@host/kv");
+		assert_eq!(event.get("provider").unwrap(), "vault://user@host/kv");
 		// The secret value never appears anywhere in the record.
-		assert!(!lines[0].contains("s3cr3t"));
+		assert!(!lines.first().expect("one event").contains("s3cr3t"));
 	}
 
 	#[test]
@@ -716,7 +751,7 @@ mod tests {
 
 		logger.record(
 			AuditAction::Run,
-			AuditContext {
+			&AuditContext {
 				project: "demo",
 				profile: "production",
 				scope: Some("api"),
@@ -733,12 +768,13 @@ mod tests {
 		);
 
 		let lines = sink.lines.lock().unwrap();
-		let event: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
-		assert_eq!(event["action"], "run");
-		assert_eq!(event["scope"], "api");
-		assert_eq!(event["command"], "./deploy.sh");
-		assert_eq!(event["keys"][0], "DATABASE_URL");
-		assert_eq!(event["keys"][1], "API_KEY");
+		let event: serde_json::Value =
+			serde_json::from_str(lines.first().expect("one event")).unwrap();
+		assert_eq!(event.get("action").unwrap(), "run");
+		assert_eq!(event.get("scope").unwrap(), "api");
+		assert_eq!(event.get("command").unwrap(), "./deploy.sh");
+		assert_eq!(event.pointer("/keys/0").unwrap(), "DATABASE_URL");
+		assert_eq!(event.pointer("/keys/1").unwrap(), "API_KEY");
 		// Single-key field is omitted for bulk actions.
 		assert!(event.get("key").is_none());
 	}
@@ -750,7 +786,7 @@ mod tests {
 		for _ in 0..3 {
 			logger.record(
 				AuditAction::Set,
-				AuditContext {
+				&AuditContext {
 					project: "demo",
 					profile: "default",
 					scope: None,
@@ -770,8 +806,10 @@ mod tests {
 		let seqs: Vec<u64> = lines
 			.iter()
 			.map(|l| {
-				serde_json::from_str::<serde_json::Value>(l).unwrap()["seq"]
-					.as_u64()
+				serde_json::from_str::<serde_json::Value>(l)
+					.unwrap()
+					.get("seq")
+					.and_then(serde_json::Value::as_u64)
 					.unwrap()
 			})
 			.collect();
@@ -909,7 +947,7 @@ mod tests {
 		let logger = AuditLogger::from_config(&cfg).expect("auditing should be enabled");
 		logger.record(
 			AuditAction::Get,
-			AuditContext {
+			&AuditContext {
 				project: "demo",
 				profile: "default",
 				scope: None,

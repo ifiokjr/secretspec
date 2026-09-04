@@ -99,7 +99,7 @@ fn build_union(manifest: &CompiledSpec) -> Vec<IrField> {
 				entry.as_path = true;
 			}
 			if entry.description.is_none() {
-				entry.description = secret.config.description.clone();
+				entry.description.clone_from(&secret.config.description);
 			}
 		}
 	}
@@ -404,7 +404,10 @@ mod tests {
 		let dev_names: Vec<&str> = dev.fields.iter().map(|f| f.name.as_str()).collect();
 		assert_eq!(dev_names, vec!["API_KEY", "DATABASE_URL"]);
 		// Description flows through per profile.
-		assert_eq!(dev.fields[1].description.as_deref(), Some("dev db"));
+		assert_eq!(
+			dev.fields.get(1).and_then(|f| f.description.as_deref()),
+			Some("dev db")
+		);
 
 		// production has only DATABASE_URL, here as a path.
 		let prod = ir
@@ -413,8 +416,9 @@ mod tests {
 			.find(|p| p.name == "production")
 			.unwrap();
 		assert_eq!(prod.fields.len(), 1);
-		assert!(prod.fields[0].as_path);
-		assert!(!prod.fields[0].optional);
+		let prod_field = prod.fields.first().expect("single production field");
+		assert!(prod_field.as_path);
+		assert!(!prod_field.optional);
 	}
 
 	#[test]
@@ -491,8 +495,18 @@ mod tests {
 
 		let schema: serde_json::Value =
 			serde_json::from_str(&schema::emit(&ir, Some("production")).unwrap()).unwrap();
-		assert!(schema["properties"]["SHARED_TOKEN"].is_object());
-		assert_eq!(schema["additionalProperties"], false);
+		assert!(
+			schema
+				.get("properties")
+				.and_then(|properties| properties.get("SHARED_TOKEN"))
+				.is_some_and(serde_json::Value::is_object)
+		);
+		assert_eq!(
+			schema
+				.get("additionalProperties")
+				.and_then(serde_json::Value::as_bool),
+			Some(false)
+		);
 	}
 
 	#[test]
@@ -529,8 +543,18 @@ mod tests {
 
 		let schema: serde_json::Value =
 			serde_json::from_str(&schema::emit(&ir, Some("deployment")).unwrap()).unwrap();
-		assert!(schema["properties"]["DEPLOY_TOKEN"].is_object());
-		assert!(schema["properties"].get("SHARED_TOKEN").is_none());
+		assert!(
+			schema
+				.get("properties")
+				.and_then(|properties| properties.get("DEPLOY_TOKEN"))
+				.is_some_and(serde_json::Value::is_object)
+		);
+		assert!(
+			schema
+				.get("properties")
+				.and_then(|properties| properties.get("SHARED_TOKEN"))
+				.is_none()
+		);
 	}
 
 	#[test]
@@ -552,20 +576,37 @@ mod tests {
 		// Union schema: single-root object titled Monosecret.
 		let union: serde_json::Value =
 			serde_json::from_str(&schema::emit(&ir, None).unwrap()).unwrap();
-		assert_eq!(union["type"], "object");
-		assert_eq!(union["title"], "Monosecret");
+		assert_eq!(
+			union.get("type").and_then(serde_json::Value::as_str),
+			Some("object")
+		);
+		assert_eq!(
+			union.get("title").and_then(serde_json::Value::as_str),
+			Some("Monosecret")
+		);
 		// The union is exhaustive across every profile, so it is strict.
-		assert_eq!(union["additionalProperties"], false);
+		assert_eq!(
+			union
+				.get("additionalProperties")
+				.and_then(serde_json::Value::as_bool),
+			Some(false)
+		);
 
 		// Required vs nullable: DATABASE_URL required everywhere; API_KEY optional
 		// in development, so optional in the union and nullable in the schema.
-		assert_eq!(union["properties"]["DATABASE_URL"]["type"], "string");
 		assert_eq!(
-			union["properties"]["API_KEY"]["type"],
-			serde_json::json!(["string", "null"])
+			union
+				.pointer("/properties/DATABASE_URL/type")
+				.and_then(serde_json::Value::as_str),
+			Some("string")
 		);
-		let required: Vec<&str> = union["required"]
-			.as_array()
+		assert_eq!(
+			union.pointer("/properties/API_KEY/type"),
+			Some(&serde_json::json!(["string", "null"]))
+		);
+		let required: Vec<&str> = union
+			.get("required")
+			.and_then(serde_json::Value::as_array)
 			.unwrap()
 			.iter()
 			.map(|v| v.as_str().unwrap())
@@ -576,11 +617,27 @@ mod tests {
 		// A profile schema is titled <Profile>Secrets with that profile's fields.
 		let prod: serde_json::Value =
 			serde_json::from_str(&schema::emit(&ir, Some("production")).unwrap()).unwrap();
-		assert_eq!(prod["title"], "ProductionSecrets");
-		assert!(prod["properties"]["DATABASE_URL"].is_object());
-		assert!(prod["properties"]["API_KEY"].is_null()); // not in production
+		assert_eq!(
+			prod.get("title").and_then(serde_json::Value::as_str),
+			Some("ProductionSecrets")
+		);
+		assert!(
+			prod.get("properties")
+				.and_then(|properties| properties.get("DATABASE_URL"))
+				.is_some_and(serde_json::Value::is_object)
+		);
+		// not in production: absent from the properties map (or explicitly null).
+		assert!(
+			prod.get("properties")
+				.and_then(|properties| properties.get("API_KEY"))
+				.is_none_or(serde_json::Value::is_null)
+		);
 		// Effective per-profile schemas are exhaustive too.
-		assert_eq!(prod["additionalProperties"], false);
+		assert_eq!(
+			prod.get("additionalProperties")
+				.and_then(serde_json::Value::as_bool),
+			Some(false)
+		);
 
 		// An unknown profile is an error.
 		assert!(schema::emit(&ir, Some("nope")).is_err());
@@ -605,12 +662,20 @@ mod tests {
 		let union: serde_json::Value =
 			serde_json::from_str(&schema::emit(&ir, None).unwrap()).unwrap();
 		assert_eq!(
-			union["properties"]["DATABASE_URL"]["description"],
-			"Postgres connection string"
+			union
+				.pointer("/properties/DATABASE_URL/description")
+				.and_then(serde_json::Value::as_str),
+			Some("Postgres connection string")
 		);
 		// A field without a declared description carries no key at all, rather
 		// than an empty or null one.
-		assert!(union["properties"]["API_KEY"].get("description").is_none());
+		assert!(
+			union
+				.get("properties")
+				.and_then(|properties| properties.get("API_KEY"))
+				.and_then(|api_key| api_key.get("description"))
+				.is_none()
+		);
 	}
 
 	#[test]
@@ -620,7 +685,10 @@ mod tests {
 		let ir = build_ir_from_config(&config);
 		assert_eq!(ir.profiles, vec!["default"]);
 		assert_eq!(ir.profile_fields.len(), 1);
-		assert_eq!(ir.profile_fields[0].name, "default");
+		assert_eq!(
+			ir.profile_fields.first().expect("default profile").name,
+			"default"
+		);
 		assert!(ir.union.is_empty());
 	}
 }

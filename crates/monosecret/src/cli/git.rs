@@ -168,16 +168,15 @@ struct ManagedCredential {
 
 pub(super) fn run(
 	action: GitAction,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	file: Option<&Path>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 	typed: TypedArgs,
 ) -> Result<()> {
 	// Every `monosecret git` subcommand manages Git credential configuration
 	// rather than a project manifest, so only an explicitly typed --file
 	// selects a custom manifest. An exported MONOSECRET_FILE is ignored here.
-	let file = if typed.file { file.clone() } else { None };
-	let file = &file;
+	let file = if typed.file { file } else { None };
 	match action {
 		GitAction::Configure {
 			url,
@@ -208,12 +207,12 @@ pub(super) fn run(
 			url,
 			username,
 			provider,
-		} => login(url, username, provider, file, reason, caller),
+		} => login(&url, username, provider.as_deref(), file, reason, caller),
 		GitAction::Logout {
 			url,
 			username,
 			provider,
-		} => logout(url, username, provider, file, reason, caller),
+		} => logout(&url, username, provider.as_deref(), file, reason, caller),
 		GitAction::Unconfigure {
 			url,
 			all,
@@ -232,9 +231,9 @@ struct ConfigureOptions<'a> {
 	provider: Option<String>,
 	global: bool,
 	yes: bool,
-	file: &'a Option<PathBuf>,
-	reason: &'a Option<String>,
-	caller: &'a Option<CallerContext>,
+	file: Option<&'a Path>,
+	reason: Option<&'a str>,
+	caller: Option<&'a CallerContext>,
 	typed: TypedArgs,
 }
 
@@ -247,7 +246,7 @@ fn configure(options: ConfigureOptions<'_>) -> Result<()> {
 		));
 	}
 
-	let target = crate::integration::git::canonical_target(&options.url);
+	let target = canonical_target(&options.url);
 	let (mut secrets, manifest, profile, token_secret, username_secret) = if options.file.is_some()
 	{
 		let token_secret = options.token_secret.as_deref().ok_or_else(|| {
@@ -311,21 +310,17 @@ fn configure(options: ConfigureOptions<'_>) -> Result<()> {
 		.provider
 		.then_some(options.provider.as_deref())
 		.flatten();
-	let persisted_reason = options
-		.typed
-		.reason
-		.then_some(options.reason.as_deref())
-		.flatten();
-	let helper = helper_command(
-		&target,
-		manifest.as_deref(),
-		persisted_profile,
-		persisted_provider,
-		persisted_reason,
-		&token_secret,
-		username_secret.as_deref(),
-		options.username.as_deref(),
-	);
+	let persisted_reason = options.typed.reason.then_some(options.reason).flatten();
+	let helper = helper_command(&HelperCommand {
+		target: &target,
+		manifest: manifest.as_deref(),
+		profile: persisted_profile,
+		provider: persisted_provider,
+		reason: persisted_reason,
+		token_secret: &token_secret,
+		username_secret: username_secret.as_deref(),
+		username: options.username.as_deref(),
+	});
 	let credential = ManagedCredential {
 		version: FORMAT_VERSION,
 		url: target.clone(),
@@ -343,12 +338,15 @@ fn configure(options: ConfigureOptions<'_>) -> Result<()> {
 	// switches between them rather than registering both.
 	let mut replaced_username = None;
 	let changed = match credentials.iter().position(|entry| entry.url == target) {
-		Some(index) if credentials[index] == credential => false,
+		Some(index) if credentials.get(index) == Some(&credential) => false,
 		Some(index) => {
-			if credentials[index].username != credential.username {
-				replaced_username = credentials[index].username.clone();
+			let entry = credentials
+				.get_mut(index)
+				.expect("position yields an in-bounds index");
+			if entry.username != credential.username {
+				replaced_username.clone_from(&entry.username);
 			}
-			credentials[index] = credential;
+			*entry = credential;
 			true
 		}
 		None => {
@@ -421,9 +419,9 @@ fn embedded_cli_secrets(
 	url: &Url,
 	username: Option<&str>,
 	provider: Option<&str>,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	file: Option<&Path>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 	action: &str,
 ) -> Result<crate::integration::git::EmbeddedGitCredentials> {
 	if file.is_some() {
@@ -436,7 +434,7 @@ fn embedded_cli_secrets(
 		embedded.secrets.set_provider(provider);
 	}
 	if let Some(reason) = reason {
-		embedded.secrets = embedded.secrets.with_reason(reason.clone());
+		embedded.secrets = embedded.secrets.with_reason(reason);
 	}
 	if let Some(caller) = caller {
 		embedded.secrets = embedded.secrets.with_caller(caller.clone());
@@ -451,19 +449,19 @@ fn embedded_cli_secrets(
 }
 
 fn login(
-	url: Url,
+	url: &Url,
 	username: Option<String>,
-	provider: Option<String>,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	provider: Option<&str>,
+	file: Option<&Path>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 ) -> Result<()> {
-	crate::integration::git::validate_target(&url)?;
-	let username = credential_username(&url, username)?;
+	crate::integration::git::validate_target(url)?;
+	let username = credential_username(url, username)?;
 	let embedded = embedded_cli_secrets(
-		&url,
+		url,
 		username.as_deref(),
-		provider.as_deref(),
+		provider,
 		file,
 		reason,
 		caller,
@@ -481,27 +479,24 @@ fn login(
 			.into_diagnostic()
 			.wrap_err("Failed to store Git username")?;
 	}
-	println!(
-		"Stored Git credential for {}.",
-		crate::integration::git::canonical_target(&url)
-	);
+	println!("Stored Git credential for {}.", canonical_target(url));
 	Ok(())
 }
 
 fn logout(
-	url: Url,
+	url: &Url,
 	username: Option<String>,
-	provider: Option<String>,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	provider: Option<&str>,
+	file: Option<&Path>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 ) -> Result<()> {
-	crate::integration::git::validate_target(&url)?;
-	let username = credential_username(&url, username)?;
+	crate::integration::git::validate_target(url)?;
+	let username = credential_username(url, username)?;
 	let embedded = embedded_cli_secrets(
-		&url,
+		url,
 		username.as_deref(),
-		provider.as_deref(),
+		provider,
 		file,
 		reason,
 		caller,
@@ -517,7 +512,7 @@ fn logout(
 		.delete(&embedded.username_secret)
 		.into_diagnostic()
 		.wrap_err("Failed to remove Git username")?;
-	let target = crate::integration::git::canonical_target(&url);
+	let target = canonical_target(url);
 	if password || username {
 		println!("Removed stored Git credential for {target}.");
 	} else {
@@ -671,9 +666,9 @@ fn validate_secret(secrets: &Secrets, name: &str, profile: &str) -> Result<()> {
 	Ok(())
 }
 
-fn manifest_path(file: &Option<PathBuf>) -> Result<PathBuf> {
+fn manifest_path(file: Option<&Path>) -> Result<PathBuf> {
 	let path = match file {
-		Some(path) => path.clone(),
+		Some(path) => path.to_path_buf(),
 		None => crate::secrets::find_config_file().into_diagnostic()?,
 	};
 	let path = if path.is_absolute() {
@@ -687,16 +682,29 @@ fn manifest_path(file: &Option<PathBuf>) -> Result<PathBuf> {
 	require_utf8_path(path, "Monosecret manifest")
 }
 
-fn helper_command(
-	target: &str,
-	manifest: Option<&Path>,
-	profile: Option<&str>,
-	provider: Option<&str>,
-	reason: Option<&str>,
-	token_secret: &str,
-	username_secret: Option<&str>,
-	username: Option<&str>,
-) -> String {
+/// The user-typed options replayed inside the stored Git helper command.
+struct HelperCommand<'a> {
+	target: &'a str,
+	manifest: Option<&'a Path>,
+	profile: Option<&'a str>,
+	provider: Option<&'a str>,
+	reason: Option<&'a str>,
+	token_secret: &'a str,
+	username_secret: Option<&'a str>,
+	username: Option<&'a str>,
+}
+
+fn helper_command(spec: &HelperCommand<'_>) -> String {
+	let HelperCommand {
+		target,
+		manifest,
+		profile,
+		provider,
+		reason,
+		token_secret,
+		username_secret,
+		username,
+	} = spec;
 	let mut command = format!(
 		"monosecret --url {} --password-secret {}",
 		shell_quote(target),
@@ -1263,16 +1271,16 @@ mod tests {
 
 	#[test]
 	fn helper_command_quotes_every_persisted_argument() {
-		let command = helper_command(
-			"https://github.com",
-			Some(Path::new("/tmp/project's monosecret.toml")),
-			Some("team's profile"),
-			Some("provider's alias"),
-			Some("developer's machine"),
-			"TOKEN'S_NAME",
-			Some("USERNAME'S_NAME"),
-			Some("literal user's name"),
-		);
+		let command = helper_command(&HelperCommand {
+			target: "https://github.com",
+			manifest: Some(Path::new("/tmp/project's monosecret.toml")),
+			profile: Some("team's profile"),
+			provider: Some("provider's alias"),
+			reason: Some("developer's machine"),
+			token_secret: "TOKEN'S_NAME",
+			username_secret: Some("USERNAME'S_NAME"),
+			username: Some("literal user's name"),
+		});
 		assert!(command.contains("'/tmp/project'\\''s monosecret.toml'"));
 		assert!(command.contains("'TOKEN'\\''S_NAME'"));
 		assert!(command.contains("'USERNAME'\\''S_NAME'"));

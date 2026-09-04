@@ -2,6 +2,8 @@
 //! caller would: build a request JSON, call `monosecret_resolve`, parse the
 //! returned envelope, then `monosecret_free`.
 
+#![allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
+
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::ffi::c_char;

@@ -231,7 +231,7 @@ impl ProtonPassProvider {
 		for probe in SESSION_PROBES {
 			match self.run_pass_cli(&[probe], None) {
 				Ok(_) => return Ok(()),
-				Err(e) if is_unknown_subcommand(&e) => continue,
+				Err(e) if is_unknown_subcommand(&e) => {}
 				Err(e) => return Err(e),
 			}
 		}
@@ -261,7 +261,7 @@ impl ProtonPassProvider {
 	fn agent_reason(&self) -> String {
 		let session = self.session_reason.lock().unwrap().clone();
 		let env = std::env::var(AGENT_REASON_ENV).ok();
-		Self::resolve_reason(session, env)
+		Self::resolve_reason(session.as_deref(), env.as_deref())
 	}
 
 	/// Pure precedence logic for [`Self::agent_reason`], split out so it can be
@@ -271,11 +271,10 @@ impl ProtonPassProvider {
 	/// falling through, so a blank/whitespace session reason does not shadow a
 	/// usable `PROTON_PASS_AGENT_REASON` (it falls through to it), and a blank env
 	/// value falls through to the default.
-	fn resolve_reason(session: Option<String>, env: Option<String>) -> String {
+	fn resolve_reason(session: Option<&str>, env: Option<&str>) -> String {
 		session
-			.as_deref()
 			.and_then(crate::secrets::normalize_reason)
-			.or_else(|| env.as_deref().and_then(crate::secrets::normalize_reason))
+			.or_else(|| env.and_then(crate::secrets::normalize_reason))
 			.unwrap_or_else(|| DEFAULT_AGENT_REASON.to_string())
 	}
 
@@ -596,6 +595,7 @@ impl Default for ProtonPassProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use std::sync::Arc;
 
@@ -620,9 +620,7 @@ mod tests {
 
 	#[test]
 	fn resolve_reason_precedence() {
-		let r = |s: Option<&str>, e: Option<&str>| {
-			ProtonPassProvider::resolve_reason(s.map(str::to_string), e.map(str::to_string))
-		};
+		let r = |s: Option<&str>, e: Option<&str>| ProtonPassProvider::resolve_reason(s, e);
 		// Session reason wins and is trimmed.
 		assert_eq!(r(Some("  session  "), Some("env")), "session");
 		// Env value is used (and trimmed) when no session reason is set.

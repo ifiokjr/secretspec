@@ -42,7 +42,7 @@ impl SopsFormat {
 impl FromStr for SopsFormat {
 	type Err = MonosecretError;
 
-	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		match s.to_lowercase().as_str() {
 			"yaml" | "yml" => Ok(Self::Yaml),
 			"json" => Ok(Self::Json),
@@ -50,8 +50,7 @@ impl FromStr for SopsFormat {
 			"ini" => Ok(Self::Ini),
 			_ => {
 				Err(MonosecretError::ProviderOperationFailed(format!(
-					"Unsupported SOPS format: {}. Supported formats: yaml, json, env, ini",
-					s
+					"Unsupported SOPS format: {s}. Supported formats: yaml, json, env, ini"
 				)))
 			}
 		}

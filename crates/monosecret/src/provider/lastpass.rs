@@ -149,7 +149,7 @@ impl LastPassProvider {
 	/// - Returns an error if the `lpass` CLI is not installed
 	/// - Returns an error if the user is not logged in to `LastPass`
 	/// - Returns an error if the command fails for any other reason
-	fn execute_lpass_command(&self, args: &[&str]) -> Result<String> {
+	fn execute_lpass_command(args: &[&str]) -> Result<String> {
 		let mut cmd = Command::new("lpass");
 		cmd.args(args);
 
@@ -221,8 +221,8 @@ impl LastPassProvider {
 	///
 	/// Returns `Ok(true)` if logged in, `Ok(false)` if not logged in, or an error
 	/// if the status check itself fails.
-	fn check_login_status(&self) -> Result<bool> {
-		match self.execute_lpass_command(&["status"]) {
+	fn check_login_status() -> Result<bool> {
+		match Self::execute_lpass_command(&["status"]) {
 			Ok(output) => Ok(!output.contains("Not logged in")),
 			Err(MonosecretError::ProviderOperationFailed(msg))
 				if msg.contains("Not logged in")
@@ -236,8 +236,11 @@ impl LastPassProvider {
 
 	/// Checks that the user is logged in to `LastPass`.
 	/// Called by the preflight guard before any provider operations.
+	// Method signature is required by the `register_provider!` preflight hook,
+	// which invokes it as `provider.check_auth()` on an `Arc<Self>`.
+	#[allow(clippy::unused_self)]
 	pub(crate) fn check_auth(&self) -> Result<()> {
-		if !self.check_login_status()? {
+		if !Self::check_login_status()? {
 			return Err(MonosecretError::ProviderOperationFailed(
 				"LastPass authentication required. Please run 'lpass login <your-email>' first."
 					.to_string(),
@@ -316,7 +319,7 @@ impl Provider for LastPassProvider {
 	fn get(&self, addr: Address<'_>) -> Result<Option<SecretString>> {
 		let item_name = crate::provider::flat_item(self, addr)?;
 
-		match self.execute_lpass_command(&["show", "--sync=now", "--password", &item_name]) {
+		match Self::execute_lpass_command(&["show", "--sync=now", "--password", &item_name]) {
 			Ok(output) => {
 				let password = output.trim();
 				if password.is_empty() {
@@ -547,7 +550,7 @@ mod reference_tests {
 		);
 	}
 
-	/// LastPass items are read whole here; a `field` coordinate is rejected.
+	/// `LastPass` items are read whole here; a `field` coordinate is rejected.
 	#[test]
 	fn native_address_rejects_field() {
 		let p = LastPassProvider::new(LastPassConfig::default());

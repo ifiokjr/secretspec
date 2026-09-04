@@ -23,7 +23,7 @@ fn bin() -> &'static str {
 /// The directory is wiped first so the audit-log first-run note always prints.
 fn test_home(name: &str) -> std::path::PathBuf {
 	let home = std::path::PathBuf::from(format!("/tmp/monosecret-cli-snapshots-{name}"));
-	let _ = std::fs::remove_dir_all(&home);
+	let _ = fs::remove_dir_all(&home);
 	home
 }
 

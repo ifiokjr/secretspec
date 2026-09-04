@@ -124,6 +124,7 @@ impl Provider for NullProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use std::collections::HashMap;
 	use std::fs;

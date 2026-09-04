@@ -36,8 +36,10 @@ const QUERY_ENCODE_SET: &AsciiSet = &URI_ENCODE_SET.add(b'%').add(b'#').add(b'&'
 
 /// Detects a Windows-style absolute path such as `C:\path` or `C:/path`.
 pub(super) fn is_windows_abs_path(s: &str) -> bool {
-	let b = s.as_bytes();
-	b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/')
+	match s.as_bytes() {
+		[drive, b':', sep, ..] => drive.is_ascii_alphabetic() && (*sep == b'\\' || *sep == b'/'),
+		_ => false,
+	}
 }
 
 /// A URL wrapper that automatically percent-decodes all accessors.
@@ -235,8 +237,7 @@ mod tests {
 		] {
 			assert!(
 				Box::<dyn Provider>::try_from(spec).is_ok(),
-				"should parse: {}",
-				spec
+				"should parse: {spec}"
 			);
 		}
 		assert!(Box::<dyn Provider>::try_from("dotenv:///tmp/.env").is_ok());
