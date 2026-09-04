@@ -76,7 +76,8 @@ DATABASE_URL = { providers = ["vault", "keyring", "env"] }
   Vault/OpenBao, and Bitwarden Secrets Manager.
 - **CI-friendly loading** - `monosecret env --shell github --profile ci` appends
   masked values to `$GITHUB_ENV`.
-- **Type-safe Rust and Dart SDKs** - generate strongly typed Rust structs and Dart build_runner wrappers from `monosecret.toml`.
+- **Type-safe Rust SDK** - generate strongly typed Rust structs from
+  `monosecret.toml` at compile time.
 - **Auditable access** - require human-readable reasons and keep local access logs
   without writing secret values.
 
@@ -96,12 +97,22 @@ for Nix, devenv, and other options.
 - `dart/` - Dart runtime SDK and build_runner generator.
 - `examples/` - examples across supported ecosystems.
 
+## Building from source
+
+```shell-session
+$ cargo build --release
+```
+
+This builds the CLI crate only. Building the full workspace (FFI, npm, PHP,
+Python, and example crates) additionally requires the `php`, `python`, and
+`node` toolchains — devenv provides all of them — and is selected explicitly
+with `cargo build --workspace`.
+
 ## Learn more
 
 - [Configuration reference](https://ifiokjr.github.io/monosecret/reference/configuration/)
 - [Provider reference](https://ifiokjr.github.io/monosecret/reference/providers/)
 - [CI/CD setup](https://ifiokjr.github.io/monosecret/guides/ci/)
 - [Rust SDK](https://ifiokjr.github.io/monosecret/sdk/rust/)
-- [Dart SDK](https://ifiokjr.github.io/monosecret/sdk/dart/)
 
 <!-- {/projectReadme} -->

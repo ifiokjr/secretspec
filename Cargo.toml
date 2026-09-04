@@ -10,6 +10,14 @@ members = [
 ]
 resolver = "2"
 
+# Plain `cargo build` / `cargo check` / `cargo test` operate on the CLI crate
+# only. The other members (ffi, npm, php, python, examples) pull in language
+# interpreters at build time — ext-php-rs needs `php`, pyo3 needs `python`, and
+# napi needs `node` — which breaks sandboxed environments that only need the
+# CLI, such as Nix builds. CI and devenv select the full workspace explicitly
+# via --workspace / --all / -p, so nothing changes for them.
+default-members = ["crates/monosecret"]
+
 [workspace.package]
 version = "0.3.1"
 edition = "2024"
