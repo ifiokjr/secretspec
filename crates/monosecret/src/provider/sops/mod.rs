@@ -327,21 +327,14 @@ impl SopsProvider {
 			let mut current = &data;
 			let mut found = true;
 			for segment in path {
-				match current {
-					serde_json::Value::Object(map) => {
-						match map.get(&segment) {
-							Some(value) => current = value,
-							None => {
-								found = false;
-								break;
-							}
-						}
-					}
-					_ => {
-						found = false;
-						break;
-					}
+				if let serde_json::Value::Object(map) = current
+					&& let Some(value) = map.get(&segment)
+				{
+					current = value;
+					continue;
 				}
+				found = false;
+				break;
 			}
 			if found {
 				return Ok(Some(match current {
@@ -422,16 +415,16 @@ impl SopsProvider {
 					parent.display()
 				))
 			})?;
-			return Ok(Self::normalize_path(canonical.join(suffix)).join(filename));
+			return Ok(Self::normalize_path(&canonical.join(suffix)).join(filename));
 		}
 
 		// Relative paths with no existing component are resolved from the
 		// current directory; absolute paths always find their root above.
 		let current = std::env::current_dir()?.canonicalize()?;
-		Ok(Self::normalize_path(current.join(parent)).join(filename))
+		Ok(Self::normalize_path(&current.join(parent)).join(filename))
 	}
 
-	fn normalize_path(path: PathBuf) -> PathBuf {
+	fn normalize_path(path: &Path) -> PathBuf {
 		let mut normalized = PathBuf::new();
 		for component in path.components() {
 			match component {
@@ -478,19 +471,20 @@ impl SopsProvider {
 
 		// FNV-1a gives every Monosecret process the same stable lock name.
 		// Collisions only serialize unrelated files; they cannot weaken safety.
-		let mut hash = 0xcbf29ce484222325_u64;
+		let mut hash = 0xcbf2_9ce4_8422_2325_u64;
 		let identity = path.to_string_lossy();
 		#[cfg(windows)]
 		let identity = identity.to_lowercase();
 		for byte in identity.as_bytes() {
 			hash ^= u64::from(*byte);
-			hash = hash.wrapping_mul(0x100000001b3);
+			hash = hash.wrapping_mul(0x0100_0000_01b3);
 		}
 		let lock_path = lock_directory.join(format!("{hash:016x}.lock"));
 		let lock = OpenOptions::new()
 			.read(true)
 			.write(true)
 			.create(true)
+			.truncate(false)
 			.open(&lock_path)
 			.map_err(|error| {
 				Self::provider_error(format!(

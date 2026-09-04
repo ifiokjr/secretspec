@@ -568,7 +568,13 @@ mod tests {
             "profiles": { "default": { "secrets": { "TOKEN": { "description": "token", "typo": true } } } }
           }}
         }"#)).unwrap();
-		assert_eq!(response["ok"], false);
-		assert_eq!(response["error"]["kind"], "invalid_request");
+		assert_eq!(response.get("ok"), Some(&serde_json::Value::Bool(false)));
+		assert_eq!(
+			response
+				.get("error")
+				.and_then(|error| error.get("kind"))
+				.and_then(serde_json::Value::as_str),
+			Some("invalid_request")
+		);
 	}
 }

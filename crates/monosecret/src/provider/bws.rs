@@ -66,7 +66,7 @@ pub struct BwsConfig {
 	/// The BWS project UUID (e.g., "a9230ec4-5507-4870-b8b5-b3f500587e4c")
 	pub project_id: uuid::Uuid,
 
-	/// The Bitwarden instance base URL (e.g., "https://vault.bitwarden.eu")
+	/// The Bitwarden instance base URL (e.g., "<https://vault.bitwarden.eu>")
 	pub server_base: Option<String>,
 }
 
@@ -90,16 +90,15 @@ impl TryFrom<&ProviderUrl> for BwsConfig {
 
 		let project_id = uuid::Uuid::parse_str(&project_id_str).map_err(|e| {
 			MonosecretError::ProviderOperationFailed(format!(
-				"Invalid BWS project UUID '{}': {}. Use format: bws://a9230ec4-5507-4870-b8b5-b3f500587e4c",
-				project_id_str, e
+				"Invalid BWS project UUID '{project_id_str}': {e}. Use format: bws://a9230ec4-5507-4870-b8b5-b3f500587e4c"
 			))
 		})?;
 
 		// Extract server base URL from the username: bws://[server-base@]project-uuid
-		let server_base = if !url.username().is_empty() {
-			Some(url.username())
-		} else {
+		let server_base = if url.username().is_empty() {
 			None
+		} else {
+			Some(url.username())
 		};
 
 		Ok(Self {
@@ -143,7 +142,7 @@ crate::register_provider! {
 }
 
 impl BwsProvider {
-	/// Creates a new BwsProvider with the given configuration.
+	/// Creates a new `BwsProvider` with the given configuration.
 	pub fn new(config: BwsConfig) -> Self {
 		Self {
 			config,
@@ -441,8 +440,7 @@ mod tests {
 		let err_msg = result.unwrap_err().to_string();
 		assert!(
 			err_msg.contains("project ID is required"),
-			"Error should mention project ID is required, got: {}",
-			err_msg
+			"Error should mention project ID is required, got: {err_msg}"
 		);
 	}
 
@@ -462,8 +460,7 @@ mod tests {
 		let err_msg = result.unwrap_err().to_string();
 		assert!(
 			err_msg.contains("Invalid BWS project UUID"),
-			"Error should mention invalid UUID, got: {}",
-			err_msg
+			"Error should mention invalid UUID, got: {err_msg}"
 		);
 	}
 
@@ -475,8 +472,7 @@ mod tests {
 		let err_msg = result.unwrap_err().to_string();
 		assert!(
 			err_msg.contains("Invalid scheme"),
-			"Error should mention invalid scheme, got: {}",
-			err_msg
+			"Error should mention invalid scheme, got: {err_msg}"
 		);
 	}
 
@@ -548,8 +544,7 @@ mod tests {
 		let err_msg = result.unwrap_err().to_string();
 		assert!(
 			err_msg.contains("BWS_ACCESS_TOKEN"),
-			"Error should mention BWS_ACCESS_TOKEN, got: {}",
-			err_msg
+			"Error should mention BWS_ACCESS_TOKEN, got: {err_msg}"
 		);
 	}
 

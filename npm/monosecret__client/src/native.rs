@@ -16,12 +16,14 @@ use napi_derive::napi;
 ///
 /// This is synchronous and runs on the Node main thread; prefer [`resolve_async`]
 /// when a provider may do network I/O.
+#[allow(clippy::needless_pass_by_value)] // napi requires owned String params
 #[napi]
 pub fn resolve(request_json: String) -> String {
 	monosecret::resolve_json(&request_json)
 }
 
 /// Process a versioned native operation request, including inline specs.
+#[allow(clippy::needless_pass_by_value)] // napi requires owned String params
 #[napi]
 pub fn call(request_json: String) -> String {
 	monosecret::call_json(&request_json)

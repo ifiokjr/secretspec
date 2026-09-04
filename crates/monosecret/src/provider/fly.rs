@@ -205,7 +205,7 @@ impl FlyProvider {
 		)))
 	}
 
-	fn spawn_error(&self, error: io::Error) -> MonosecretError {
+	fn spawn_error(&self, error: &io::Error) -> MonosecretError {
 		let message = if error.kind() == io::ErrorKind::NotFound {
 			format!(
 				"flyctl executable '{}' was not found; install flyctl from https://fly.io/docs/flyctl/install/ or set {CLI_PATH_ENV}",
@@ -228,7 +228,7 @@ impl FlyProvider {
 				"--json",
 			])
 			.output()
-			.map_err(|error| self.spawn_error(error))?;
+			.map_err(|error| self.spawn_error(&error))?;
 		let output = self.finish(output)?;
 		serde_json::from_slice(&output.stdout).map_err(|error| {
 			MonosecretError::ProviderOperationFailed(format!(
@@ -332,7 +332,7 @@ impl Provider for FlyProvider {
 			.stderr(Stdio::piped());
 		self.deployment_args(&mut command);
 
-		let mut child = command.spawn().map_err(|error| self.spawn_error(error))?;
+		let mut child = command.spawn().map_err(|error| self.spawn_error(&error))?;
 		let mut stdin = child.stdin.take().ok_or_else(|| {
 			MonosecretError::ProviderOperationFailed(
 				"failed to open flyctl stdin for the secret value".to_string(),
@@ -342,7 +342,7 @@ impl Provider for FlyProvider {
 		drop(stdin);
 		let output = child
 			.wait_with_output()
-			.map_err(|error| self.spawn_error(error))?;
+			.map_err(|error| self.spawn_error(&error))?;
 		self.finish(output).map(|_| ())
 	}
 
@@ -370,7 +370,7 @@ impl Provider for FlyProvider {
 			self.config.app.as_str(),
 		]);
 		self.deployment_args(&mut command);
-		let output = command.output().map_err(|error| self.spawn_error(error))?;
+		let output = command.output().map_err(|error| self.spawn_error(&error))?;
 		self.finish(output).map(|_| true)
 	}
 

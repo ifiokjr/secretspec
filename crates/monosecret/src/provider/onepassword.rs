@@ -358,9 +358,7 @@ impl TryFrom<&ProviderUrl> for OnePasswordConfig {
 #[cfg(target_os = "linux")]
 fn is_wsl2() -> bool {
 	std::fs::read_to_string("/proc/sys/kernel/osrelease")
-		.ok()
-		.map(|content| content.trim().ends_with("-microsoft-standard-WSL2"))
-		.unwrap_or(false)
+		.is_ok_and(|content| content.trim().ends_with("-microsoft-standard-WSL2"))
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -771,8 +769,8 @@ impl OnePasswordProvider {
 		if refs.is_empty() {
 			return Ok(Vec::new());
 		}
-		if refs.len() == 1 {
-			return Ok(vec![self.read_reference_uri(&refs[0].uri)?]);
+		if let [single] = refs {
+			return Ok(vec![self.read_reference_uri(&single.uri)?]);
 		}
 
 		let uris: Vec<String> = refs.iter().map(|r| r.uri.clone()).collect();
@@ -815,9 +813,9 @@ impl OnePasswordProvider {
 			.filter_map(|(r, &keep)| keep.then_some(r))
 			.collect();
 
-		let retained_values = match retained.len() {
-			0 => Vec::new(),
-			1 => vec![self.read_reference_uri(&retained[0].uri)?],
+		let retained_values = match retained.as_slice() {
+			[] => Vec::new(),
+			[single] => vec![self.read_reference_uri(&single.uri)?],
 			_ => {
 				let uris: Vec<String> = retained.iter().map(|r| r.uri.clone()).collect();
 				let nonce = uuid::Uuid::new_v4().simple().to_string();
@@ -918,8 +916,9 @@ impl OnePasswordProvider {
 		Ok(Some(
 			refs.iter()
 				.map(|r| {
-					let (ids, titles) = &known[r.vault.as_str()];
-					ids.contains(&r.item) || titles.contains(&r.item.trim().to_lowercase())
+					known.get(r.vault.as_str()).is_some_and(|(ids, titles)| {
+						ids.contains(&r.item) || titles.contains(&r.item.trim().to_lowercase())
+					})
 				})
 				.collect(),
 		))
@@ -999,7 +998,7 @@ impl OnePasswordProvider {
 		];
 
 		match self.execute_op_command(&args, None) {
-			Ok(output) => self.extract_value_from_item(&output),
+			Ok(output) => Self::extract_value_from_item(&output),
 			Err(MonosecretError::ProviderOperationFailed(msg)) if msg.contains("isn't an item") => {
 				Ok(None)
 			}
@@ -1012,7 +1011,7 @@ impl OnePasswordProvider {
 						"item", "get", &item_id, "--vault", vault, "--format", "json",
 					];
 					match self.execute_op_command(&args, None) {
-						Ok(output) => self.extract_value_from_item(&output),
+						Ok(output) => Self::extract_value_from_item(&output),
 						Err(e) => Err(e),
 					}
 				} else {
@@ -1147,7 +1146,7 @@ impl OnePasswordProvider {
 	///
 	/// Looks for a field labeled "value" first, then falls back to
 	/// password or concealed fields.
-	fn extract_value_from_item(&self, output: &str) -> Result<Option<SecretString>> {
+	fn extract_value_from_item(output: &str) -> Result<Option<SecretString>> {
 		let item: OnePasswordItem = serde_json::from_str(output)?;
 		Ok(Self::extract_value(&item))
 	}
@@ -1499,7 +1498,11 @@ impl Provider for OnePasswordProvider {
 				Some(reference) => {
 					let reference_uri = Self::reference_uri(&vault, &reference);
 					if let Some(index) = field_ref_indices.get(&reference_uri) {
-						field_refs[*index].1.push(name.to_string());
+						field_refs
+							.get_mut(*index)
+							.expect("index was inserted for this uri")
+							.1
+							.push(name.to_string());
 					} else {
 						field_ref_indices.insert(reference_uri.clone(), field_refs.len());
 						let batch_ref = BatchRef {
@@ -1576,7 +1579,11 @@ impl OnePasswordProvider {
 				continue;
 			};
 			if let Some(index) = fetch_indices.get(item_id) {
-				to_fetch[*index].1.push(name);
+				to_fetch
+					.get_mut(*index)
+					.expect("index was inserted for this item")
+					.1
+					.push(name);
 			} else {
 				fetch_indices.insert(item_id.clone(), to_fetch.len());
 				to_fetch.push((item_id.clone(), vec![name]));
@@ -1663,6 +1670,7 @@ impl Default for OnePasswordProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use url::Url;
 
@@ -1826,7 +1834,7 @@ mod tests {
 			"onepassword+token://ops_tok@Private",
 			"onepassword+token://acct:ops_tok@Private",
 		] {
-			let Err(error) = Box::<dyn crate::provider::Provider>::try_from(source) else {
+			let Err(error) = Box::<dyn Provider>::try_from(source) else {
 				panic!("{source} was accepted");
 			};
 			let message = error.to_string();

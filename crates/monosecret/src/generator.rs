@@ -1,8 +1,8 @@
 //! Secret value generation
 //!
 //! This module provides generation of secret values based on type and configuration.
-//! Supported types: password, hex, base64, uuid, command, rsa_private_key,
-//! openpgp_private_key, ssh_private_key.
+//! Supported types: password, hex, base64, uuid, command, `rsa_private_key`,
+//! `openpgp_private_key`, `ssh_private_key`.
 
 use data_encoding::BASE64;
 use data_encoding::HEXLOWER;
@@ -41,9 +41,9 @@ use crate::config::SSH_RSA_MIN_BITS;
 pub fn generate(secret_type: &str, config: &GenerateConfig) -> crate::Result<SecretString> {
 	match secret_type {
 		"password" => generate_password(config),
-		"hex" => generate_hex(config),
-		"base64" => generate_base64(config),
-		"uuid" => generate_uuid(),
+		"hex" => Ok(generate_hex(config)),
+		"base64" => Ok(generate_base64(config)),
+		"uuid" => Ok(generate_uuid()),
 		"command" => generate_from_command(config),
 		"rsa_private_key" => generate_rsa(config),
 		"openpgp_private_key" => generate_openpgp(config),
@@ -92,15 +92,19 @@ fn generate_password(config: &GenerateConfig) -> crate::Result<SecretString> {
 	let mut rng = rand::rng();
 	let password: String = (0..length)
 		.map(|_| {
+			// `random_range` produces an index that is always in bounds.
 			let idx = rng.random_range(0..charset.len());
-			charset[idx] as char
+			charset
+				.get(idx)
+				.copied()
+				.expect("invariant: index within charset") as char
 		})
 		.collect();
 
 	Ok(SecretString::new(password.into()))
 }
 
-fn generate_hex(config: &GenerateConfig) -> crate::Result<SecretString> {
+fn generate_hex(config: &GenerateConfig) -> SecretString {
 	let bytes = match config {
 		GenerateConfig::Bool(_) => 32,
 		GenerateConfig::Options(opts) => opts.bytes.unwrap_or(32),
@@ -110,10 +114,10 @@ fn generate_hex(config: &GenerateConfig) -> crate::Result<SecretString> {
 	let random_bytes: Vec<u8> = (0..bytes).map(|_| rng.random::<u8>()).collect();
 	let hex = HEXLOWER.encode(&random_bytes);
 
-	Ok(SecretString::new(hex.into()))
+	SecretString::new(hex.into())
 }
 
-fn generate_base64(config: &GenerateConfig) -> crate::Result<SecretString> {
+fn generate_base64(config: &GenerateConfig) -> SecretString {
 	let bytes = match config {
 		GenerateConfig::Bool(_) => 32,
 		GenerateConfig::Options(opts) => opts.bytes.unwrap_or(32),
@@ -123,12 +127,12 @@ fn generate_base64(config: &GenerateConfig) -> crate::Result<SecretString> {
 	let random_bytes: Vec<u8> = (0..bytes).map(|_| rng.random::<u8>()).collect();
 	let encoded = BASE64.encode(&random_bytes);
 
-	Ok(SecretString::new(encoded.into()))
+	SecretString::new(encoded.into())
 }
 
-fn generate_uuid() -> crate::Result<SecretString> {
+fn generate_uuid() -> SecretString {
 	let id = uuid::Uuid::new_v4().to_string();
-	Ok(SecretString::new(id.into()))
+	SecretString::new(id.into())
 }
 
 fn generate_rsa(config: &GenerateConfig) -> crate::Result<SecretString> {
@@ -150,7 +154,7 @@ fn generate_rsa(config: &GenerateConfig) -> crate::Result<SecretString> {
 	Ok(SecretString::new(pem.to_string().into()))
 }
 
-/// Generates a broadly interoperable OpenPGP v4 transferable secret key.
+/// Generates a broadly interoperable `OpenPGP` v4 transferable secret key.
 ///
 /// The certification-only primary key is Ed25519. Requested signing and
 /// encryption capabilities are placed on separate Ed25519 and Curve25519
@@ -455,7 +459,7 @@ mod tests {
 		let value = generate("password", &GenerateConfig::Bool(true)).unwrap();
 		let s = value.expose_secret();
 		assert_eq!(s.len(), 32);
-		assert!(s.chars().all(|c| c.is_alphanumeric()));
+		assert!(s.chars().all(char::is_alphanumeric));
 	}
 
 	#[test]
@@ -572,13 +576,11 @@ mod tests {
 		assert_eq!(s.len(), 36);
 		let parts: Vec<&str> = s.split('-').collect();
 		assert_eq!(parts.len(), 5);
-		assert_eq!(parts[0].len(), 8);
-		assert_eq!(parts[1].len(), 4);
-		assert_eq!(parts[2].len(), 4);
-		assert_eq!(parts[3].len(), 4);
-		assert_eq!(parts[4].len(), 12);
+		for (part, expected_len) in parts.iter().zip([8, 4, 4, 4, 12]) {
+			assert_eq!(part.len(), expected_len);
+		}
 		// Version nibble = 4
-		assert!(parts[2].starts_with('4'));
+		assert!(parts.get(2).expect("third part").starts_with('4'));
 	}
 
 	#[test]

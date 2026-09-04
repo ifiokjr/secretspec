@@ -43,18 +43,21 @@ impl CallerContext {
 	}
 
 	/// Sets the integration version.
+	#[must_use]
 	pub fn with_version(mut self, version: impl Into<String>) -> Self {
 		self.version = Some(version.into());
 		self
 	}
 
 	/// Sets the integration-specific operation.
+	#[must_use]
 	pub fn with_operation(mut self, operation: impl Into<String>) -> Self {
 		self.operation = Some(operation.into());
 		self
 	}
 
 	/// Sets the non-secret resource being accessed.
+	#[must_use]
 	pub fn with_resource(mut self, resource: impl Into<String>) -> Self {
 		self.resource = Some(resource.into());
 		self

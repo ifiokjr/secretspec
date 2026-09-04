@@ -34,7 +34,7 @@ fn extract_placeholders(s: &str) -> Result<Vec<String>> {
 fn validate_template(template: &str) -> std::result::Result<(), MonosecretError> {
 	let placeholders = extract_placeholders(template)?;
 
-	if placeholders.len() > 0 {
+	if !placeholders.is_empty() {
 		let mut expected_placeholders: HashSet<&str> = HashSet::new();
 
 		expected_placeholders.insert("profile");
@@ -48,19 +48,18 @@ fn validate_template(template: &str) -> std::result::Result<(), MonosecretError>
 				}
 				other => {
 					return Err(MonosecretError::ProviderOperationFailed(format!(
-						"Unknown placeholder '{{{}}}' in SOPS path",
-						other
+						"Unknown placeholder '{{{other}}}' in SOPS path"
 					)));
 				}
 			}
 		}
 
-		if 0 != expected_placeholders.len() {
+		if !expected_placeholders.is_empty() {
 			return Err(MonosecretError::ProviderOperationFailed(format!(
 				"SOPS provider URL missing templating placeholders: {}",
 				expected_placeholders
 					.drain()
-					.map(|p| format!("{{{}}}", p))
+					.map(|p| format!("{{{p}}}"))
 					.collect::<Vec<_>>()
 					.join(", ")
 			)));

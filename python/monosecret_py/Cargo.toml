@@ -23,3 +23,6 @@ monosecret = { workspace = true, features = [
   "vault",
   "bws",
 ] }
+
+[lints]
+workspace = true

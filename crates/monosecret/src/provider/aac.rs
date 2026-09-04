@@ -271,11 +271,11 @@ impl TryFrom<&ProviderUrl> for AacConfig {
 			)));
 		}
 		tags.sort_by(|left, right| left.0.cmp(&right.0));
-		for pair in tags.windows(2) {
-			if pair[0].0 == pair[1].0 {
+		for (left, right) in tags.iter().zip(tags.iter().skip(1)) {
+			if left.0 == right.0 {
 				return Err(operation_error(format!(
 					"aac tag name '{}' may appear only once",
-					pair[0].0
+					left.0
 				)));
 			}
 		}
@@ -585,9 +585,8 @@ impl AacProvider {
 				let replace = tokens.get(id).is_none_or(|current| {
 					match (sequence, current.sequence) {
 						(Some(next), Some(existing)) => next >= existing,
-						(Some(_), None) => true,
+						(Some(_) | None, None) => true,
 						(None, Some(_)) => false,
-						(None, None) => true,
 					}
 				});
 				if replace {
@@ -772,20 +771,80 @@ fn safe_request_target(url: &Url) -> String {
 // keeps connection-string support dependency-neutral.
 fn sha256(input: &[u8]) -> [u8; 32] {
 	const INITIAL: [u32; 8] = [
-		0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-		0x5be0cd19,
+		0x6a09_e667,
+		0xbb67_ae85,
+		0x3c6e_f372,
+		0xa54f_f53a,
+		0x510e_527f,
+		0x9b05_688c,
+		0x1f83_d9ab,
+		0x5be0_cd19,
 	];
 	const K: [u32; 64] = [
-		0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-		0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-		0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-		0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-		0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-		0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-		0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-		0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-		0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-		0xc67178f2,
+		0x428a_2f98,
+		0x7137_4491,
+		0xb5c0_fbcf,
+		0xe9b5_dba5,
+		0x3956_c25b,
+		0x59f1_11f1,
+		0x923f_82a4,
+		0xab1c_5ed5,
+		0xd807_aa98,
+		0x1283_5b01,
+		0x2431_85be,
+		0x550c_7dc3,
+		0x72be_5d74,
+		0x80de_b1fe,
+		0x9bdc_06a7,
+		0xc19b_f174,
+		0xe49b_69c1,
+		0xefbe_4786,
+		0x0fc1_9dc6,
+		0x240c_a1cc,
+		0x2de9_2c6f,
+		0x4a74_84aa,
+		0x5cb0_a9dc,
+		0x76f9_88da,
+		0x983e_5152,
+		0xa831_c66d,
+		0xb003_27c8,
+		0xbf59_7fc7,
+		0xc6e0_0bf3,
+		0xd5a7_9147,
+		0x06ca_6351,
+		0x1429_2967,
+		0x27b7_0a85,
+		0x2e1b_2138,
+		0x4d2c_6dfc,
+		0x5338_0d13,
+		0x650a_7354,
+		0x766a_0abb,
+		0x81c2_c92e,
+		0x9272_2c85,
+		0xa2bf_e8a1,
+		0xa81a_664b,
+		0xc24b_8b70,
+		0xc76c_51a3,
+		0xd192_e819,
+		0xd699_0624,
+		0xf40e_3585,
+		0x106a_a070,
+		0x19a4_c116,
+		0x1e37_6c08,
+		0x2748_774c,
+		0x34b0_bcb5,
+		0x391c_0cb3,
+		0x4ed8_aa4a,
+		0x5b9c_ca4f,
+		0x682e_6ff3,
+		0x748f_82ee,
+		0x78a5_636f,
+		0x84c8_7814,
+		0x8cc7_0208,
+		0x90be_fffa,
+		0xa450_6ceb,
+		0xbef9_a3f7,
+		0xc671_78f2,
 	];
 
 	let bit_len = (input.len() as u64).wrapping_mul(8);
@@ -797,53 +856,70 @@ fn sha256(input: &[u8]) -> [u8; 32] {
 	message.extend_from_slice(&bit_len.to_be_bytes());
 
 	let mut state = INITIAL;
-	for chunk in message.chunks_exact(64) {
+	for chunk in message.as_chunks::<64>().0 {
 		let mut words = [0_u32; 64];
-		for (word, bytes) in words.iter_mut().zip(chunk.chunks_exact(4)) {
-			*word = u32::from_be_bytes(bytes.try_into().expect("four-byte SHA-256 word"));
+		for (word, bytes) in words.iter_mut().zip(chunk.as_chunks::<4>().0) {
+			*word = u32::from_be_bytes(*bytes);
 		}
-		for index in 16..64 {
-			let s0 = words[index - 15].rotate_right(7)
-				^ words[index - 15].rotate_right(18)
-				^ (words[index - 15] >> 3);
-			let s1 = words[index - 2].rotate_right(17)
-				^ words[index - 2].rotate_right(19)
-				^ (words[index - 2] >> 10);
-			words[index] = words[index - 16]
+		// Schedule slot `index` derives from earlier slots, which are final by
+		// then, so a rolling window of the last 16 words supplies the offsets 2,
+		// 7, 15, and 16 back without indexing.
+		let mut window = [0_u32; 16];
+		for (slot, value) in window.iter_mut().zip(words.iter()) {
+			*slot = *value;
+		}
+		for slot in words.iter_mut().skip(16) {
+			let s0 = window[1].rotate_right(7) ^ window[1].rotate_right(18) ^ (window[1] >> 3);
+			let s1 = window[14].rotate_right(17) ^ window[14].rotate_right(19) ^ (window[14] >> 10);
+			let word = window[0]
 				.wrapping_add(s0)
-				.wrapping_add(words[index - 7])
+				.wrapping_add(window[9])
 				.wrapping_add(s1);
+			*slot = word;
+			window.rotate_left(1);
+			if let Some(latest) = window.last_mut() {
+				*latest = word;
+			}
 		}
 
-		let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state;
-		for index in 0..64 {
-			let sum1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-			let choice = (e & f) ^ ((!e) & g);
-			let temp1 = h
+		let [
+			mut aa,
+			mut bb,
+			mut cc,
+			mut dd,
+			mut ee,
+			mut ff,
+			mut gg,
+			mut hh,
+		] = state;
+		for (constant, word) in K.iter().zip(words.iter()) {
+			let sum1 = ee.rotate_right(6) ^ ee.rotate_right(11) ^ ee.rotate_right(25);
+			let choice = (ee & ff) ^ ((!ee) & gg);
+			let temp1 = hh
 				.wrapping_add(sum1)
 				.wrapping_add(choice)
-				.wrapping_add(K[index])
-				.wrapping_add(words[index]);
-			let sum0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-			let majority = (a & b) ^ (a & c) ^ (b & c);
+				.wrapping_add(*constant)
+				.wrapping_add(*word);
+			let sum0 = aa.rotate_right(2) ^ aa.rotate_right(13) ^ aa.rotate_right(22);
+			let majority = (aa & bb) ^ (aa & cc) ^ (bb & cc);
 			let temp2 = sum0.wrapping_add(majority);
-			h = g;
-			g = f;
-			f = e;
-			e = d.wrapping_add(temp1);
-			d = c;
-			c = b;
-			b = a;
-			a = temp1.wrapping_add(temp2);
+			hh = gg;
+			gg = ff;
+			ff = ee;
+			ee = dd.wrapping_add(temp1);
+			dd = cc;
+			cc = bb;
+			bb = aa;
+			aa = temp1.wrapping_add(temp2);
 		}
-		for (slot, value) in state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
+		for (slot, value) in state.iter_mut().zip([aa, bb, cc, dd, ee, ff, gg, hh]) {
 			*slot = slot.wrapping_add(value);
 		}
 	}
 
 	let mut digest = [0_u8; 32];
-	for (bytes, value) in digest.chunks_exact_mut(4).zip(state) {
-		bytes.copy_from_slice(&value.to_be_bytes());
+	for (bytes, value) in digest.as_chunks_mut::<4>().0.iter_mut().zip(state) {
+		*bytes = value.to_be_bytes();
 	}
 	digest
 }
@@ -925,7 +1001,7 @@ impl AacProvider {
 	fn item_url(&self, key: &str, include_tags: bool) -> Result<Url> {
 		let mut url = self.endpoint_url()?;
 		url.path_segments_mut()
-			.map_err(|_| operation_error("invalid App Configuration endpoint".to_string()))?
+			.map_err(|()| operation_error("invalid App Configuration endpoint".to_string()))?
 			.extend(["kv", key]);
 		{
 			let mut query = url.query_pairs_mut();
@@ -962,7 +1038,7 @@ impl AacProvider {
 		let base = self.discovery_prefix(context)?;
 		let mut url = self.endpoint_url()?;
 		url.path_segments_mut()
-			.map_err(|_| operation_error("invalid App Configuration endpoint".to_string()))?
+			.map_err(|()| operation_error("invalid App Configuration endpoint".to_string()))?
 			.push("kv");
 		{
 			let mut query = url.query_pairs_mut();
@@ -1181,24 +1257,21 @@ impl AacProvider {
 	async fn set_async(&self, key: &str, value: &SecretString) -> Result<()> {
 		let existing = self.mutation_record(key).await?;
 		let created_tags;
-		let (tags, content_type, description, conditional) = match &existing {
-			Some(record) => {
-				(
-					&record.tags,
-					record.content_type.as_deref(),
-					record.description.as_deref(),
-					(IF_MATCH, record.etag.as_deref().expect("validated ETag")),
-				)
-			}
-			None => {
-				created_tags = self
-					.config
-					.tags
-					.iter()
-					.map(|(name, value)| (name.clone(), Some(value.clone())))
-					.collect::<BTreeMap<_, _>>();
-				(&created_tags, None, None, (IF_NONE_MATCH, "*"))
-			}
+		let (tags, content_type, description, conditional) = if let Some(record) = &existing {
+			(
+				&record.tags,
+				record.content_type.as_deref(),
+				record.description.as_deref(),
+				(IF_MATCH, record.etag.as_deref().expect("validated ETag")),
+			)
+		} else {
+			created_tags = self
+				.config
+				.tags
+				.iter()
+				.map(|(name, value)| (name.clone(), Some(value.clone())))
+				.collect::<BTreeMap<_, _>>();
+			(&created_tags, None, None, (IF_NONE_MATCH, "*"))
 		};
 		let body = serde_json::to_vec(&KeyValueWrite {
 			value: value.expose_secret(),
@@ -1343,12 +1416,16 @@ fn parse_vault_reference(value: &str, allowed_suffix: &str) -> Result<VaultRefer
 		.path_segments()
 		.ok_or_else(|| operation_error("Azure Key Vault reference has no path".to_string()))?
 		.collect::<Vec<_>>();
-	if !matches!(encoded_segments.len(), 2 | 3) || encoded_segments.first() != Some(&"secrets") {
-		return Err(operation_error(
-			"Azure Key Vault reference path must be /secrets/{name} or /secrets/{name}/{version}"
-				.to_string(),
-		));
-	}
+	let (secret_name_segment, version_segment) = match encoded_segments.as_slice() {
+		["secrets", secret_name] => (secret_name, None),
+		["secrets", secret_name, version] => (secret_name, Some(version)),
+		_ => {
+			return Err(operation_error(
+				"Azure Key Vault reference path must be /secrets/{name} or /secrets/{name}/{version}"
+					.to_string(),
+			));
+		}
+	};
 	let decode = |segment: &str, part: &str| -> Result<String> {
 		let decoded = percent_encoding::percent_decode_str(segment)
 			.decode_utf8()
@@ -1366,7 +1443,7 @@ fn parse_vault_reference(value: &str, allowed_suffix: &str) -> Result<VaultRefer
 		}
 		Ok(decoded)
 	};
-	let secret_name = decode(encoded_segments[1], "secret name")?;
+	let secret_name = decode(secret_name_segment, "secret name")?;
 	if secret_name.len() > 127
 		|| !secret_name
 			.chars()
@@ -1376,8 +1453,7 @@ fn parse_vault_reference(value: &str, allowed_suffix: &str) -> Result<VaultRefer
 			"Azure Key Vault reference has an invalid secret name".to_string(),
 		));
 	}
-	let version = encoded_segments
-		.get(2)
+	let version = version_segment
 		.map(|segment| decode(segment, "secret version"))
 		.transpose()?;
 	if let Some(version) = &version
@@ -1560,6 +1636,8 @@ impl AacProvider {
 		Ok(values)
 	}
 
+	// `self` is only needed in test builds, which allow the loopback override.
+	#[cfg_attr(not(test), allow(clippy::unused_self))]
 	fn validate_continuation(&self, initial: &Url, next_link: &str) -> Result<Url> {
 		if Url::parse(next_link).is_ok() {
 			return Err(operation_error(
@@ -1607,7 +1685,7 @@ impl AacProvider {
 	fn declaration_from_record(
 		&self,
 		context: DiscoveryContext<'_>,
-		record: KeyValue,
+		record: &KeyValue,
 	) -> Result<Option<(String, crate::Secret)>> {
 		if record.label.as_deref() != self.config.label.as_deref() {
 			return Err(operation_error(format!(
@@ -1675,7 +1753,7 @@ impl AacProvider {
 				))
 			})?;
 			for record in page.items {
-				if let Some((name, declaration)) = self.declaration_from_record(context, record)?
+				if let Some((name, declaration)) = self.declaration_from_record(context, &record)?
 					&& declarations.insert(name.clone(), declaration).is_some()
 				{
 					return Err(operation_error(format!(
@@ -1848,6 +1926,7 @@ impl Provider for AacProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use std::future::Future;
 	use std::io::Read;
@@ -1911,11 +1990,11 @@ mod tests {
 			}
 		}
 
-		fn json(status: u16, body: Value) -> Self {
+		fn json(status: u16, body: &Value) -> Self {
 			Self {
 				status,
 				headers: vec![("content-type".to_string(), "application/json".to_string())],
-				body: serde_json::to_vec(&body).unwrap(),
+				body: serde_json::to_vec(body).unwrap(),
 				request_key: false,
 			}
 		}
@@ -2201,7 +2280,14 @@ mod tests {
 	}
 
 	fn hex(bytes: &[u8]) -> String {
-		bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+		use std::fmt::Write as _;
+
+		bytes
+			.iter()
+			.fold(String::with_capacity(bytes.len() * 2), |mut out, byte| {
+				let _ = write!(out, "{byte:02x}");
+				out
+			})
 	}
 
 	#[test]
@@ -2470,7 +2556,7 @@ mod tests {
 			let failure = HttpFixture::start(|_| {
 				vec![StubResponse::json(
 					status,
-					json!({
+					&json!({
 						"name": "tags",
 						"title": "request failed",
 						"detail": "sensitive response detail"
@@ -2511,7 +2597,7 @@ mod tests {
 		let unrecognized = HttpFixture::start(|_| {
 			vec![StubResponse::json(
 				400,
-				json!({"name": "secret-bearing-name", "detail": "sensitive detail"}),
+				&json!({"name": "secret-bearing-name", "detail": "sensitive detail"}),
 			)]
 		});
 		let provider = fixture_provider(&unrecognized.endpoint, "aac://shared");
@@ -2564,7 +2650,7 @@ mod tests {
 		let fixture = HttpFixture::start(|_| {
 			let mut record = key_value("shared-key", "secret-value");
 			record["tags"] = json!({"stage": "test"});
-			vec![StubResponse::json(200, record)]
+			vec![StubResponse::json(200, &record)]
 		});
 		let provider = fixture_provider(&fixture.endpoint, "aac://shared?tag=stage=production");
 		let address = NativeAddress {
@@ -2684,7 +2770,7 @@ mod tests {
 			vec![
 				StubResponse::json(
 					200,
-					json!({
+					&json!({
 						"etag": "etag-existing",
 						"key": "key",
 						"label": null,
@@ -2722,7 +2808,7 @@ mod tests {
 		let fixture = HttpFixture::start(|_| {
 			let mut record = key_value("key", "old");
 			record["tags"] = json!({"app": "other"});
-			vec![StubResponse::json(200, record)]
+			vec![StubResponse::json(200, &record)]
 		});
 		let provider = fixture_provider(&fixture.endpoint, "aac://shared?tag=app=payments");
 		let error = super::super::block_on(
@@ -2754,7 +2840,7 @@ mod tests {
 				for (name, value) in patch.as_object().unwrap() {
 					record[name] = value.clone();
 				}
-				vec![StubResponse::json(200, record)]
+				vec![StubResponse::json(200, &record)]
 			});
 			let provider = fixture_provider(&fixture.endpoint, "aac://shared");
 			let error = super::super::block_on(
@@ -2772,7 +2858,7 @@ mod tests {
 	fn delete_uses_etag_and_reports_concurrent_change() {
 		let fixture = HttpFixture::start(|_| {
 			vec![
-				StubResponse::json(200, key_value("key", "old")),
+				StubResponse::json(200, &key_value("key", "old")),
 				StubResponse::empty(412),
 			]
 		});
@@ -2799,7 +2885,7 @@ mod tests {
 		for (status, expected) in [(200, true), (204, false)] {
 			let fixture = HttpFixture::start(|_| {
 				vec![
-					StubResponse::json(200, key_value("key", "old")),
+					StubResponse::json(200, &key_value("key", "old")),
 					StubResponse::empty(status),
 				]
 			});
@@ -2821,8 +2907,8 @@ mod tests {
 			let mut record = key_value(physical_key, "reference");
 			record["content_type"] = json!(format!("{KEY_VAULT_REFERENCE_TYPE};charset=utf-8"));
 			vec![
-				StubResponse::json(200, record.clone()),
-				StubResponse::json(200, record),
+				StubResponse::json(200, &record.clone()),
+				StubResponse::json(200, &record),
 			]
 		});
 		let provider = fixture_provider(&fixture.endpoint, "aac://shared");
@@ -2844,11 +2930,11 @@ mod tests {
 	fn hmac_reads_succeed_while_guarded_write_and_delete_denials_remain_errors() {
 		let fixture = HttpFixture::start(|_| {
 			vec![
-				StubResponse::json(200, key_value("key", "value")),
-				StubResponse::json(200, key_value("key", "old")),
-				StubResponse::json(403, json!({"detail": "must stay private"})),
-				StubResponse::json(200, key_value("key", "old")),
-				StubResponse::json(403, json!({"detail": "must stay private"})),
+				StubResponse::json(200, &key_value("key", "value")),
+				StubResponse::json(200, &key_value("key", "old")),
+				StubResponse::json(403, &json!({"detail": "must stay private"})),
+				StubResponse::json(200, &key_value("key", "old")),
+				StubResponse::json(403, &json!({"detail": "must stay private"})),
 			]
 		});
 		let provider = fixture_provider(&fixture.endpoint, "aac://shared");
@@ -2969,7 +3055,7 @@ mod tests {
 		let fixture = HttpFixture::start(|_| {
 			vec![StubResponse::json(
 				200,
-				key_value("shared-key", "secret-value"),
+				&key_value("shared-key", "secret-value"),
 			)]
 		});
 		let provider = fixture_provider(&fixture.endpoint, "aac://shared");
@@ -2993,8 +3079,8 @@ mod tests {
 		let fixture = HttpFixture::start(|_| {
 			let record = key_vault_value("https://shared.vault.azure.net/secrets/api-key");
 			vec![
-				StubResponse::json(200, record.clone()).with_request_key(),
-				StubResponse::json(200, record).with_request_key(),
+				StubResponse::json(200, &record.clone()).with_request_key(),
+				StubResponse::json(200, &record).with_request_key(),
 			]
 		});
 		let provider = fixture_provider(&fixture.endpoint, "aac://shared");
@@ -3028,8 +3114,8 @@ mod tests {
 		let fixture = HttpFixture::start(|_| {
 			let record = key_vault_value("https://shared.vault.azure.net/secrets/api-key");
 			vec![
-				StubResponse::json(200, record.clone()).with_request_key(),
-				StubResponse::json(200, record).with_request_key(),
+				StubResponse::json(200, &record.clone()).with_request_key(),
+				StubResponse::json(200, &record).with_request_key(),
 			]
 		});
 		let provider = fixture_provider(&fixture.endpoint, "aac://shared");
@@ -3061,12 +3147,12 @@ mod tests {
 			vec![
 				StubResponse::json(
 					200,
-					key_vault_value("https://first.vault.azure.net/secrets/api-key"),
+					&key_vault_value("https://first.vault.azure.net/secrets/api-key"),
 				)
 				.with_request_key(),
 				StubResponse::json(
 					200,
-					key_vault_value("https://second.vault.azure.net/secrets/api-key"),
+					&key_vault_value("https://second.vault.azure.net/secrets/api-key"),
 				)
 				.with_request_key(),
 			]
@@ -3101,7 +3187,7 @@ mod tests {
 		assert_eq!(
 			values
 				.values()
-				.map(|value| value.expose_secret())
+				.map(ExposeSecret::expose_secret)
 				.collect::<BTreeSet<_>>(),
 			BTreeSet::from(["first-value", "second-value"])
 		);
@@ -3218,7 +3304,7 @@ mod tests {
 			vec![
 				StubResponse::json(
 					200,
-					json!({
+					&json!({
 						"items": [{
 							"key": "monosecret:checkout:prod:DATABASE_URL",
 							"label": null,
@@ -3229,7 +3315,7 @@ mod tests {
 				),
 				StubResponse::json(
 					200,
-					json!({
+					&json!({
 						"items": [{
 							"key": "monosecret:checkout:prod:API_KEY",
 							"label": null,
@@ -3281,7 +3367,7 @@ mod tests {
 		let fixture = HttpFixture::start(|endpoint| {
 			vec![StubResponse::json(
 				200,
-				json!({
+				&json!({
 					"items": [],
 					"@nextLink": discovery_target(endpoint, None)
 				}),
@@ -3301,7 +3387,7 @@ mod tests {
 		let fixture = HttpFixture::start(|_| {
 			vec![StubResponse::json(
 				200,
-				json!({
+				&json!({
 					"items": [],
 					"@nextLink": "/kv?api-version=2026-04-01&After=cursor"
 				}),
@@ -3334,9 +3420,8 @@ mod tests {
 				locked: false,
 			}
 		};
-		let error = match provider.select_record("payments-key", record("not-json")) {
-			Err(error) => error,
-			Ok(_) => panic!("malformed reference was accepted"),
+		let Err(error) = provider.select_record("payments-key", record("not-json")) else {
+			panic!("malformed reference was accepted");
 		};
 		assert!(
 			error.to_string().contains(
@@ -3395,14 +3480,14 @@ mod tests {
 		};
 		assert!(
 			provider
-				.declaration_from_record(context, record("foreign:key", None))
+				.declaration_from_record(context, &record("foreign:key", None))
 				.unwrap()
 				.is_none()
 		);
 		let (name, declaration) = provider
 			.declaration_from_record(
 				context,
-				record("payments:monosecret:checkout:prod:DATABASE_URL", None),
+				&record("payments:monosecret:checkout:prod:DATABASE_URL", None),
 			)
 			.unwrap()
 			.unwrap();
@@ -3412,21 +3497,21 @@ mod tests {
 			provider
 				.declaration_from_record(
 					context,
-					record("payments:monosecret:checkout:prod:api-key", None),
+					&record("payments:monosecret:checkout:prod:api-key", None),
 				)
 				.is_err()
 		);
 		let error = provider
 			.declaration_from_record(
 				context,
-				record("payments:monosecret:checkout:prod:defaults", None),
+				&record("payments:monosecret:checkout:prod:defaults", None),
 			)
 			.unwrap_err();
 		assert!(error.to_string().contains("defaults"), "{error}");
 		let error = provider
 			.declaration_from_record(
 				context,
-				record("payments:monosecret:checkout:prod:API:KEY", None),
+				&record("payments:monosecret:checkout:prod:API:KEY", None),
 			)
 			.unwrap_err();
 		assert!(error.to_string().contains("nested"), "{error}");

@@ -68,7 +68,7 @@ use super::join_slash_path;
 use crate::MonosecretError;
 use crate::Result;
 
-/// Maximum number of secrets per BatchGetSecretValue API call.
+/// Maximum number of secrets per `BatchGetSecretValue` API call.
 const AWS_BATCH_GET_MAX_SECRETS: usize = 20;
 
 /// Formats an AWS SDK error without collapsing non-service failures into a
@@ -198,7 +198,7 @@ crate::register_provider! {
 }
 
 impl AwssmProvider {
-	/// Creates a new AwssmProvider with the given configuration.
+	/// Creates a new `AwssmProvider` with the given configuration.
 	pub fn new(config: AwssmConfig) -> Self {
 		Self { config }
 	}
@@ -265,8 +265,7 @@ impl AwssmProvider {
 	fn extract_json_key(name: &str, value: &str, json_key: &str) -> Result<Option<SecretString>> {
 		let json: serde_json::Value = serde_json::from_str(value).map_err(|e| {
 			MonosecretError::ProviderOperationFailed(format!(
-				"secret '{}' is not JSON, cannot extract key '{}': {}",
-				name, json_key, e
+				"secret '{name}' is not JSON, cannot extract key '{json_key}': {e}"
 			))
 		})?;
 		// Selection is a flat key here; rendering the selected value is shared
@@ -287,7 +286,7 @@ impl AwssmProvider {
 			Err(err) => {
 				return if err
 					.as_service_error()
-					.is_some_and(|service_err| service_err.is_resource_not_found_exception())
+					.is_some_and(aws_sdk_secretsmanager::operation::get_secret_value::GetSecretValueError::is_resource_not_found_exception)
 				{
 					Ok(None)
 				} else {
@@ -310,7 +309,7 @@ impl AwssmProvider {
 		}
 	}
 
-	/// Fetches every request in batches of 20 via the BatchGetSecretValue API:
+	/// Fetches every request in batches of 20 via the `BatchGetSecretValue` API:
 	/// each unique secret name/ARN is fetched once, then per-request `field`
 	/// coordinates extract their JSON key from the shared value.
 	async fn get_many_async(
@@ -361,8 +360,7 @@ impl AwssmProvider {
 					let secret_id = error.secret_id().unwrap_or("unknown");
 					let message = error.message().unwrap_or("no message");
 					return Err(MonosecretError::ProviderOperationFailed(format!(
-						"Failed to get secret '{}': {} - {}",
-						secret_id, error_code, message
+						"Failed to get secret '{secret_id}': {error_code} - {message}"
 					)));
 				}
 				// ResourceNotFoundException: secret not present, omit from results
@@ -412,7 +410,7 @@ impl AwssmProvider {
 			Err(err) => {
 				if err
 					.as_service_error()
-					.is_some_and(|service_err| service_err.is_resource_exists_exception())
+					.is_some_and(aws_sdk_secretsmanager::operation::create_secret::CreateSecretError::is_resource_exists_exception)
 				{
 					// Secret already exists, update its value (KMS key and tags
 					// are create-only and left untouched here).
@@ -462,8 +460,8 @@ impl Provider for AwssmProvider {
 
 	fn uri(&self) -> String {
 		let base = match (&self.config.aws_profile, &self.config.region) {
-			(Some(profile), Some(region)) => format!("awssm://{}@{}", profile, region),
-			(None, Some(region)) => format!("awssm://{}", region),
+			(Some(profile), Some(region)) => format!("awssm://{profile}@{region}"),
+			(None, Some(region)) => format!("awssm://{region}"),
 			(_, None) => "awssm".to_string(),
 		};
 
@@ -535,7 +533,7 @@ impl Provider for AwssmProvider {
 	}
 
 	/// Batches every request, convention or `ref`, through
-	/// BatchGetSecretValue.
+	/// `BatchGetSecretValue`.
 	fn get_many(&self, requests: &[(&str, Address<'_>)]) -> Result<HashMap<String, SecretString>> {
 		if requests.is_empty() {
 			return Ok(HashMap::new());
@@ -549,6 +547,7 @@ impl Provider for AwssmProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use aws_sdk_secretsmanager::operation::batch_get_secret_value::BatchGetSecretValueError;
 
@@ -663,7 +662,7 @@ mod tests {
 	}
 
 	/// `uri()` reconstructs every parameter and orders tags deterministically
-	/// (BTreeMap), regardless of the order they appeared in the source URI, so
+	/// (`BTreeMap`), regardless of the order they appeared in the source URI, so
 	/// the audit log stays stable.
 	#[test]
 	fn uri_round_trips_kms_and_sorted_tags() {
@@ -696,7 +695,7 @@ mod tests {
 
 	#[test]
 	fn test_batch_chunking() {
-		let names: Vec<String> = (0..45).map(|i| format!("SECRET_{}", i)).collect();
+		let names: Vec<String> = (0..45).map(|i| format!("SECRET_{i}")).collect();
 		let chunks: Vec<&[String]> = names.chunks(AWS_BATCH_GET_MAX_SECRETS).collect();
 		assert_eq!(chunks.len(), 3); // 20 + 20 + 5
 		assert_eq!(chunks[0].len(), 20);
@@ -750,10 +749,7 @@ mod tests {
 		assert!(refusal.to_string().contains("read-only"), "{refusal}");
 		// `set` refuses with the same reason, so the pre-check cannot drift.
 		let err = p
-			.set(
-				Address::Native(&addr),
-				&secrecy::SecretString::new("v".into()),
-			)
+			.set(Address::Native(&addr), &SecretString::new("v".into()))
 			.unwrap_err();
 		assert_eq!(err.to_string(), refusal.to_string());
 	}

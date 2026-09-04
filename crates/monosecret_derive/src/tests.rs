@@ -49,6 +49,7 @@ mod tests {
 	}
 
 	#[test]
+	#[allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
 	fn test_parse_basic_config() {
 		let toml_str = r#"[project]
 name = "test"
@@ -74,6 +75,7 @@ DATABASE_URL = { description = "Database URL", required = false, default = "post
 	}
 
 	#[test]
+	#[allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
 	fn test_parse_profile_overrides() {
 		let toml_str = r#"
             [profiles.default]
@@ -90,8 +92,7 @@ DATABASE_URL = { description = "Database URL", required = false, default = "post
 			r#"[project]
 name = "test"
 revision = "1.0"
-{}"#,
-			toml_str
+{toml_str}"#
 		))
 		.unwrap();
 		let api_key = &config.profiles["default"].secrets["API_KEY"];
@@ -147,6 +148,7 @@ SOMETIMES_REQUIRED = { description = "Sometimes required secret", required = fal
 	}
 
 	#[test]
+	#[allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
 	fn test_always_required_field() {
 		let toml_str = r#"[project]
 name = "test"
@@ -177,6 +179,7 @@ ALWAYS_REQUIRED = { description = "Always required secret", required = true }
 	}
 
 	#[test]
+	#[allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
 	fn test_default_guarantees_generated_field_presence() {
 		let toml_str = r#"[project]
 name = "test"
@@ -261,7 +264,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 
 		let valid_config = Config {
 			defaults: None,
-			groups: Default::default(),
+			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
 				..Default::default()
@@ -311,7 +314,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 
 		let invalid_config = Config {
 			defaults: None,
-			groups: Default::default(),
+			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
 				..Default::default()
@@ -332,13 +335,11 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		let error_text = errors.join(" ");
 		assert!(
 			error_text.contains("123invalid"),
-			"Errors should mention 123invalid: {:?}",
-			errors
+			"Errors should mention 123invalid: {errors:?}"
 		);
 		assert!(
 			error_text.contains("invalid-name"),
-			"Errors should mention invalid-name: {:?}",
-			errors
+			"Errors should mention invalid-name: {errors:?}"
 		);
 	}
 
@@ -398,7 +399,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 
 		let keyword_config = Config {
 			defaults: None,
-			groups: Default::default(),
+			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
 				..Default::default()
@@ -413,18 +414,15 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		let error_text = errors.join(" ");
 		assert!(
 			error_text.contains("fn"),
-			"Should contain 'fn' keyword error: {:?}",
-			errors
+			"Should contain 'fn' keyword error: {errors:?}"
 		);
 		assert!(
 			error_text.contains("struct"),
-			"Should contain 'struct' keyword error: {:?}",
-			errors
+			"Should contain 'struct' keyword error: {errors:?}"
 		);
 		assert!(
 			error_text.contains("async"),
-			"Should contain 'async' keyword error: {:?}",
-			errors
+			"Should contain 'async' keyword error: {errors:?}"
 		);
 	}
 
@@ -484,7 +482,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 
 		let duplicate_config = Config {
 			defaults: None,
-			groups: Default::default(),
+			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
 				..Default::default()
@@ -544,7 +542,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 
 		let valid_config = Config {
 			defaults: None,
-			groups: Default::default(),
+			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
 				..Default::default()
@@ -579,7 +577,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 
 		let invalid_config = Config {
 			defaults: None,
-			groups: Default::default(),
+			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
 				..Default::default()
@@ -717,7 +715,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 
 		let valid_config = Config {
 			defaults: None,
-			groups: Default::default(),
+			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
 				..Default::default()
@@ -764,7 +762,7 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 
 		let invalid_config = Config {
 			defaults: None,
-			groups: Default::default(),
+			groups: Option::default(),
 			project: Project {
 				name: "test".to_string(),
 				..Default::default()
@@ -781,13 +779,11 @@ HAS_DEFAULT = { description = "Secret with default", required = false, default =
 		let error_text = errors.join(" ");
 		assert!(
 			error_text.contains("123invalid"),
-			"Should contain secret validation errors: {:?}",
-			errors
+			"Should contain secret validation errors: {errors:?}"
 		);
 		assert!(
 			error_text.contains("fn"),
-			"Should contain keyword errors: {:?}",
-			errors
+			"Should contain keyword errors: {errors:?}"
 		);
 	}
 }

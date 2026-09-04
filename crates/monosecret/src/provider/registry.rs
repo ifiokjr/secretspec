@@ -159,9 +159,10 @@ pub(crate) fn deleting_provider_names() -> Vec<&'static str> {
 /// without constructing a provider or fetching its credentials.
 pub(crate) fn provider_display_name_for_spec(spec: &str) -> String {
 	let (scheme, _) = split_spec(spec);
-	registration_for_scheme(scheme)
-		.map(|reg| reg.metadata.info.name.to_string())
-		.unwrap_or_else(|| scheme.to_string())
+	registration_for_scheme(scheme).map_or_else(
+		|| scheme.to_string(),
+		|reg| reg.metadata.info.name.to_string(),
+	)
 }
 
 #[cfg(test)]

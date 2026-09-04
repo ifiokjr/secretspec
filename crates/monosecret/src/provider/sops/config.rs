@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -16,12 +17,13 @@ use crate::provider::sops::pattern::SopsPathPattern;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SopsConfig {
 	// Set by Provider::with_base_dir
-	pub base_dir: Option<std::path::PathBuf>,
+	pub base_dir: Option<PathBuf>,
 
 	pub format: SopsFormat,
 	pub mode: SopsMode,
 
 	// SOPS settings
+	#[allow(clippy::struct_field_names)] // public serde field; renaming changes the wire format
 	pub sops_config: Option<PathBuf>,
 	pub sops_decryption_order: Option<String>,
 	pub sops_editor: Option<String>,
@@ -123,7 +125,7 @@ fn split_template_path(path: &str) -> (PathBuf, String) {
 }
 
 fn infer_format(path: &str) -> Result<SopsFormat> {
-	let extension = std::path::Path::new(path)
+	let extension = Path::new(path)
 		.extension()
 		.and_then(|extension| extension.to_str())
 		.ok_or_else(|| {
@@ -141,9 +143,9 @@ impl TryFrom<&ProviderUrl> for SopsConfig {
 
 	fn try_from(url: &ProviderUrl) -> std::result::Result<Self, Self::Error> {
 		if url.scheme() != "sops" {
+			let scheme = url.scheme();
 			return Err(MonosecretError::ProviderOperationFailed(format!(
-				"Invalid scheme '{}' for SOPS provider",
-				url.scheme()
+				"Invalid scheme '{scheme}' for SOPS provider"
 			)));
 		}
 
@@ -185,15 +187,12 @@ impl TryFrom<&ProviderUrl> for SopsConfig {
 				"format" => {
 					explicit_format = Some(SopsFormat::from_str(value.as_ref()).map_err(|e| {
 						MonosecretError::ProviderOperationFailed(format!(
-							"Invalid format parameter: {}",
-							e
+							"Invalid format parameter: {e}"
 						))
 					})?);
 				}
 				other => {
-					if let Err(e) = config.apply_query_parameter(other, value.as_ref()) {
-						return Err(e);
-					}
+					config.apply_query_parameter(other, value.as_ref())?;
 				}
 			}
 		}
@@ -243,7 +242,7 @@ impl SopsConfig {
 
 		for spec in PATHBUF_FIELDS {
 			if let Some(v) = (spec.field)(self) {
-				cmd.env(spec.env_key, self.rebase_path(v.to_path_buf()));
+				cmd.env(spec.env_key, self.rebase_path(v.clone()));
 			}
 		}
 
@@ -272,23 +271,22 @@ impl SopsConfig {
 		}
 
 		Err(MonosecretError::ProviderOperationFailed(format!(
-			"Invalid query parameter: {}",
-			key
+			"Invalid query parameter: {key}"
 		)))
 	}
 
-	pub fn with_base_dir(&mut self, base_dir: &std::path::Path) {
+	pub fn with_base_dir(&mut self, base_dir: &Path) {
 		self.base_dir = Some(base_dir.to_owned());
 	}
 
-	pub fn rebase_path(&self, path: std::path::PathBuf) -> std::path::PathBuf {
-		if let Some(base) = &self.base_dir {
-			if path.is_relative() {
-				return base.join(path);
-			}
+	pub fn rebase_path(&self, path: PathBuf) -> PathBuf {
+		if let Some(base) = &self.base_dir
+			&& path.is_relative()
+		{
+			return base.join(path);
 		}
 
-		return path;
+		path
 	}
 
 	fn discover_sops_config(&self) -> Option<PathBuf> {
@@ -315,13 +313,12 @@ mod tests {
 		let mut url_query_parameter_keys: Vec<&str> =
 			STRING_FIELDS.iter().map(|f| f.url_key).collect();
 
-		url_query_parameter_keys.extend(PATHBUF_FIELDS.iter().map(|f| f.url_key).into_iter());
+		url_query_parameter_keys.extend(PATHBUF_FIELDS.iter().map(|f| f.url_key));
 
-		url_query_parameter_keys.iter().for_each(|key| {
+		for key in &url_query_parameter_keys {
 			let url: Url = Url::parse(
 				format!(
-					"sops://src/provider/sops/test_fixtures/single_file/some-project-name.enc.json?{}=foo",
-					key
+					"sops://src/provider/sops/test_fixtures/single_file/some-project-name.enc.json?{key}=foo"
 				)
 				.as_str(),
 			)
@@ -329,13 +326,10 @@ mod tests {
 
 			let provider_result: std::result::Result<Box<dyn Provider>, _> = (&url).try_into();
 
-			match provider_result {
-				Err(e) => {
-					assert!(false, "{}", e.to_string());
-				}
-				Ok(_) => (),
+			if let Err(e) = provider_result {
+				panic!("{e}");
 			}
-		});
+		}
 	}
 
 	#[test]
@@ -352,7 +346,7 @@ mod tests {
 				);
 			}
 			_ => {
-				assert!(false)
+				panic!();
 			}
 		}
 	}

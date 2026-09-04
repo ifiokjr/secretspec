@@ -26,10 +26,10 @@ pub struct KeyringConfig {
 impl TryFrom<&ProviderUrl> for KeyringConfig {
 	type Error = MonosecretError;
 
-	/// Creates a new KeyringConfig from a URL.
+	/// Creates a new `KeyringConfig` from a URL.
 	///
 	/// The URL must have the scheme "keyring" (e.g., "keyring://" or
-	/// "keyring://monosecret/shared/{profile}/{key}"). One specific
+	/// "<keyring://monosecret/shared/{profile}/{key>}"). One specific
 	/// `(service, account)` entry is addressed with a secret's
 	/// `ref = { item = "<service>", field = "<account>" }`, not in the URI.
 	fn try_from(url: &ProviderUrl) -> std::result::Result<Self, Self::Error> {
@@ -52,7 +52,7 @@ impl TryFrom<&ProviderUrl> for KeyringConfig {
 
 /// Provider for storing secrets in the system keychain.
 ///
-/// The KeyringProvider uses the operating system's native secure credential
+/// The `KeyringProvider` uses the operating system's native secure credential
 /// storage mechanism:
 /// - macOS: Keychain
 /// - Windows: Credential Manager
@@ -74,7 +74,7 @@ crate::register_provider! {
 }
 
 impl KeyringProvider {
-	/// Creates a new KeyringProvider with the given configuration.
+	/// Creates a new `KeyringProvider` with the given configuration.
 	///
 	/// # Arguments
 	///
@@ -82,14 +82,14 @@ impl KeyringProvider {
 	///
 	/// # Returns
 	///
-	/// A new instance of KeyringProvider
+	/// A new instance of `KeyringProvider`
 	pub fn new(config: KeyringConfig) -> Self {
 		Self { config }
 	}
 
 	/// Formats the service name for a secret in the keyring.
 	///
-	/// Uses folder_prefix as a format string with {project}, {profile}, and {key} placeholders.
+	/// Uses `folder_prefix` as a format string with {project}, {profile}, and {key} placeholders.
 	/// Defaults to "monosecret/{project}/{profile}/{key}" if not configured.
 	fn format_service(&self, project: &str, profile: &str, key: &str) -> String {
 		let format_string = self
@@ -180,7 +180,7 @@ impl Provider for KeyringProvider {
 	/// Retrieves a secret from the system keychain.
 	///
 	/// The secret is looked up using a hierarchical key structure determined
-	/// by the folder_prefix format string (defaults to `monosecret/{project}/{profile}/{key}`).
+	/// by the `folder_prefix` format string (defaults to `monosecret/{project}/{profile}/{key}`).
 	///
 	/// The current system username is used as the account identifier.
 	fn get(&self, addr: Address<'_>) -> Result<Option<SecretString>> {
@@ -196,7 +196,7 @@ impl Provider for KeyringProvider {
 	/// Stores a secret in the system keychain.
 	///
 	/// The secret is stored with a hierarchical key structure determined
-	/// by the folder_prefix format string (defaults to `monosecret/{project}/{profile}/{key}`).
+	/// by the `folder_prefix` format string (defaults to `monosecret/{project}/{profile}/{key}`).
 	///
 	/// The current system username is used as the account identifier.
 	/// If a secret already exists with the same key, it will be overwritten.

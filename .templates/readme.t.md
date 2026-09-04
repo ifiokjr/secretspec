@@ -90,6 +90,24 @@ $ npm install --global @monosecret/cli
 See the [installation guide](https://ifiokjr.github.io/monosecret/quick-start/#installation)
 for Nix, devenv, and other options.
 
+## Repository layout
+
+- `crates/` - Rust crates and CLI implementation.
+- `npm/` - npm packages, including the TypeScript client and CLI wrapper packages.
+- `dart/` - Dart runtime SDK and build_runner generator.
+- `examples/` - examples across supported ecosystems.
+
+## Building from source
+
+```shell-session
+$ cargo build --release
+```
+
+This builds the CLI crate only. Building the full workspace (FFI, npm, PHP,
+Python, and example crates) additionally requires the `php`, `python`, and
+`node` toolchains — devenv provides all of them — and is selected explicitly
+with `cargo build --workspace`.
+
 ## Learn more
 
 - [Configuration reference](https://ifiokjr.github.io/monosecret/reference/configuration/)

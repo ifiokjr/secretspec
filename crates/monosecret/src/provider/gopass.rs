@@ -100,7 +100,7 @@ impl GoPassProvider {
 	}
 
 	/// Creates a `gopass` command
-	fn command(&self) -> Command {
+	fn command() -> Command {
 		Command::new("gopass")
 	}
 }
@@ -136,8 +136,7 @@ impl Provider for GoPassProvider {
 	fn get(&self, addr: Address<'_>) -> crate::Result<Option<SecretString>> {
 		let entry_name = super::flat_item(self, addr)?;
 
-		let output = self
-			.command()
+		let output = Self::command()
 			.arg("show")
 			// auto-confirm any yes/no prompt, in case the entry doesn't exist
 			.arg("-y")
@@ -194,8 +193,7 @@ impl Provider for GoPassProvider {
 	fn set(&self, addr: Address<'_>, value: &SecretString) -> crate::Result<()> {
 		let entry_name = super::flat_item(self, addr)?;
 
-		let mut child = self
-			.command()
+		let mut child = Self::command()
 			.args(["insert", "-m", "-f", &entry_name])
 			.stdin(std::process::Stdio::piped())
 			.stdout(std::process::Stdio::piped())
@@ -243,8 +241,7 @@ impl Provider for GoPassProvider {
 
 	fn delete(&self, addr: Address<'_>) -> crate::Result<bool> {
 		let entry_name = super::flat_item(self, addr)?;
-		let output = self
-			.command()
+		let output = Self::command()
 			.args(["rm", "-f", &entry_name])
 			.output()
 			.map_err(|error| {
@@ -390,7 +387,7 @@ mod tests {
 		let p = GoPassProvider::new(GoPassConfig {
 			folder_prefix: Some("team-store/{profile}/{key}".to_string()),
 		});
-		let addr = crate::config::NativeAddress {
+		let addr = NativeAddress {
 			item: "work-store/email/work".into(),
 			..Default::default()
 		};
@@ -404,7 +401,7 @@ mod tests {
 	#[test]
 	fn native_address_rejects_field() {
 		let p = GoPassProvider::new(GoPassConfig::default());
-		let addr = crate::config::NativeAddress {
+		let addr = NativeAddress {
 			item: "email/work".into(),
 			field: Some("password".into()),
 			..Default::default()

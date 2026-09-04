@@ -258,6 +258,7 @@ impl SpecBuilder {
 	/// Set the policy for requiring an access reason.
 	///
 	/// This semantic edit clears any retained source document.
+	#[must_use]
 	pub fn require_reason(mut self, policy: RequireReason) -> Self {
 		self.source = None;
 		self.declarations_mut().project.require_reason = Some(policy);
@@ -269,6 +270,7 @@ impl SpecBuilder {
 	/// a secret selects one. Available starting with Monosecret 0.21.
 	///
 	/// This semantic edit clears any retained source document.
+	#[must_use]
 	pub fn default_providers<I, S>(mut self, providers: I) -> Self
 	where
 		I: IntoIterator<Item = S>,
@@ -289,6 +291,7 @@ impl SpecBuilder {
 	///
 	/// When this builder came from parsed TOML, the declaration is added without
 	/// reformatting the rest of the document.
+	#[must_use]
 	pub fn secret(mut self, name: impl Into<String>, secret: Secret) -> Self {
 		let name = name.into();
 		if self.try_edit_source(|source| {
@@ -303,7 +306,7 @@ impl SpecBuilder {
 			.profiles
 			.entry("default".to_string())
 			.or_default();
-		insert_secret(profile, name, secret, &mut errors, "default");
+		insert_secret(profile, &name, secret, &mut errors, "default");
 		self.errors.extend(errors);
 		self.refresh_effective_config();
 		self
@@ -316,6 +319,7 @@ impl SpecBuilder {
 	/// declaration is reported by [`Self::build`] rather than silently creating
 	/// or replacing it. When editing parsed TOML, an inherited declaration can
 	/// be overridden locally without inlining its parent document.
+	#[must_use]
 	pub fn add_secret(
 		mut self,
 		profile: impl Into<String>,
@@ -365,6 +369,7 @@ impl SpecBuilder {
 	/// The replacement is not applied when either the profile or declaration is
 	/// absent; [`Self::build`] reports the collected edit error. In parsed TOML,
 	/// the declaration keeps its position and unrelated formatting is preserved.
+	#[must_use]
 	pub fn replace_secret(
 		mut self,
 		profile: impl Into<String>,
@@ -404,6 +409,7 @@ impl SpecBuilder {
 	/// also removes it from profiles that only inherited it. References from
 	/// scopes, compositions, or constraints are checked again by [`Self::build`].
 	/// In parsed TOML, unrelated comments and formatting are preserved.
+	#[must_use]
 	pub fn remove_secret(mut self, profile: impl Into<String>, name: impl Into<String>) -> Self {
 		let profile = profile.into();
 		let name = name.into();
@@ -442,6 +448,7 @@ impl SpecBuilder {
 	/// Add a named profile.
 	///
 	/// This semantic edit clears any retained source document.
+	#[must_use]
 	pub fn profile(mut self, name: impl Into<String>, profile: Profile) -> Self {
 		self.source = None;
 		let name = name.into();
@@ -466,6 +473,7 @@ impl SpecBuilder {
 	/// Define a project-local provider alias.
 	///
 	/// This semantic edit clears any retained source document.
+	#[must_use]
 	pub fn provider(mut self, name: impl Into<String>, provider: impl Into<ProviderAlias>) -> Self {
 		self.source = None;
 		let name = name.into();
@@ -487,6 +495,7 @@ impl SpecBuilder {
 	/// Define a named, membership-only subset of secrets.
 	///
 	/// This semantic edit clears any retained source document.
+	#[must_use]
 	pub fn scope<I, S>(mut self, name: impl Into<String>, secrets: I) -> Self
 	where
 		I: IntoIterator<Item = S>,
@@ -625,10 +634,12 @@ impl Profile {
 	}
 
 	/// Add a secret to this profile.
+	#[must_use]
 	pub fn secret(mut self, name: impl Into<String>, secret: Secret) -> Self {
+		let name = name.into();
 		insert_secret(
 			&mut self.config,
-			name.into(),
+			&name,
 			secret,
 			&mut self.errors,
 			"this profile",
@@ -637,24 +648,28 @@ impl Profile {
 	}
 
 	/// Choose whether this profile inherits declarations from `default`.
+	#[must_use]
 	pub fn inherit_default(mut self, inherit: bool) -> Self {
 		self.defaults().inherit = Some(inherit);
 		self
 	}
 
 	/// Set the requiredness inherited by secrets that omit it.
+	#[must_use]
 	pub fn required_by_default(mut self, required: bool) -> Self {
 		self.defaults().required = Some(required);
 		self
 	}
 
 	/// Set the value inherited by secrets that do not declare their own default.
+	#[must_use]
 	pub fn default_value(mut self, value: impl Into<String>) -> Self {
 		self.defaults().default = Some(value.into());
 		self
 	}
 
 	/// Set the provider chain inherited by secrets that omit one.
+	#[must_use]
 	pub fn providers<I, S>(mut self, providers: I) -> Self
 	where
 		I: IntoIterator<Item = S>,
@@ -681,14 +696,14 @@ impl Profile {
 
 fn insert_secret(
 	profile: &mut ConfigProfile,
-	name: String,
+	name: &str,
 	secret: Secret,
 	errors: &mut Vec<String>,
 	profile_name: &str,
 ) {
 	if profile
 		.secrets
-		.insert(name.clone(), secret.config)
+		.insert(name.to_string(), secret.config)
 		.is_some()
 	{
 		errors.push(format!("duplicate secret '{name}' in {profile_name}"));
@@ -756,6 +771,7 @@ impl Secret {
 	}
 
 	/// Add this secret to one or more `at_least_one` presence groups.
+	#[must_use]
 	pub fn at_least_one<I, S>(mut self, groups: I) -> Self
 	where
 		I: IntoIterator<Item = S>,
@@ -767,6 +783,7 @@ impl Secret {
 	}
 
 	/// Add this secret to one or more `exactly_one` presence groups.
+	#[must_use]
 	pub fn exactly_one<I, S>(mut self, groups: I) -> Self
 	where
 		I: IntoIterator<Item = S>,
@@ -778,12 +795,14 @@ impl Secret {
 	}
 
 	/// Derive this value from a `${NAME}` template over other secrets.
+	#[must_use]
 	pub fn composed(mut self, template: impl Into<String>) -> Self {
 		self.config.composed = Some(template.into());
 		self
 	}
 
 	/// Select an ordered provider fallback chain.
+	#[must_use]
 	pub fn providers<I, S>(mut self, providers: I) -> Self
 	where
 		I: IntoIterator<Item = S>,
@@ -799,12 +818,14 @@ impl Secret {
 	}
 
 	/// Address an externally managed value using provider-native coordinates.
+	#[must_use]
 	pub fn reference(mut self, address: NativeAddress) -> Self {
 		self.config.reference = Some(address);
 		self
 	}
 
 	/// Override provider-native coordinates for one provider alias.
+	#[must_use]
 	pub fn reference_for(mut self, provider: impl Into<String>, address: NativeAddress) -> Self {
 		self.config
 			.refs
@@ -814,24 +835,28 @@ impl Secret {
 	}
 
 	/// Choose whether to materialize the resolved value in a temporary file.
+	#[must_use]
 	pub fn as_path(mut self, as_path: bool) -> Self {
 		self.config.as_path = Some(as_path);
 		self
 	}
 
 	/// Set the provider-side storage encoding.
+	#[must_use]
 	pub fn encoding(mut self, encoding: SecretEncoding) -> Self {
 		self.config.encoding = Some(encoding);
 		self
 	}
 
 	/// Extract a value from a structured provider result.
+	#[must_use]
 	pub fn extract(mut self, extract: SecretExtract) -> Self {
 		self.config.extract = Some(extract);
 		self
 	}
 
 	/// Generate the value when it is absent.
+	#[must_use]
 	pub fn generate(mut self, generation: Generation) -> Self {
 		let (secret_type, config) = generation.into_config();
 		self.config.secret_type = Some(secret_type.to_string());
@@ -840,6 +865,7 @@ impl Secret {
 	}
 
 	/// Disable generation inherited from the `default` profile.
+	#[must_use]
 	pub fn disable_generation(mut self) -> Self {
 		self.config.generate = Some(GenerateConfig::Bool(false));
 		self
@@ -847,6 +873,7 @@ impl Secret {
 
 	/// Choose whether to prompt securely when `monosecret run` cannot resolve
 	/// the value.
+	#[must_use]
 	pub fn prompt(mut self, prompt: bool) -> Self {
 		self.config.prompt = Some(prompt);
 		self
@@ -1103,7 +1130,13 @@ mod tests {
 				.any(|name| name == "ADDED")
 		);
 
-		let replacement = &edited.compiled.profile("production").unwrap().secrets["OVERRIDE"];
+		let replacement = edited
+			.compiled
+			.profile("production")
+			.unwrap()
+			.secrets
+			.get("OVERRIDE")
+			.expect("OVERRIDE declaration present");
 		assert_eq!(
 			replacement.config.description.as_deref(),
 			Some("Replacement declaration")
@@ -1130,7 +1163,13 @@ mod tests {
 			.build()
 			.unwrap();
 
-		let token = &edited.compiled.profile("production").unwrap().secrets["TOKEN"];
+		let token = edited
+			.compiled
+			.profile("production")
+			.unwrap()
+			.secrets
+			.get("TOKEN")
+			.expect("TOKEN declaration present");
 		assert_eq!(token.config.description.as_deref(), Some("Default token"));
 		assert!(token.declared_required);
 	}
@@ -1280,7 +1319,13 @@ mod tests {
 			.build()
 			.unwrap();
 
-		let secret = &spec.compiled.profile("optional").unwrap().secrets["TOKEN"];
+		let secret = spec
+			.compiled
+			.profile("optional")
+			.unwrap()
+			.secrets
+			.get("TOKEN")
+			.expect("TOKEN declaration present");
 		assert_eq!(secret.config.required, Some(false));
 		assert!(!secret.declared_required);
 	}
@@ -1566,7 +1611,12 @@ OWN = { description = "declared by the child" }
 				.build()
 				.unwrap();
 			assert_eq!(
-				overridden.compiled.profiles["default"].secrets["INHERITED"]
+				overridden
+					.compiled
+					.profiles
+					.get("default")
+					.and_then(|profile| profile.secrets.get("INHERITED"))
+					.expect("INHERITED declaration present")
 					.config
 					.description
 					.as_deref(),
@@ -1580,7 +1630,12 @@ OWN = { description = "declared by the child" }
 				.unwrap();
 			assert_eq!(restored.preserved_text(), Some(original.as_str()));
 			assert_eq!(
-				restored.compiled.profiles["default"].secrets["INHERITED"]
+				restored
+					.compiled
+					.profiles
+					.get("default")
+					.and_then(|profile| profile.secrets.get("INHERITED"))
+					.expect("INHERITED declaration present")
 					.config
 					.description
 					.as_deref(),
@@ -1627,7 +1682,12 @@ OWN = { description = "declared by the child" }
 				.build()
 				.unwrap();
 			assert_eq!(
-				revealed.compiled.profiles["default"].secrets["INHERITED"]
+				revealed
+					.compiled
+					.profiles
+					.get("default")
+					.and_then(|profile| profile.secrets.get("INHERITED"))
+					.expect("INHERITED declaration present")
 					.config
 					.description
 					.as_deref(),

@@ -27,3 +27,6 @@ crate-type = ["cdylib"]
 # fails the MSVC link of the extension DLL.
 ext-php-rs = "0.15"
 monosecret = { workspace = true }
+
+[lints]
+workspace = true

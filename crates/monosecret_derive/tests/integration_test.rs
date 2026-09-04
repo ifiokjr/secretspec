@@ -10,7 +10,7 @@ mod basic_generation {
 	#[test]
 	fn test_struct_fields_exist() {
 		// This verifies that the struct has the expected fields
-		fn _test_field_types(s: Monosecret) {
+		fn _test_field_types(s: &Monosecret) {
 			let _: String = s.api_key;
 			let _: String = s.database_url;
 			let _: String = s.optional_secret; // Supplied by its manifest default
@@ -304,7 +304,7 @@ mod profile_generation {
 	#[test]
 	fn test_union_type_fields() {
 		// Verify the union struct has Option for fields that are optional in any profile
-		fn _test_field_types(s: Monosecret) {
+		fn _test_field_types(s: &Monosecret) {
 			let _: String = s.api_key; // Defaulted in development, required elsewhere
 			let _: String = s.database_url; // Has default in dev but still required
 			let _: Option<String> = s.redis_url; // Optional by default
@@ -319,7 +319,7 @@ mod complex_generation {
 
 	#[test]
 	fn test_complex_field_types() {
-		fn _test_field_types(s: Monosecret) {
+		fn _test_field_types(s: &Monosecret) {
 			let _: String = s.always_required;
 			let _: String = s.required_with_default; // Its default guarantees a value
 			let _: Option<String> = s.always_optional;
@@ -433,9 +433,18 @@ mod json_serialization {
 
 		// Verify JSON contains expected fields
 		let parsed: serde_json::Value = serde_json::from_str(&json).expect("Failed to parse JSON");
-		assert_eq!(parsed["provider"], "dotenv");
-		assert_eq!(parsed["profile"], "production");
-		assert_eq!(parsed["secrets"]["api_key"], "test_key");
+		let field = |key: &str| {
+			parsed
+				.get(key)
+				.unwrap_or_else(|| panic!("JSON is missing `{key}`: {parsed}"))
+				.clone()
+		};
+		assert_eq!(field("provider"), "dotenv");
+		assert_eq!(field("profile"), "production");
+		assert_eq!(
+			field("secrets").get("api_key"),
+			Some(&serde_json::Value::from("test_key"))
+		);
 
 		// Test round-trip deserialization
 		let deserialized: Resolved<Monosecret> =
@@ -466,7 +475,7 @@ mod profile_inheritance {
 	#[test]
 	fn test_union_type_with_inheritance() {
 		// Verify the union struct has all secrets from all profiles
-		fn _test_field_types(s: Monosecret) {
+		fn _test_field_types(s: &Monosecret) {
 			let _: String = s.database_url;
 			let _: String = s.api_key;
 			let _: String = s.session_secret;

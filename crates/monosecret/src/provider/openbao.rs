@@ -1,8 +1,8 @@
-//! OpenBao provider (Monosecret 0.17+).
+//! `OpenBao` provider (Monosecret 0.17+).
 //!
-//! This provider stores and retrieves secrets through the OpenBao KV
+//! This provider stores and retrieves secrets through the `OpenBao` KV
 //! (Key-Value) secrets engine, version 1 or 2. It has a separate identity from
-//! HashiCorp Vault even where their current HTTP APIs remain compatible.
+//! `HashiCorp` Vault even where their current HTTP APIs remain compatible.
 //!
 //! # Authentication
 //!
@@ -10,23 +10,23 @@
 //!
 //! - Token (default) -- reads the `token` provider credential, `BAO_TOKEN`, or
 //!   the compatibility fallback `VAULT_TOKEN`. It then reads the path selected
-//!   by `BAO_TOKEN_PATH` / `VAULT_TOKEN_PATH`, or the OpenBao CLI's default
+//!   by `BAO_TOKEN_PATH` / `VAULT_TOKEN_PATH`, or the `OpenBao` CLI's default
 //!   `~/.vault-token`.
-//! - AppRole (`?auth=approle`) -- exchanges the required `role_id` and optional
+//! - `AppRole` (`?auth=approle`) -- exchanges the required `role_id` and optional
 //!   `secret_id` provider credentials, or Monosecret's `BAO_ROLE_ID` and
 //!   `BAO_SECRET_ID` inputs, for a client token. Starting with Monosecret 0.18,
-//!   the SecretID may be omitted when the AppRole has `bind_secret_id=false`.
+//!   the `SecretID` may be omitted when the `AppRole` has `bind_secret_id=false`.
 //!   The corresponding `VAULT_*` names remain compatibility fallbacks.
 //! - JWT/OIDC (`?auth=jwt`) -- logs in using Monosecret's `BAO_JWT` input
 //!   (falling back to `VAULT_JWT`) or a short-lived GitHub Actions / Forgejo
 //!   Actions OIDC token. Starting with Monosecret 0.18, the role may be omitted
 //!   when the auth mount has a `default_role`.
 //!
-//! For environment variables defined by the OpenBao CLI -- address, namespace,
+//! For environment variables defined by the `OpenBao` CLI -- address, namespace,
 //! token, and token path -- `BAO_*` takes precedence and the corresponding
-//! `VAULT_*` name remains a compatibility fallback. The AppRole and JWT names
+//! `VAULT_*` name remains a compatibility fallback. The `AppRole` and JWT names
 //! are Monosecret provider inputs rather than variables consumed by the
-//! OpenBao CLI itself.
+//! `OpenBao` CLI itself.
 //!
 //! # URI format
 //!
@@ -37,7 +37,7 @@
 //! - `auth` -- `token` (default), `approle`, or `jwt`
 //! - `kv` -- KV engine version: `1` or `2` (default)
 //! - `tls` -- `true` (default) or `false`; the latter is intended for dev mode
-//! - `auth_mount` -- non-default AppRole or JWT mount beneath `/v1/auth`
+//! - `auth_mount` -- non-default `AppRole` or JWT mount beneath `/v1/auth`
 //!   (Monosecret 0.18+)
 //! - `role` -- role for JWT auth, falling back through `BAO_JWT_ROLE` and
 //!   `VAULT_JWT_ROLE`; optional with a server-configured `default_role`
@@ -48,13 +48,13 @@
 //! Examples:
 //!
 //! - `openbao://bao.example.com:8200/secret` -- KV v2 with token auth
-//! - `openbao://bao.example.com:8200/secret?auth=approle` -- AppRole auth
+//! - `openbao://bao.example.com:8200/secret?auth=approle` -- `AppRole` auth
 //! - `openbao://bao.example.com:8200/secret?auth=approle&auth_mount=platform-approle`
-//!   -- custom AppRole mount (Monosecret 0.18+)
+//!   -- custom `AppRole` mount (Monosecret 0.18+)
 //! - `openbao://bao.example.com:8200/secret?auth=jwt&role=ci` -- JWT auth
 //! - `openbao://bao.example.com:8200/secret?auth=jwt` -- JWT auth using the
 //!   mount's `default_role` (Monosecret 0.18+)
-//! - `openbao://team-a@bao.example.com:8200/secret` -- OpenBao namespace
+//! - `openbao://team-a@bao.example.com:8200/secret` -- `OpenBao` namespace
 //! - `openbao://127.0.0.1:8200/secret?kv=1&tls=false` -- local KV v1 server
 //!
 //! With no URI host, `BAO_ADDR` then `VAULT_ADDR` supplies the endpoint. With
@@ -87,11 +87,11 @@ use crate::MonosecretError;
 use crate::Result;
 use crate::config::NativeAddress;
 
-/// OpenBao provider configuration.
+/// `OpenBao` provider configuration.
 ///
 /// Parsing is intentionally product-specific even though the resulting KV
 /// coordinates are compatible with Vault. This is where the documented
-/// OpenBao CLI environment precedence and future OpenBao-only options belong.
+/// `OpenBao` CLI environment precedence and future OpenBao-only options belong.
 #[derive(Debug, Clone, Default)]
 pub struct OpenBaoConfig(KvConfig);
 
@@ -103,9 +103,9 @@ impl TryFrom<&ProviderUrl> for OpenBaoConfig {
 	}
 }
 
-/// OpenBao KV provider.
+/// `OpenBao` KV provider.
 ///
-/// The wrapper owns OpenBao's public identity and delegates compatible protocol
+/// The wrapper owns `OpenBao`'s public identity and delegates compatible protocol
 /// operations to [`KvProvider`].
 pub struct OpenBaoProvider {
 	core: KvProvider,
@@ -118,7 +118,7 @@ crate::register_provider! {
 }
 
 impl OpenBaoProvider {
-	/// Creates an OpenBao provider with the parsed product-specific configuration.
+	/// Creates an `OpenBao` provider with the parsed product-specific configuration.
 	pub fn new(config: OpenBaoConfig) -> Self {
 		Self {
 			core: KvProvider::new(config.0, Product::OpenBao),
@@ -129,7 +129,7 @@ impl OpenBaoProvider {
 impl Provider for OpenBaoProvider {
 	/// Convention secrets use one KV path per secret and the `value` map field.
 	fn convention_address(&self, project: &str, profile: &str, key: &str) -> Result<NativeAddress> {
-		self.core.convention_address(project, profile, key)
+		KvProvider::convention_address(project, profile, key)
 	}
 
 	fn with_credentials(&mut self, credentials: ProviderCredentials) {
@@ -149,7 +149,7 @@ impl Provider for OpenBaoProvider {
 	}
 
 	fn supported_coords(&self) -> &'static [&'static str] {
-		self.core.supported_coords()
+		KvProvider::supported_coords()
 	}
 
 	/// A native reference must identify the field inside the KV entry's map.

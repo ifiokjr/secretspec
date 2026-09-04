@@ -1,4 +1,4 @@
-//! KeePass KDBX provider.
+//! `KeePass` KDBX provider.
 //!
 //! Entries are addressed by their group path and title. Monosecret's convention
 //! stores an entry at `monosecret/{project}/{profile}/{key}`; a native `ref`
@@ -43,12 +43,12 @@ const PASSWORD_ENV: &str = "MONOSECRET_KDBX_PASSWORD";
 /// the last atomic replacement discard the other's change.
 static KDBX_IO_LOCK: Mutex<()> = Mutex::new(());
 
-/// Configuration for a KeePass KDBX database.
+/// Configuration for a `KeePass` KDBX database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KdbxConfig {
 	/// Path to the `.kdbx` database.
 	pub path: PathBuf,
-	/// Optional KeePass key file, combined with the password when both exist.
+	/// Optional `KeePass` key file, combined with the password when both exist.
 	pub keyfile: Option<PathBuf>,
 	/// Entry path template used for convention addresses.
 	pub prefix: String,
@@ -125,7 +125,7 @@ impl TryFrom<&ProviderUrl> for KdbxConfig {
 	}
 }
 
-/// A provider backed by a KeePass KDBX 3 or KDBX 4 database.
+/// A provider backed by a `KeePass` KDBX 3 or KDBX 4 database.
 ///
 /// Reads support both KDBX 3 and KDBX 4. Writes create KDBX 4 databases and
 /// update existing KDBX 4 databases; the `keepass` crate cannot save KDBX 3.
@@ -305,7 +305,7 @@ impl Provider for KdbxProvider {
 	fn get(&self, addr: Address<'_>) -> Result<Option<SecretString>> {
 		let _guard = KDBX_IO_LOCK
 			.lock()
-			.unwrap_or_else(|poisoned| poisoned.into_inner());
+			.unwrap_or_else(std::sync::PoisonError::into_inner);
 		match self.load()? {
 			Some(database) => self.get_from_database(&database, addr),
 			None => Ok(None),
@@ -317,7 +317,7 @@ impl Provider for KdbxProvider {
 		let location = self.location(addr)?;
 		let _guard = KDBX_IO_LOCK
 			.lock()
-			.unwrap_or_else(|poisoned| poisoned.into_inner());
+			.unwrap_or_else(std::sync::PoisonError::into_inner);
 		let mut database = self.load()?.unwrap_or_else(|| {
 			let mut database = Database::new();
 			database.meta.database_name = Some("Monosecret".to_string());
@@ -329,24 +329,21 @@ impl Provider for KdbxProvider {
 		}
 
 		let group_id = find_or_create_group(&mut database, &location.groups)?;
-		match find_entry_in_group(&database, group_id, &location.title)? {
-			Some(entry_id) => {
-				let mut entry = database.entry_mut(entry_id).ok_or_else(|| {
-					operation_error("KDBX entry disappeared while it was being updated.")
-				})?;
-				entry.edit_tracking(|entry| {
-					entry.set_protected(&location.field, value.expose_secret());
-				});
-			}
-			None => {
-				let mut group = database.group_mut(group_id).ok_or_else(|| {
-					operation_error("KDBX group disappeared while an entry was being created.")
-				})?;
-				group.add_entry().edit(|entry| {
-					entry.set_unprotected(fields::TITLE, &location.title);
-					entry.set_protected(&location.field, value.expose_secret());
-				});
-			}
+		if let Some(entry_id) = find_entry_in_group(&database, group_id, &location.title)? {
+			let mut entry = database.entry_mut(entry_id).ok_or_else(|| {
+				operation_error("KDBX entry disappeared while it was being updated.")
+			})?;
+			entry.edit_tracking(|entry| {
+				entry.set_protected(&location.field, value.expose_secret());
+			});
+		} else {
+			let mut group = database.group_mut(group_id).ok_or_else(|| {
+				operation_error("KDBX group disappeared while an entry was being created.")
+			})?;
+			group.add_entry().edit(|entry| {
+				entry.set_unprotected(fields::TITLE, &location.title);
+				entry.set_protected(&location.field, value.expose_secret());
+			});
 		}
 
 		self.save(&database)
@@ -430,7 +427,7 @@ impl Provider for KdbxProvider {
 	fn get_many(&self, requests: &[(&str, Address<'_>)]) -> Result<HashMap<String, SecretString>> {
 		let _guard = KDBX_IO_LOCK
 			.lock()
-			.unwrap_or_else(|poisoned| poisoned.into_inner());
+			.unwrap_or_else(std::sync::PoisonError::into_inner);
 		let Some(database) = self.load()? else {
 			return Ok(HashMap::new());
 		};
@@ -537,16 +534,15 @@ fn find_entry_in_group(
 fn find_or_create_group(database: &mut Database, groups: &[String]) -> Result<GroupId> {
 	let mut current = database.root().id();
 	for name in groups {
-		current = match unique_group(database, current, name)? {
-			Some(id) => id,
-			None => {
-				let mut parent = database
-					.group_mut(current)
-					.ok_or_else(|| operation_error("KDBX group tree contains a missing group."))?;
-				let mut group = parent.add_group();
-				group.name = name.clone();
-				group.id()
-			}
+		current = if let Some(id) = unique_group(database, current, name)? {
+			id
+		} else {
+			let mut parent = database
+				.group_mut(current)
+				.ok_or_else(|| operation_error("KDBX group tree contains a missing group."))?;
+			let mut group = parent.add_group();
+			group.name.clone_from(name);
+			group.id()
 		};
 	}
 	Ok(current)
@@ -564,6 +560,7 @@ fn write_version_error() -> MonosecretError {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use keepass::db::Value;
 	use secrecy::ExposeSecret;
@@ -595,7 +592,7 @@ mod tests {
 		provider
 	}
 
-	fn convention<'a>(key: &'a str) -> Address<'a> {
+	fn convention(key: &str) -> Address<'_> {
 		Address::convention("project", "production", key)
 	}
 

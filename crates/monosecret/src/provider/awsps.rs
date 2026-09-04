@@ -435,7 +435,7 @@ impl AwspsProvider {
 			Err(error) => {
 				return if error
 					.as_service_error()
-					.is_some_and(|service_error| service_error.is_parameter_not_found())
+					.is_some_and(aws_sdk_ssm::operation::get_parameter::GetParameterError::is_parameter_not_found)
 				{
 					Ok(None)
 				} else {
@@ -716,6 +716,7 @@ impl Provider for AwspsProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use aws_sdk_ssm::operation::get_parameters::GetParametersError;
 

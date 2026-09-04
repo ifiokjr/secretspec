@@ -35,12 +35,13 @@ f0a1f993e534630ffe3d556bd16d800b5b564dba:Package.swift:generic-api-key:10
 80796e12d364c389af385e9c2c018d1d7395f9d9:crates/monosecret/src/provider/sops/tests.rs:age-secret-key:883
 80796e12d364c389af385e9c2c018d1d7395f9d9:docs/src/content/docs/providers/dotenv.md:generic-api-key:76
 80796e12d364c389af385e9c2c018d1d7395f9d9:docs/src/content/docs/providers/env.md:generic-api-key:25
-d318fd0ad167b1d57d2966314addce884df27b1f:Package.swift:generic-api-key:10# Sync 0.21: OpenPGP/OpenSSH key-generation test fixtures assert the generated
+d318fd0ad167b1d57d2966314addce884df27b1f:Package.swift:generic-api-key:10
+# Sync 0.21: OpenPGP/OpenSSH key-generation test fixtures assert the generated
 # key armor headers; the literals are test data, not credentials.
 crates/monosecret/src/generator.rs:private-key:688
 crates/monosecret/src/generator.rs:private-key:785
+# False positives reachable via upstream merge ancestry (clippy sweep push):
 1b0701660260fb01d33ce2cf914ea56a7665cd64:secretspec/src/generator.rs:private-key:678
 1b0701660260fb01d33ce2cf914ea56a7665cd64:secretspec/src/generator.rs:private-key:775
 fb87177564d2a5008ea6ab54d81578f1bcf70484:secretspec/src/typed_tests.rs:private-key:820
 dbef94dda19668a481f821a6b299fbc25502ab2f:Package.swift:generic-api-key:10
-d318fd0ad167b1d57d2966314addce884df27b1f:Package.swift:generic-api-key:10

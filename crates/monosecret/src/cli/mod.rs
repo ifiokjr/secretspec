@@ -85,6 +85,9 @@ struct Cli {
 	/// Reason for accessing secrets, recorded by providers that support audit
 	/// logging (e.g. Proton Pass agent sessions). Takes precedence over the
 	/// PROTON_PASS_AGENT_REASON environment variable.
+	// The doc comment doubles as clap help text, which snapshots pin verbatim;
+	// backtick-wrapping the env name would change user-visible help output.
+	#[allow(clippy::doc_markdown)]
 	#[arg(long, global = true, env = "MONOSECRET_REASON")]
 	reason: Option<String>,
 
@@ -110,6 +113,10 @@ struct Cli {
 	command: Commands,
 }
 
+// Four independent "was this option explicitly typed" flags; each tracks a
+// separate clap option, so an enum or bitmask would obscure the per-option
+// bookkeeping at every use site.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TypedArgs {
 	pub(crate) file: bool,
@@ -368,6 +375,9 @@ enum Commands {
 		/// Only show entries for this project
 		#[arg(long)]
 		project: Option<String>,
+		// The doc comment doubles as clap help text, which snapshots pin
+		// verbatim; backtick-wrapping `cache_clear` would change help output.
+		#[allow(clippy::doc_markdown)]
 		/// Only show entries for this action (get, set, delete, check, run, import, export, cache_clear)
 		#[arg(long)]
 		action: Option<String>,
@@ -478,6 +488,9 @@ enum GlobalProviderAction {
 	Add {
 		/// Name of the provider alias
 		name: String,
+		// The doc comment doubles as clap help text, which snapshots pin
+		// verbatim; wrapping the bare URIs would change help output.
+		#[allow(clippy::doc_markdown)]
 		/// Provider URI (e.g., "keyring://", "onepassword://Shared", "dotenv://.env.local")
 		uri: String,
 		/// Provider credential binding `NAME=PROVIDER` (repeatable). `NAME` is
@@ -508,6 +521,9 @@ enum ProviderAction {
 	Add {
 		/// Name of the provider alias
 		name: String,
+		// The doc comment doubles as clap help text, which snapshots pin
+		// verbatim; wrapping the bare URIs would change help output.
+		#[allow(clippy::doc_markdown)]
 		/// Provider URI (e.g., "keyring://", "onepassword://Shared", "dotenv://.env.local")
 		uri: String,
 		/// Provider credential binding `NAME=PROVIDER` (repeatable). `NAME` is
@@ -626,7 +642,7 @@ fn migration_command(from: &str, profile: &str) -> String {
 /// # Errors
 ///
 /// Returns an error if the configuration cannot be serialized
-fn generate_toml_with_comments(config: &Config) -> crate::Result<String> {
+fn generate_toml_with_comments(config: &Config) -> String {
 	use toml_edit::Array;
 	use toml_edit::DocumentMut;
 	use toml_edit::InlineTable;
@@ -661,11 +677,18 @@ fn generate_toml_with_comments(config: &Config) -> crate::Result<String> {
 	profile_names.sort();
 
 	for (index, profile_name) in profile_names.iter().enumerate() {
-		let profile_config = &config.profiles[*profile_name];
+		// Keys were collected from the same map, so lookups always succeed.
+		let profile_config = config
+			.profiles
+			.get(*profile_name)
+			.expect("invariant: key comes from the same map");
 		let mut profile_table = Table::new();
 
 		for secret_name in profile_config.sorted_secret_names() {
-			let secret_config = &profile_config.secrets[&secret_name];
+			let secret_config = profile_config
+				.secrets
+				.get(&secret_name)
+				.expect("invariant: name comes from the same map");
 			let mut inline = InlineTable::new();
 			inline.insert(
 				"description",
@@ -726,7 +749,7 @@ fn generate_toml_with_comments(config: &Config) -> crate::Result<String> {
 	}
 	doc.insert("profiles", Item::Table(profiles));
 
-	Ok(doc.to_string())
+	doc.to_string()
 }
 
 /// Ensures `add` will create a new effective declaration in an existing profile.
@@ -827,10 +850,10 @@ fn add_follow_up_command(name: &str, profile: &str, file: Option<&Path>) -> Stri
 /// session reason (from `--reason`/`MONOSECRET_REASON`) and structured caller
 /// context supplied by an integration.
 fn load_secrets(
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
-) -> miette::Result<Secrets> {
+	file: Option<&Path>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
+) -> Result<Secrets> {
 	let mut secrets = match file {
 		Some(path) => Secrets::load_from(path),
 		None => Secrets::load(),
@@ -849,7 +872,7 @@ fn load_secrets(
 	});
 
 	let secrets = match reason {
-		Some(reason) => secrets.with_reason(reason.clone()),
+		Some(reason) => secrets.with_reason(reason),
 		None => secrets,
 	};
 	Ok(match caller {
@@ -862,9 +885,9 @@ fn load_secrets(
 ///
 /// Unlike [`load_secrets`], this does not initialize global configuration,
 /// auditing, or provider state.
-fn load_spec(file: &Option<PathBuf>) -> miette::Result<Spec> {
+fn load_spec(file: Option<&Path>) -> Result<Spec> {
 	match file {
-		Some(path) => Spec::try_from(path.as_path()),
+		Some(path) => Spec::try_from(path),
 		None => crate::secrets::find_config_file().and_then(|path| Spec::try_from(path.as_path())),
 	}
 	.into_diagnostic()
@@ -1411,8 +1434,24 @@ pub fn main() -> Result<()> {
 	let caller = caller_context(&cli)?;
 
 	match cli.command {
-		Commands::Claude { action } => claude::run(action, &cli.file, &cli.reason, &caller, typed),
-		Commands::Docker { action } => docker::run(action, &cli.file, &cli.reason, &caller, typed),
+		Commands::Claude { action } => {
+			claude::run(
+				action,
+				cli.file.as_ref(),
+				cli.reason.as_deref(),
+				caller.as_ref(),
+				typed,
+			)
+		}
+		Commands::Docker { action } => {
+			docker::run(
+				action,
+				cli.file.as_deref(),
+				cli.reason.as_deref(),
+				caller.as_ref(),
+				typed,
+			)
+		}
 		// Initialize a new monosecret.toml configuration file
 		Commands::Init {
 			from,
@@ -1484,7 +1523,7 @@ pub fn main() -> Result<()> {
 				groups: None,
 				scopes: None,
 			};
-			let mut content = generate_toml_with_comments(&project_config).into_diagnostic()?;
+			let mut content = generate_toml_with_comments(&project_config);
 
 			// Append comprehensive example
 			content.push_str(get_example_toml());
@@ -1505,13 +1544,13 @@ pub fn main() -> Result<()> {
 				.values()
 				.map(|p| p.secrets.len())
 				.sum::<usize>();
-			println!("✓ Created monosecret.toml with {} secrets", secret_count);
+			println!("✓ Created monosecret.toml with {secret_count} secrets");
 
 			// If we discovered a populated provider, explain how to copy its
 			// values after reviewing the declarations.
 			if secret_count > 0 {
 				if source_reads {
-					println!("\nTo migrate your secrets from {}:", from);
+					println!("\nTo migrate your secrets from {from}:");
 					println!("  1. Review monosecret.toml and adjust as needed");
 					println!(
 						"  2. {}    # Import secret values",
@@ -1546,7 +1585,7 @@ pub fn main() -> Result<()> {
 			description,
 			profile,
 		} => {
-			let app = load_secrets(&cli.file, &cli.reason, &caller)?;
+			let app = load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 			let profile = app.resolve_profile_name(profile.as_deref());
 			validate_add_target(&app, &profile, &name)?;
 
@@ -1585,7 +1624,15 @@ pub fn main() -> Result<()> {
 			);
 			Ok(())
 		}
-		Commands::Git { action } => git::run(action, &cli.file, &cli.reason, &caller, typed),
+		Commands::Git { action } => {
+			git::run(
+				action,
+				cli.file.as_deref(),
+				cli.reason.as_deref(),
+				caller.as_ref(),
+				typed,
+			)
+		}
 		// Handle configuration management commands
 		Commands::Config { action } => {
 			match normalize_config_action(action) {
@@ -1619,19 +1666,19 @@ pub fn main() -> Result<()> {
 								GlobalConfig::path().into_diagnostic()?.display()
 							);
 							match config.defaults.provider {
-								Some(provider) => println!("Provider: {}", provider),
+								Some(provider) => println!("Provider: {provider}"),
 								None => println!("Provider: (none)"),
 							}
 							match config.defaults.profile {
-								Some(profile) => println!("Profile:  {}", profile),
+								Some(profile) => println!("Profile:  {profile}"),
 								None => println!("Profile:  (none)"),
 							}
 							if let Some(providers) = &config.defaults.providers {
 								println!("\nProvider Aliases:");
 								let mut aliases: Vec<_> = providers.iter().collect();
-								aliases.sort_by(|(a, _), (b, _)| a.cmp(b));
+								aliases.sort_by_key(|(a, _)| *a);
 								for (alias, uri) in aliases {
-									println!("  {} = {}", alias, uri);
+									println!("  {alias} = {uri}");
 								}
 							} else {
 								println!("\nProvider Aliases: (none)");
@@ -1717,9 +1764,9 @@ pub fn main() -> Result<()> {
 									if let Some(providers) = &mut config.defaults.providers {
 										if providers.remove(&name).is_some() {
 											config.save().into_diagnostic()?;
-											println!("✓ Provider alias '{}' removed", name);
+											println!("✓ Provider alias '{name}' removed");
 										} else {
-											println!("✗ Provider alias '{}' not found", name);
+											println!("✗ Provider alias '{name}' not found");
 										}
 									} else {
 										println!("✗ No provider aliases configured");
@@ -1743,9 +1790,11 @@ pub fn main() -> Result<()> {
 											println!("Provider Aliases:");
 											let mut aliases: Vec<_> =
 												providers.into_iter().collect();
-											aliases.sort_by(|(a, _), (b, _)| a.cmp(b));
+											// Keys are unique map keys, so the
+											// resulting order matches key order.
+											aliases.sort_by_key(|(alias, _)| alias.clone());
 											for (alias, uri) in aliases {
-												println!("  {} = {}", alias, uri);
+												println!("  {alias} = {uri}");
 											}
 										}
 									} else {
@@ -1761,7 +1810,11 @@ pub fn main() -> Result<()> {
 							Ok(())
 						}
 						ProviderAction::Login { name } => {
-							let app = load_secrets(&cli.file, &cli.reason, &caller)?;
+							let app = load_secrets(
+								cli.file.as_deref(),
+								cli.reason.as_deref(),
+								caller.as_ref(),
+							)?;
 							let credentials =
 								app.declared_provider_credentials(&name).into_diagnostic()?;
 							let provider_reads = crate::provider::spec_provider_reads(
@@ -1814,7 +1867,8 @@ pub fn main() -> Result<()> {
 			provider,
 			profile,
 		} => {
-			let mut app = load_secrets(&cli.file, &cli.reason, &caller)?;
+			let mut app =
+				load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 			if let Some(p) = provider {
 				app.set_provider(p);
 			}
@@ -1832,7 +1886,8 @@ pub fn main() -> Result<()> {
 			provider,
 			profile,
 		} => {
-			let mut app = load_secrets(&cli.file, &cli.reason, &caller)?;
+			let mut app =
+				load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 			if let Some(p) = provider {
 				app.set_provider(p);
 			}
@@ -1851,7 +1906,8 @@ pub fn main() -> Result<()> {
 			provider,
 			profile,
 		} => {
-			let mut app = load_secrets(&cli.file, &cli.reason, &caller)?;
+			let mut app =
+				load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 			if let Some(provider) = provider {
 				app.set_provider(provider);
 			}
@@ -1948,7 +2004,8 @@ pub fn main() -> Result<()> {
 			include,
 			group,
 		} => {
-			let mut app = load_secrets(&cli.file, &cli.reason, &caller)?;
+			let mut app =
+				load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 			if let Some(p) = provider {
 				app.set_provider(p);
 			}
@@ -1968,7 +2025,8 @@ pub fn main() -> Result<()> {
 			scope,
 			format,
 		} => {
-			let mut app = load_secrets(&cli.file, &cli.reason, &caller)?;
+			let mut app =
+				load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 			if let Some(p) = provider {
 				app.set_provider(p);
 			}
@@ -1991,7 +2049,8 @@ pub fn main() -> Result<()> {
 			json,
 			explain,
 		} => {
-			let mut app = load_secrets(&cli.file, &cli.reason, &caller)?;
+			let mut app =
+				load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 			if let Some(p) = provider {
 				app.set_provider(p);
 			}
@@ -2017,7 +2076,7 @@ pub fn main() -> Result<()> {
 					let rendered = serde_json::to_string_pretty(&report)
 						.into_diagnostic()
 						.wrap_err("Failed to serialize resolution report")?;
-					println!("{}", rendered);
+					println!("{rendered}");
 				} else {
 					print!("{}", report.to_explain_string());
 				}
@@ -2042,15 +2101,15 @@ pub fn main() -> Result<()> {
 		}
 		// Generate typed accessors for another language (value-free)
 		Commands::Schema { profile, output } => {
-			let spec = load_spec(&cli.file)?;
+			let spec = load_spec(cli.file.as_deref())?;
 			let schema = spec.schema_json(profile.as_deref()).into_diagnostic()?;
 			match output {
 				Some(path) => {
 					fs::write(&path, schema)
 						.into_diagnostic()
-						.wrap_err_with(|| format!("Failed to write {}", path.display()))?
+						.wrap_err_with(|| format!("Failed to write {}", path.display()))?;
 				}
-				None => print!("{}", schema),
+				None => print!("{schema}"),
 			}
 			Ok(())
 		}
@@ -2063,7 +2122,7 @@ pub fn main() -> Result<()> {
 			from_provider,
 			delete_source,
 		} => {
-			let app = load_secrets(&cli.file, &cli.reason, &caller)?;
+			let app = load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 			if delete_source {
 				app.import_with_delete_source(&from_provider)
 					.into_diagnostic()
@@ -2078,7 +2137,8 @@ pub fn main() -> Result<()> {
 		Commands::Cache { action } => {
 			match action {
 				CacheAction::Clear { name, profile } => {
-					let mut app = load_secrets(&cli.file, &cli.reason, &caller)?;
+					let mut app =
+						load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 					if let Some(profile) = profile {
 						app.set_profile(profile);
 					}
@@ -2100,10 +2160,10 @@ pub fn main() -> Result<()> {
 			action,
 			tail,
 			json,
-		} => show_audit_log(project, action, tail, json),
+		} => show_audit_log(project.as_deref(), action.as_deref(), tail, json),
 		// Emit a secret-value-free manifest for SDK code generation
 		Commands::Manifest { format } => {
-			let app = load_secrets(&cli.file, &cli.reason, &caller)?;
+			let app = load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 			match format {
 				ManifestFormat::Json => {
 					let json = serde_json::to_string_pretty(&app.manifest())
@@ -2124,7 +2184,8 @@ pub fn main() -> Result<()> {
 			include,
 			group,
 		} => {
-			let mut app = load_secrets(&cli.file, &cli.reason, &caller)?;
+			let mut app =
+				load_secrets(cli.file.as_deref(), cli.reason.as_deref(), caller.as_ref())?;
 			if let Some(provider) = provider {
 				app.set_provider(provider);
 			}
@@ -2146,8 +2207,8 @@ pub fn main() -> Result<()> {
 
 /// Reads and prints the local audit log, applying optional filters.
 fn show_audit_log(
-	project: Option<String>,
-	action: Option<String>,
+	project: Option<&str>,
+	action: Option<&str>,
 	tail: Option<usize>,
 	json: bool,
 ) -> Result<()> {
@@ -2181,8 +2242,7 @@ fn show_audit_log(
 		.into_diagnostic()
 		.wrap_err_with(|| format!("Failed to read audit log at {}", path.display()))?;
 
-	for (line, value) in filter_audit_entries(&content, project.as_deref(), action.as_deref(), tail)
-	{
+	for (line, value) in filter_audit_entries(&content, project, action, tail) {
 		if json {
 			println!("{line}");
 		} else {
@@ -2243,13 +2303,15 @@ fn filter_audit_entries<'a>(
 /// `\xNN` rendering; all other characters pass through unchanged so normal
 /// entries look identical.
 fn sanitize_field(s: &str) -> String {
-	if !s.chars().any(|c| c.is_control()) {
+	use std::fmt::Write as _;
+
+	if !s.chars().any(char::is_control) {
 		return s.to_string();
 	}
 	let mut out = String::with_capacity(s.len());
 	for c in s.chars() {
 		if c.is_control() {
-			out.push_str(&format!("\\x{:02x}", c as u32));
+			let _ = write!(out, "\\x{:02x}", c as u32);
 		} else {
 			out.push(c);
 		}
@@ -2260,6 +2322,8 @@ fn sanitize_field(s: &str) -> String {
 /// Renders one parsed JSON Lines audit entry as a readable, colored summary line.
 /// The value has already been validated as JSON by `show_audit_log`.
 fn format_audit_line(v: &serde_json::Value) -> String {
+	use std::fmt::Write as _;
+
 	use colored::Colorize;
 
 	let str_field = |k: &str| v.get(k).and_then(|x| x.as_str());
@@ -2291,43 +2355,43 @@ fn format_audit_line(v: &serde_json::Value) -> String {
 
 	let mut s = format!("{}  {:<6} {}", ts.dimmed(), action.bold(), outcome_colored);
 	if let Some(cmd) = str_field("command") {
-		s += &format!("  {}", sanitize_field(cmd).bold());
+		let _ = write!(s, "  {}", sanitize_field(cmd).bold());
 	}
 	if !target.is_empty() {
-		s += &format!("  {target}");
+		let _ = write!(s, "  {target}");
 	}
-	s += &format!("  ({project}/{profile}");
+	let _ = write!(s, "  ({project}/{profile}");
 	if let Some(scope) = scope {
-		s += &format!(" scope:{scope}");
+		let _ = write!(s, " scope:{scope}");
 	}
 	if let Some(provider) = str_field("provider") {
-		s += &format!(" via {}", sanitize_field(provider));
+		let _ = write!(s, " via {}", sanitize_field(provider));
 	}
 	s += ")";
 	if let Some(reason) = str_field("reason") {
-		s += &format!("  reason: {}", sanitize_field(reason).italic());
+		let _ = write!(s, "  reason: {}", sanitize_field(reason).italic());
 	}
 	if let Some(caller) = v.get("caller").and_then(|value| value.as_object())
 		&& let Some(name) = caller.get("name").and_then(|value| value.as_str())
 	{
 		let mut rendered = sanitize_field(name);
 		if let Some(version) = caller.get("version").and_then(|value| value.as_str()) {
-			rendered += &format!("@{}", sanitize_field(version));
+			let _ = write!(rendered, "@{}", sanitize_field(version));
 		}
 		if let Some(operation) = caller.get("operation").and_then(|value| value.as_str()) {
-			rendered += &format!("/{}", sanitize_field(operation));
+			let _ = write!(rendered, "/{}", sanitize_field(operation));
 		}
 		if let Some(resource) = caller.get("resource").and_then(|value| value.as_str()) {
-			rendered += &format!(" {}", sanitize_field(resource));
+			let _ = write!(rendered, " {}", sanitize_field(resource));
 		}
-		s += &format!("  caller: {rendered}");
+		let _ = write!(s, "  caller: {rendered}");
 	}
 	if let Some(agent) = v
 		.get("actor")
 		.and_then(|a| a.get("agent"))
 		.and_then(|x| x.as_str())
 	{
-		s += &format!("  [{}]", sanitize_field(agent));
+		let _ = write!(s, "  [{}]", sanitize_field(agent));
 	}
 	s
 }
@@ -2533,13 +2597,18 @@ mod tests {
 		let mut config = config_with_secret(Secret::default());
 		config.profiles.get_mut("default").unwrap().secrets = secrets;
 
-		let generated = generate_toml_with_comments(&config).unwrap();
+		let generated = generate_toml_with_comments(&config);
 		assert!(
 			generated.contains("\"FOO.BAR\" = {"),
 			"key must be quoted, got: {generated}"
 		);
 		let parsed: Config = toml::from_str(&generated).expect("must round-trip");
-		assert!(parsed.profiles["default"].secrets.contains_key("FOO.BAR"));
+		assert!(
+			parsed
+				.profiles
+				.get("default")
+				.is_some_and(|profile| profile.secrets.contains_key("FOO.BAR"))
+		);
 	}
 
 	#[test]
@@ -2550,7 +2619,7 @@ mod tests {
 		});
 		config.project.extends = Some(vec!["../shared".to_string()]);
 
-		let generated = generate_toml_with_comments(&config).unwrap();
+		let generated = generate_toml_with_comments(&config);
 		let parsed: Config = toml::from_str(&generated).expect("must round-trip");
 		assert_eq!(
 			parsed.project.extends.as_deref(),
@@ -2566,12 +2635,14 @@ mod tests {
 			description: Some("a\u{7f}b".to_string()),
 			..Default::default()
 		});
-		let generated = generate_toml_with_comments(&config).unwrap();
+		let generated = generate_toml_with_comments(&config);
 		let parsed: Config = toml::from_str(&generated).expect("must round-trip");
 		assert_eq!(
-			parsed.profiles["default"].secrets["S"]
-				.description
-				.as_deref(),
+			parsed
+				.profiles
+				.get("default")
+				.and_then(|profile| profile.secrets.get("S"))
+				.and_then(|secret| secret.description.as_deref()),
 			Some("a\u{7f}b")
 		);
 	}
@@ -2606,12 +2677,16 @@ mod tests {
 			groups: None,
 		};
 
-		let generated = generate_toml_with_comments(&config).unwrap();
+		let generated = generate_toml_with_comments(&config);
 		let parsed: Config =
 			toml::from_str(&generated).expect("generated TOML must be valid and re-parseable");
 
 		assert_eq!(parsed.project.name, "weird \"name\"");
-		let secret = &parsed.profiles["default"].secrets["DATABASE_URL"];
+		let secret = parsed
+			.profiles
+			.get("default")
+			.and_then(|profile| profile.secrets.get("DATABASE_URL"))
+			.expect("DATABASE_URL declaration present");
 		assert_eq!(
 			secret.description.as_deref(),
 			Some("he said \"hi\"\nthen left\\")
@@ -2621,7 +2696,7 @@ mod tests {
 
 	#[test]
 	fn generate_toml_none_branch_emits_empty_description_and_omits_fields() {
-		let out = generate_toml_with_comments(&config_with_secret(Secret::default())).unwrap();
+		let out = generate_toml_with_comments(&config_with_secret(Secret::default()));
 		assert!(out.contains("S = { description = \"\" }"), "got: {out}");
 		assert!(!out.contains("required = "));
 		assert!(!out.contains("default = "));
@@ -2635,7 +2710,7 @@ mod tests {
 			default: Some("v".to_string()),
 			..Default::default()
 		};
-		let out = generate_toml_with_comments(&config_with_secret(secret)).unwrap();
+		let out = generate_toml_with_comments(&config_with_secret(secret));
 		assert!(out.contains(", required = false"), "got: {out}");
 		assert!(out.contains(", default = \"v\""), "got: {out}");
 	}
@@ -2648,7 +2723,7 @@ mod tests {
 			exactly_one: Some(vec!["identity".to_string()]),
 			..Default::default()
 		};
-		let out = generate_toml_with_comments(&config_with_secret(secret)).unwrap();
+		let out = generate_toml_with_comments(&config_with_secret(secret));
 		assert!(
 			out.contains(
 				"required = { at_least_one = [\"auth\", \"deploy\"], exactly_one = \"identity\" }"
@@ -2656,7 +2731,11 @@ mod tests {
 			"got: {out}"
 		);
 		let parsed: Config = toml::from_str(&out).expect("must round-trip");
-		let secret = &parsed.profiles["default"].secrets["S"];
+		let secret = parsed
+			.profiles
+			.get("default")
+			.and_then(|profile| profile.secrets.get("S"))
+			.expect("S declaration present");
 		assert_eq!(
 			secret.at_least_one.as_deref(),
 			Some(["auth".to_string(), "deploy".to_string()].as_slice())
@@ -2673,8 +2752,7 @@ mod tests {
 			description: Some("dsn".to_string()),
 			composed: Some("postgres://${USER}@${HOST}/db".to_string()),
 			..Default::default()
-		}))
-		.unwrap();
+		}));
 		assert!(
 			out.contains(", composed = \"postgres://${USER}@${HOST}/db\""),
 			"got: {out}"
@@ -2690,8 +2768,7 @@ mod tests {
 				..Default::default()
 			}),
 			..Default::default()
-		}))
-		.unwrap();
+		}));
 
 		assert!(
 			out.contains(", ref = { item = \"LEGACY_TOKEN\" }"),
@@ -2699,9 +2776,11 @@ mod tests {
 		);
 		let parsed: Config = toml::from_str(&out).expect("must round-trip");
 		assert_eq!(
-			parsed.profiles["default"].secrets["S"]
-				.reference
-				.as_ref()
+			parsed
+				.profiles
+				.get("default")
+				.and_then(|profile| profile.secrets.get("S"))
+				.and_then(|secret| secret.reference.as_ref())
 				.map(|reference| reference.item.as_str()),
 			Some("LEGACY_TOKEN")
 		);
@@ -2719,7 +2798,7 @@ mod tests {
 				config.profiles.insert(profile.to_string(), declarations);
 			}
 
-			let mut out = generate_toml_with_comments(&config).unwrap();
+			let mut out = generate_toml_with_comments(&config);
 			out.push_str(get_example_toml());
 
 			let parsed: Config = toml::from_str(&out)
@@ -2903,9 +2982,11 @@ local = "dotenv://.env"
 		let config: Config = toml::from_str(&updated).expect("edited manifest must parse");
 		config.validate().expect("edited manifest must validate");
 		assert_eq!(
-			config.profiles["default"].secrets["API_KEY"]
-				.description
-				.as_deref(),
+			config
+				.profiles
+				.get("default")
+				.and_then(|profile| profile.secrets.get("API_KEY"))
+				.and_then(|secret| secret.description.as_deref()),
 			Some("API access token")
 		);
 	}

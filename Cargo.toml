@@ -10,6 +10,14 @@ members = [
 ]
 resolver = "2"
 
+# Plain `cargo build` / `cargo check` / `cargo test` operate on the CLI crate
+# only. The other members (ffi, npm, php, python, examples) pull in language
+# interpreters at build time — ext-php-rs needs `php`, pyo3 needs `python`, and
+# napi needs `node` — which breaks sandboxed environments that only need the
+# CLI, such as Nix builds. CI and devenv select the full workspace explicitly
+# via --workspace / --all / -p, so nothing changes for them.
+default-members = ["crates/monosecret"]
+
 [workspace.package]
 version = "0.3.1"
 edition = "2024"
@@ -148,12 +156,12 @@ variant_size_differences = "warn"
 edition_2024_expr_fragment_specifier = "allow"
 
 [workspace.lints.clippy]
-complexity = { level = "warn", priority = -1 }
+complexity = { level = "deny", priority = -1 }
 correctness = { level = "deny", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-perf = { level = "warn", priority = -1 }
-style = { level = "warn", priority = -1 }
-suspicious = { level = "warn", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
 blocks_in_conditions = "allow"
 cargo_common_metadata = "allow"
 cast_possible_truncation = "allow"
@@ -162,7 +170,7 @@ cast_precision_loss = "allow"
 cast_sign_loss = "allow"
 expl_impl_clone_on_copy = "allow"
 items_after_statements = "allow"
-indexing_slicing = "warn"
+indexing_slicing = "deny"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"

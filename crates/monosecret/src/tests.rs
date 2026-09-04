@@ -1,3 +1,5 @@
+#![allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
+
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fs;
@@ -493,7 +495,7 @@ fn test_resolution_report_provenance() {
 fn profile_presence_constraints_validate_resolved_values() {
 	use crate::validation::ConstraintKind;
 
-	fn app(env_contents: &str, kind: ConstraintKind, groups: &[&str]) -> (TempDir, Secrets) {
+	fn app(env_contents: &str, kind: &ConstraintKind, groups: &[&str]) -> (TempDir, Secrets) {
 		let temp_dir = TempDir::new().unwrap();
 		let env_path = temp_dir.path().join(".env");
 		fs::write(&env_path, env_contents).unwrap();
@@ -501,9 +503,9 @@ fn profile_presence_constraints_validate_resolved_values() {
 		let member = || {
 			Secret {
 				description: Some("alternative credential".to_string()),
-				at_least_one: (kind == ConstraintKind::AtLeastOne)
+				at_least_one: (kind == &ConstraintKind::AtLeastOne)
 					.then(|| groups.iter().map(|group| (*group).to_string()).collect()),
-				exactly_one: (kind == ConstraintKind::ExactlyOne)
+				exactly_one: (kind == &ConstraintKind::ExactlyOne)
 					.then(|| groups.iter().map(|group| (*group).to_string()).collect()),
 				..Default::default()
 			}
@@ -540,7 +542,7 @@ fn profile_presence_constraints_validate_resolved_values() {
 		}
 	}
 
-	let (_temp_dir, spec) = app("", ConstraintKind::AtLeastOne, &["auth"]);
+	let (_temp_dir, spec) = app("", &ConstraintKind::AtLeastOne, &["auth"]);
 	let errors = validation_errors(&spec);
 	assert!(errors.missing_required.is_empty());
 	assert_eq!(errors.constraint_violations.len(), 1);
@@ -563,12 +565,12 @@ fn profile_presence_constraints_validate_resolved_values() {
 
 	let (_temp_dir, spec) = app(
 		"ACCESS_TOKEN=token\n",
-		ConstraintKind::AtLeastOne,
+		&ConstraintKind::AtLeastOne,
 		&["auth"],
 	);
 	assert!(spec.validate().unwrap().is_ok());
 
-	let (_temp_dir, spec) = app("", ConstraintKind::AtLeastOne, &["auth", "deploy"]);
+	let (_temp_dir, spec) = app("", &ConstraintKind::AtLeastOne, &["auth", "deploy"]);
 	let errors = validation_errors(&spec);
 	assert_eq!(
 		errors
@@ -579,7 +581,7 @@ fn profile_presence_constraints_validate_resolved_values() {
 		vec!["auth", "deploy"]
 	);
 
-	let (_temp_dir, spec) = app("", ConstraintKind::ExactlyOne, &["auth"]);
+	let (_temp_dir, spec) = app("", &ConstraintKind::ExactlyOne, &["auth"]);
 	let errors = validation_errors(&spec);
 	assert_eq!(
 		errors.constraint_violations[0].kind,
@@ -589,7 +591,7 @@ fn profile_presence_constraints_validate_resolved_values() {
 
 	let (_temp_dir, spec) = app(
 		"PASSWORD=p\nACCESS_TOKEN=t\n",
-		ConstraintKind::ExactlyOne,
+		&ConstraintKind::ExactlyOne,
 		&["auth"],
 	);
 	let errors = validation_errors(&spec);
@@ -598,7 +600,7 @@ fn profile_presence_constraints_validate_resolved_values() {
 		vec!["ACCESS_TOKEN".to_string(), "PASSWORD".to_string()]
 	);
 
-	let (_temp_dir, spec) = app("PASSWORD=p\n", ConstraintKind::ExactlyOne, &["auth"]);
+	let (_temp_dir, spec) = app("PASSWORD=p\n", &ConstraintKind::ExactlyOne, &["auth"]);
 	assert!(spec.validate().unwrap().is_ok());
 }
 
@@ -627,7 +629,7 @@ pub(crate) fn resolve_test_config(secrets: HashMap<String, Secret>) -> Config {
 /// Serializes tests that scrub the `MONOSECRET_*` process environment. The
 /// environment is shared across all test threads, so scrub/restore pairs must
 /// not interleave.
-static RESOLUTION_ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static RESOLUTION_ENV_GUARD: Mutex<()> = Mutex::new(());
 
 /// Removes `MONOSECRET_PROVIDER` and `MONOSECRET_PROFILE` for the guard's
 /// lifetime, restoring any previous values on drop. Tests that exercise
@@ -642,7 +644,7 @@ pub(crate) struct ResolutionEnvGuard {
 pub(crate) fn scrub_resolution_env() -> ResolutionEnvGuard {
 	let lock = RESOLUTION_ENV_GUARD
 		.lock()
-		.unwrap_or_else(|e| e.into_inner());
+		.unwrap_or_else(std::sync::PoisonError::into_inner);
 	let saved = [
 		"MONOSECRET_PROVIDER",
 		"MONOSECRET_PROFILE",
@@ -3168,7 +3170,7 @@ fn test_import_between_dotenv_files() {
 	// Import from source dotenv to target dotenv
 	let from_provider = format!("dotenv://{}", source_env_path.display());
 	let result = spec.import(&from_provider);
-	assert!(result.is_ok(), "Import should succeed: {:?}", result);
+	assert!(result.is_ok(), "Import should succeed: {result:?}");
 
 	// Verify using the same dotenv parser that the values are correct.
 	let vars = dotenv_values(&target_env_path);
@@ -3291,8 +3293,7 @@ fn test_import_edge_cases() {
 	let result = spec.import(&from_provider);
 	assert!(
 		result.is_ok(),
-		"Import should handle edge cases: {:?}",
-		result
+		"Import should handle edge cases: {result:?}"
 	);
 
 	// Verify using the same dotenv parser that the values are correct.
@@ -3301,7 +3302,7 @@ fn test_import_edge_cases() {
 	// Empty value should be imported
 	assert_eq!(
 		vars.get("EMPTY_VALUE"),
-		Some(&"".to_string()),
+		Some(&String::new()),
 		"Empty value should be imported"
 	);
 
@@ -3731,7 +3732,7 @@ fn test_get_existing_secret() {
 	);
 
 	let result = spec.get("TEST_SECRET");
-	assert!(result.is_ok(), "Failed to get secret: {:?}", result);
+	assert!(result.is_ok(), "Failed to get secret: {result:?}");
 }
 
 #[test]
@@ -3907,12 +3908,12 @@ fn test_import_dotenv_profile_issue_36() {
 	// This test should initially fail, helping us identify the root cause
 
 	match result {
-		Ok(_) => {
+		Ok(()) => {
 			// Check what was actually imported by reading the target file
 			if target_env_path.exists() {
 				let target_contents = fs::read_to_string(&target_env_path).unwrap();
 				println!("Target file after import:");
-				println!("{}", target_contents);
+				println!("{target_contents}");
 
 				// The real bug: JWT_SECRET should be imported from .env
 				assert_eq!(
@@ -3946,7 +3947,7 @@ fn test_import_dotenv_profile_issue_36() {
 			}
 		}
 		Err(e) => {
-			panic!("Import should not fail: {:?}", e);
+			panic!("Import should not fail: {e:?}");
 		}
 	}
 
@@ -4328,7 +4329,7 @@ fn test_get_secret_with_fallback_chain() {
 			let db_url = valid.resolved.secrets.get("DATABASE_URL").unwrap();
 			assert_eq!(db_url.expose_secret(), "postgres://localhost");
 		}
-		Err(e) => panic!("Validation should succeed: {:?}", e),
+		Err(e) => panic!("Validation should succeed: {e:?}"),
 	}
 }
 
@@ -4631,7 +4632,7 @@ fn test_validate_falls_back_on_primary_provider_error() {
 			let api_key = valid.resolved.secrets.get("API_KEY").unwrap();
 			assert_eq!(api_key.expose_secret(), "from-fallback");
 		}
-		Err(e) => panic!("Expected fallback to succeed, got: {:?}", e),
+		Err(e) => panic!("Expected fallback to succeed, got: {e:?}"),
 	}
 }
 
@@ -4832,7 +4833,7 @@ fn test_validate_with_per_secret_providers() {
 			// No missing required secrets
 			assert!(valid.missing_optional.is_empty());
 		}
-		Err(e) => panic!("Validation should succeed: {:?}", e),
+		Err(e) => panic!("Validation should succeed: {e:?}"),
 	}
 }
 
@@ -5105,10 +5106,10 @@ fn test_as_path_secrets() {
 
 	// Create a dotenv file with a secret
 	let env_file = temp_dir.path().join(".env");
-	fs::write(&env_file, format!("CERT_DATA={}", secret_value)).unwrap();
+	fs::write(&env_file, format!("CERT_DATA={secret_value}")).unwrap();
 	fs::write(
 		&env_file,
-		format!("CERT_DATA={}\nREGULAR_SECRET=not-a-path", secret_value),
+		format!("CERT_DATA={secret_value}\nREGULAR_SECRET=not-a-path"),
 	)
 	.unwrap();
 
@@ -5145,7 +5146,7 @@ REGULAR_SECRET = { description = "Regular secret", as_path = false }
 		.get("CERT_DATA")
 		.unwrap()
 		.expose_secret();
-	let cert_path = std::path::PathBuf::from(cert_path_str);
+	let cert_path = PathBuf::from(cert_path_str);
 
 	// Verify the temp file exists and contains the secret
 	assert!(cert_path.exists(), "Temporary file should exist");
@@ -5191,7 +5192,7 @@ fn test_as_path_secrets_keep_temp_files() {
 
 	// Create a dotenv file with a secret
 	let env_file = temp_dir.path().join(".env");
-	fs::write(&env_file, format!("CERT_DATA={}", secret_value)).unwrap();
+	fs::write(&env_file, format!("CERT_DATA={secret_value}")).unwrap();
 
 	// Create config with as_path secret
 	let config_file = temp_dir.path().join("monosecret.toml");
@@ -5225,7 +5226,7 @@ CERT_DATA = { description = "Certificate data", as_path = true }
 		.get("CERT_DATA")
 		.unwrap()
 		.expose_secret();
-	let cert_path = std::path::PathBuf::from(cert_path_str);
+	let cert_path = PathBuf::from(cert_path_str);
 
 	// Verify the temp file exists
 	assert!(cert_path.exists(), "Temporary file should exist");
@@ -5362,8 +5363,10 @@ HEX_TEXT = { description = "lowercase hex", encoding = "hex" }
 		stored
 			.lines()
 			.find_map(|line| line.strip_prefix(&format!("{name}=")))
-			.map(|value| value.trim_matches('"'))
-			.unwrap_or_else(|| panic!("{name} missing from {stored}"))
+			.map_or_else(
+				|| panic!("{name} missing from {stored}"),
+				|value| value.trim_matches('"'),
+			)
 	};
 	assert_eq!(stored_value("BASE64_TEXT"), "dmFsdWU=");
 	assert_eq!(stored_value("BASE64URL_TEXT"), "aGVsbG8_");
@@ -5617,7 +5620,7 @@ fn test_ini_extract_resolves_sectioned_and_unsectioned_values() {
 		"test-ini-extract",
 		&[(
 			"application.ini",
-			r#"root_token = root-value
+			r"root_token = root-value
 
 [database]
 password = p@ss#word;still-secret
@@ -5625,7 +5628,7 @@ windows_path = C:\secrets\database
 
 [a/b]
 ~key = escaped
-"#,
+",
 		)],
 		r#"ROOT = { description = "root", providers = ["documents"], ref = { item = "application.ini" }, extract = { format = "ini", pointer = "/root_token" } }
 PASSWORD = { description = "password", providers = ["documents"], ref = { item = "application.ini" }, extract = { format = "ini", pointer = "/database/password" } }
@@ -5733,7 +5736,7 @@ fn test_run_cleans_up_as_path_temp_files() {
 	let secret_value = "secret-cert-content";
 
 	let env_file = temp_dir.path().join(".env");
-	fs::write(&env_file, format!("CERT_DATA={}", secret_value)).unwrap();
+	fs::write(&env_file, format!("CERT_DATA={secret_value}")).unwrap();
 
 	let config_file = temp_dir.path().join("monosecret.toml");
 	fs::write(
@@ -5763,7 +5766,7 @@ CERT_DATA = { description = "Certificate data", as_path = true }
 	// can inspect it after run_command returns.
 	let captured_path_file = temp_dir.path().join("captured-path");
 	let exit_code = spec
-		.run_command(vec![
+		.run_command(&[
 			"sh".to_string(),
 			"-c".to_string(),
 			format!(
@@ -5780,9 +5783,8 @@ CERT_DATA = { description = "Certificate data", as_path = true }
 		"child should have observed the temp file path via $CERT_DATA"
 	);
 	assert!(
-		!std::path::Path::new(&captured_path).exists(),
-		"as_path temp file at {} should be removed once `run` returns",
-		captured_path
+		!Path::new(&captured_path).exists(),
+		"as_path temp file at {captured_path} should be removed once `run` returns",
 	);
 }
 
@@ -5826,7 +5828,7 @@ API_TOKEN = { description = "API token", type = "hex", generate = { bytes = 32 }
 		Some(crate::config::GenerateConfig::Options(opts)) => {
 			assert_eq!(opts.bytes, Some(32));
 		}
-		other => panic!("Expected Options, got {:?}", other),
+		other => panic!("Expected Options, got {other:?}"),
 	}
 }
 
@@ -5848,7 +5850,7 @@ MONGO_KEY = { description = "MongoDB keyfile", type = "command", generate = { co
 		Some(crate::config::GenerateConfig::Options(opts)) => {
 			assert_eq!(opts.command.as_deref(), Some("echo test"));
 		}
-		other => panic!("Expected Options, got {:?}", other),
+		other => panic!("Expected Options, got {other:?}"),
 	}
 }
 
@@ -5982,8 +5984,7 @@ BAD_SECRET = { description = "Missing type", generate = true }
 	let err_msg = result.unwrap_err().to_string();
 	assert!(
 		err_msg.contains("requires 'type'"),
-		"Expected error about missing type, got: {}",
-		err_msg
+		"Expected error about missing type, got: {err_msg}",
 	);
 }
 
@@ -6021,8 +6022,7 @@ CONFLICT = { description = "Both", type = "password", generate = true, default =
 	let err_msg = result.unwrap_err().to_string();
 	assert!(
 		err_msg.contains("cannot both be set"),
-		"Expected conflict error, got: {}",
-		err_msg
+		"Expected conflict error, got: {err_msg}",
 	);
 }
 
@@ -6041,8 +6041,7 @@ CMD_SECRET = { description = "Cmd", type = "command", generate = true }
 	let err_msg = result.unwrap_err().to_string();
 	assert!(
 		err_msg.contains("command"),
-		"Expected command requirement error, got: {}",
-		err_msg
+		"Expected command requirement error, got: {err_msg}",
 	);
 }
 
@@ -6061,8 +6060,7 @@ BAD_TYPE = { description = "Unknown type", type = "rsa_key", generate = true }
 	let err_msg = result.unwrap_err().to_string();
 	assert!(
 		err_msg.contains("unknown secret type"),
-		"Expected unknown type error, got: {}",
-		err_msg
+		"Expected unknown type error, got: {err_msg}",
 	);
 }
 
@@ -6103,7 +6101,7 @@ DB_PASSWORD = { description = "Database password", type = "password", generate =
 	let s = value.expose_secret();
 	assert_eq!(s.len(), 32, "Default password length should be 32");
 	assert!(
-		s.chars().all(|c| c.is_alphanumeric()),
+		s.chars().all(char::is_alphanumeric),
 		"Default password should be alphanumeric"
 	);
 }
@@ -6209,13 +6207,11 @@ DB_PASSWORD = { description = "Database password", type = "password", generate =
 	let env_contents = fs::read_to_string(&env_file).unwrap();
 	assert!(
 		env_contents.contains("MY_DB_SECRET="),
-		"generated value should be stored under the ref key, got: {}",
-		env_contents
+		"generated value should be stored under the ref key, got: {env_contents}",
 	);
 	assert!(
 		env_contents.contains(&generated),
-		"the .env file should hold the generated value, got: {}",
-		env_contents
+		"the .env file should hold the generated value, got: {env_contents}",
 	);
 }
 
@@ -6514,12 +6510,10 @@ fn test_resolve_secret_config_merges_type_and_generate() {
 }
 
 /// Builds a project + global config matching the scenario in
-/// https://github.com/cachix/monosecret/issues/81: profile defaults declare a
+/// <https://github.com/cachix/monosecret/issues/81>: profile defaults declare a
 /// `providers = ["personal", "team"]` chain whose aliases resolve to dotenv files,
 /// and the secret has no per-secret `providers` override.
-fn build_chain_scenario(
-	temp_dir: &TempDir,
-) -> (Config, GlobalConfig, std::path::PathBuf, std::path::PathBuf) {
+fn build_chain_scenario(temp_dir: &TempDir) -> (Config, GlobalConfig, PathBuf, PathBuf) {
 	let personal_path = temp_dir.path().join(".env.personal");
 	let team_path = temp_dir.path().join(".env.team");
 	fs::write(&personal_path, "").unwrap();
@@ -6580,7 +6574,7 @@ fn build_chain_scenario(
 	(config, global_config, personal_path, team_path)
 }
 
-fn read_env_var(path: &std::path::Path, key: &str) -> Option<String> {
+fn read_env_var(path: &Path, key: &str) -> Option<String> {
 	dotenv::EnvLoader::with_path(path)
 		.sequence(dotenv::EnvSequence::InputOnly)
 		.load()
@@ -6599,7 +6593,7 @@ fn chain_walk_spec(
 	temp_dir: &TempDir,
 	files: &[(&str, &str)],
 	chain: &[&str],
-) -> (Secrets, Vec<std::path::PathBuf>) {
+) -> (Secrets, Vec<PathBuf>) {
 	let mut paths = Vec::new();
 	let mut aliases = Vec::new();
 	for (alias, contents) in files {
@@ -6797,9 +6791,8 @@ fn test_chain_entry_1password_gets_the_onepassword_hint() {
 	);
 	let spec = Secrets::new(resolve_test_config(secrets), None, None, None);
 
-	let err = match spec.validate() {
-		Ok(_) => panic!("the misspelled provider cannot be constructed"),
-		Err(e) => e,
+	let Err(err) = spec.validate() else {
+		panic!("the misspelled provider cannot be constructed")
 	};
 	assert!(
 		err.to_string().contains("onepassword"),
@@ -6825,7 +6818,7 @@ fn test_single_store_ref_rejects_unsupported_coordinate_up_front() {
 		Secret {
 			description: Some("db password".to_string()),
 			required: Some(true),
-			reference: Some(crate::config::NativeAddress {
+			reference: Some(NativeAddress {
 				item: "db".to_string(),
 				field: Some("password".to_string()),
 				..Default::default()
@@ -6839,9 +6832,8 @@ fn test_single_store_ref_rejects_unsupported_coordinate_up_front() {
 	);
 	let spec = Secrets::new(resolve_test_config(secrets), None, None, None);
 
-	let err = match spec.validate() {
-		Ok(_) => panic!("an unsupported ref coordinate must be rejected"),
-		Err(e) => e,
+	let Err(err) = spec.validate() else {
+		panic!("an unsupported ref coordinate must be rejected")
 	};
 	match err {
 		MonosecretError::ProviderOperationFailed(msg) => {
@@ -6882,7 +6874,7 @@ fn test_override_skips_read_chain() {
 	let secret_config = spec.resolve_secret_config("MY_SECRET", None).unwrap();
 	let override_spec = spec.explicit_provider_spec(None);
 	let route = spec
-		.route_for(&secret_config, &override_spec)
+		.route_for(&secret_config, override_spec.as_deref())
 		.expect("override resolution should succeed");
 
 	// The read walks the raw override spec only (the alias is expanded at build
@@ -6968,7 +6960,7 @@ fn strip_ansi(s: &str) -> String {
 	out
 }
 
-/// Regression for https://github.com/cachix/monosecret/issues/72: when every
+/// Regression for <https://github.com/cachix/monosecret/issues/72>: when every
 /// optional secret is set, the summary line keeps its previous two-segment
 /// form so we don't churn output for the common case.
 #[test]
@@ -6977,7 +6969,7 @@ fn test_format_summary_omits_optional_when_none_missing() {
 	assert_eq!(strip_ansi(&line), "Summary: 5 found, 0 missing");
 }
 
-/// Regression for https://github.com/cachix/monosecret/issues/72: missing
+/// Regression for <https://github.com/cachix/monosecret/issues/72>: missing
 /// optional secrets must surface in the summary as a third segment rather
 /// than being silently absorbed into "found".
 #[test]
@@ -6992,7 +6984,7 @@ fn test_format_summary_appends_optional_when_some_missing() {
 	);
 }
 
-/// End-to-end check for https://github.com/cachix/monosecret/issues/72:
+/// End-to-end check for <https://github.com/cachix/monosecret/issues/72>:
 /// an optional secret that has no value in the backing provider must land in
 /// `missing_optional` instead of being treated as found. The display layer
 /// relies on this — without it, `monosecret check` would still print a green
@@ -7164,8 +7156,7 @@ fn test_unknown_alias_error_lists_both_sources() {
 	let msg = err.to_string();
 	assert!(
 		msg.contains("project_only") && msg.contains("global_only"),
-		"error should list aliases from both project and global config, got: {}",
-		msg
+		"error should list aliases from both project and global config, got: {msg}",
 	);
 }
 
@@ -7968,8 +7959,7 @@ fn test_import_unknown_source_lists_available_aliases() {
 	let msg = err.to_string();
 	assert!(
 		msg.contains("source_env") && msg.contains("available aliases"),
-		"unknown import source should list the defined aliases, got: {}",
-		msg
+		"unknown import source should list the defined aliases, got: {msg}",
 	);
 }
 
@@ -8179,20 +8169,16 @@ fn test_run_command_returns_child_exit_code() {
 	let spec = dotenv_spec("", empty_default, &temp_dir);
 
 	assert_eq!(
-		spec.run_command(vec![
-			"sh".to_string(),
-			"-c".to_string(),
-			"exit 3".to_string()
-		])
-		.unwrap(),
+		spec.run_command(&["sh".to_string(), "-c".to_string(), "exit 3".to_string()])
+			.unwrap(),
 		3
 	);
-	assert_eq!(spec.run_command(vec!["true".to_string()]).unwrap(), 0);
-	assert_eq!(spec.run_command(vec!["false".to_string()]).unwrap(), 1);
+	assert_eq!(spec.run_command(&["true".to_string()]).unwrap(), 0);
+	assert_eq!(spec.run_command(&["false".to_string()]).unwrap(), 1);
 }
 
 /// The audit `action`s emitted by an operation, in order.
-fn audit_actions(lines: &std::sync::Arc<std::sync::Mutex<Vec<String>>>) -> Vec<String> {
+fn audit_actions(lines: &Arc<Mutex<Vec<String>>>) -> Vec<String> {
 	lines
 		.lock()
 		.unwrap()
@@ -8236,7 +8222,7 @@ fn audit_run_emits_run_not_check() {
 	let (logger, lines) = crate::audit::test_support::collecting_logger();
 	spec.set_audit_for_test(logger);
 
-	spec.run_command(vec!["true".to_string()]).unwrap();
+	spec.run_command(&["true".to_string()]).unwrap();
 
 	// `run` records itself as a single `run` event; the internal read it performs
 	// through `ensure_secrets` must not also be logged as a `check`.
@@ -8248,7 +8234,7 @@ fn audit_run_emits_run_not_check() {
 }
 
 /// The full audit events emitted by an operation, parsed in order.
-fn audit_events(lines: &std::sync::Arc<std::sync::Mutex<Vec<String>>>) -> Vec<serde_json::Value> {
+fn audit_events(lines: &Arc<Mutex<Vec<String>>>) -> Vec<serde_json::Value> {
 	lines
 		.lock()
 		.unwrap()
@@ -8657,7 +8643,7 @@ fn provider_credentials_read_convention_credential_from_source() {
 	let temp = TempDir::new().unwrap();
 	let source = temp.path().join("source.env");
 	// dotenv addresses a convention secret by the flat key name.
-	std::fs::write(&source, "access_token=secret-abc\n").unwrap();
+	fs::write(&source, "access_token=secret-abc\n").unwrap();
 
 	let secrets = secrets_with_credential_alias(
 		"bws://00000000-0000-0000-0000-000000000000",
@@ -8686,7 +8672,7 @@ fn sourced_credential_reaches_target_provider_end_to_end() {
 
 	let target_scope = |filename: &str, token: &str| {
 		let source = temp.path().join(filename);
-		std::fs::write(&source, format!("service_account_token={token}\n")).unwrap();
+		fs::write(&source, format!("service_account_token={token}\n")).unwrap();
 		let secrets = secrets_with_credential_alias(
 			"onepassword://Private",
 			HashMap::from([(
@@ -8722,7 +8708,7 @@ fn sourced_credential_reaches_target_provider_end_to_end() {
 fn provider_credentials_read_from_systemd_credential_source() {
 	let _guard = scrub_resolution_env();
 	let directory = TempDir::new().unwrap();
-	std::fs::write(
+	fs::write(
 		directory.path().join("test_token"),
 		"systemd-delivered-token",
 	)
@@ -8754,7 +8740,7 @@ fn provider_credentials_read_ref_addressed_credential() {
 	let _guard = scrub_resolution_env();
 	let temp = TempDir::new().unwrap();
 	let source = temp.path().join("source.env");
-	std::fs::write(&source, "SOURCE_KEY=secret-xyz\n").unwrap();
+	fs::write(&source, "SOURCE_KEY=secret-xyz\n").unwrap();
 
 	// The semantic credential name and the source key differ;
 	// `ref` pins the exact location.
@@ -8790,7 +8776,7 @@ fn configured_credential_is_resolved_even_when_provider_env_is_set() {
 
 	let temp = TempDir::new().unwrap();
 	let source = temp.path().join("source.env");
-	std::fs::write(&source, "access_token=from-source\n").unwrap();
+	fs::write(&source, "access_token=from-source\n").unwrap();
 
 	let secrets = secrets_with_credential_alias(
 		"bws://00000000-0000-0000-0000-000000000000",
@@ -8806,7 +8792,7 @@ fn configured_credential_is_resolved_even_when_provider_env_is_set() {
 	assert_eq!(
 		credentials
 			.get("access_token")
-			.map(|value| value.expose_secret()),
+			.map(ExposeSecret::expose_secret),
 		Some("from-source")
 	);
 }
@@ -8816,7 +8802,7 @@ fn missing_provider_credential_is_an_actionable_error() {
 	let _guard = scrub_resolution_env();
 	let temp = TempDir::new().unwrap();
 	let source = temp.path().join("source.env");
-	std::fs::write(&source, "").unwrap();
+	fs::write(&source, "").unwrap();
 
 	let secrets = secrets_with_credential_alias(
 		"bws://00000000-0000-0000-0000-000000000000",
@@ -8936,7 +8922,7 @@ fn provider_credential_round_trips_through_its_source() {
 	let _guard = scrub_resolution_env();
 	let temp = TempDir::new().unwrap();
 	let source = temp.path().join("source.env");
-	std::fs::write(&source, "").unwrap();
+	fs::write(&source, "").unwrap();
 
 	let secrets = secrets_with_credential_alias(
 		"bws://00000000-0000-0000-0000-000000000000",
@@ -8978,7 +8964,7 @@ fn provider_credentials_memoize_per_profile() {
 	let _guard = scrub_resolution_env();
 	let temp = TempDir::new().unwrap();
 	let source = temp.path().join("source.env");
-	std::fs::write(&source, "access_token=v1\n").unwrap();
+	fs::write(&source, "access_token=v1\n").unwrap();
 
 	let secrets = secrets_with_credential_alias(
 		"bws://00000000-0000-0000-0000-000000000000",
@@ -8994,7 +8980,7 @@ fn provider_credentials_memoize_per_profile() {
 		.expect("the source supplies the credential");
 
 	// Empty the source: a fresh fetch can no longer succeed.
-	std::fs::write(&source, "").unwrap();
+	fs::write(&source, "").unwrap();
 
 	// Same profile: served from the memo, so the emptied source is not read.
 	secrets
@@ -9016,7 +9002,7 @@ fn storing_a_provider_credential_invalidates_the_memo() {
 	let _guard = scrub_resolution_env();
 	let temp = TempDir::new().unwrap();
 	let source = temp.path().join("source.env");
-	std::fs::write(&source, "access_token=old\n").unwrap();
+	fs::write(&source, "access_token=old\n").unwrap();
 
 	let secrets = secrets_with_credential_alias(
 		"bws://00000000-0000-0000-0000-000000000000",
@@ -9039,7 +9025,7 @@ fn storing_a_provider_credential_invalidates_the_memo() {
 
 	// Empty the source: only a memo hit could satisfy the next build, so a
 	// success here would prove the store had NOT invalidated it.
-	std::fs::write(&source, "").unwrap();
+	fs::write(&source, "").unwrap();
 	assert!(
 		secrets
 			.get_provider(Some("target"), Some("default"))
@@ -9253,7 +9239,7 @@ secrets = ["DATABASE_URL", "SENTRY_DSN"]
 		let excluded_file = temp.path().join("excluded");
 		let included_file = temp.path().join("included");
 		let exit = spec
-			.run_command(vec![
+			.run_command(&[
 				"sh".to_string(),
 				"-c".to_string(),
 				format!(
@@ -9407,7 +9393,7 @@ secrets = ["DATABASE_URL"]
 		let leaked_file = temp.path().join("prod_only");
 		let included_file = temp.path().join("db");
 		let exit = spec
-			.run_command(vec![
+			.run_command(&[
 				"sh".to_string(),
 				"-c".to_string(),
 				format!(
@@ -9471,7 +9457,7 @@ secrets = ["DATABASE_URL", "SENTRY_DSN"]
 		let admitted_file = temp.path().join("sentry");
 		let leaked_file = temp.path().join("prod_only");
 		let exit = spec
-			.run_command(vec![
+			.run_command(&[
 				"sh".to_string(),
 				"-c".to_string(),
 				format!(
@@ -9716,9 +9702,8 @@ secrets = ["DATABASE_URL"]
 			Some(provider.clone()),
 			None,
 		);
-		let uerr = match unscoped.validate().unwrap() {
-			Ok(_) => panic!("DB_PASSWORD missing must fail resolution"),
-			Err(e) => e,
+		let Err(uerr) = unscoped.validate().unwrap() else {
+			panic!("DB_PASSWORD missing must fail resolution")
 		};
 		let uprompt = unscoped
 			.scoped_promptable_missing(&uerr, "default")
@@ -9732,9 +9717,8 @@ secrets = ["DATABASE_URL"]
 		// only missing_required surfaced is the visible composed secret itself.
 		let mut scoped = Secrets::new(config(COMPOSED_MANIFEST), None, Some(provider), None);
 		scoped.set_scope("api");
-		let serr = match scoped.validate().unwrap() {
-			Ok(_) => panic!("the visible composed secret must be unrenderable"),
-			Err(e) => e,
+		let Err(serr) = scoped.validate().unwrap() else {
+			panic!("the visible composed secret must be unrenderable")
 		};
 		assert_eq!(serr.missing_required, vec!["DATABASE_URL".to_string()]);
 		let sprompt = scoped.scoped_promptable_missing(&serr, "default").unwrap();
@@ -9771,7 +9755,7 @@ secrets = ["DATABASE_URL"]
 		let user_file = temp.path().join("user");
 		let pass_file = temp.path().join("pass");
 		let exit = spec
-            .run_command(vec![
+            .run_command(&[
                 "sh".to_string(),
                 "-c".to_string(),
                 format!(
@@ -9871,8 +9855,8 @@ secrets = ["UNRELATED"]
 "#;
 
 	/// A presence group is judged on the members the scope actually exposes.
-	/// `at_least_one = ["cloud"]` is satisfied for the whole profile by GCP_KEY
-	/// alone, but a scope that shows only AWS_KEY has no satisfying member it
+	/// `at_least_one = ["cloud"]` is satisfied for the whole profile by `GCP_KEY`
+	/// alone, but a scope that shows only `AWS_KEY` has no satisfying member it
 	/// can see, so the scoped resolution must fail rather than silently inherit
 	/// a guarantee backed by a secret it hides.
 	#[test]
@@ -9899,9 +9883,8 @@ secrets = ["UNRELATED"]
 		// absent, so the group is violated.
 		let mut scoped = Secrets::new(config(CONSTRAINT_MANIFEST), None, Some(provider), None);
 		scoped.set_scope("aws");
-		let errors = match scoped.validate().unwrap() {
-			Ok(_) => panic!("a scope whose only visible group member is missing must fail"),
-			Err(e) => e,
+		let Err(errors) = scoped.validate().unwrap() else {
+			panic!("a scope whose only visible group member is missing must fail")
 		};
 		let violation = errors
 			.constraint_violations
@@ -10021,9 +10004,8 @@ secrets = ["IN_SCOPE"]
 
 		let mut scoped = Secrets::new(config(CONSTRAINT_MANIFEST), None, Some(provider), None);
 		scoped.set_scope("tokens");
-		let errors = match scoped.validate().unwrap() {
-			Ok(_) => panic!("both members present must violate exactly_one under a scope"),
-			Err(e) => e,
+		let Err(errors) = scoped.validate().unwrap() else {
+			panic!("both members present must violate exactly_one under a scope")
 		};
 		let violation = errors
 			.constraint_violations
@@ -10066,7 +10048,7 @@ secrets = ["PG_ARGS"]
 		let body_file = temp.path().join("body");
 		let cert_file = temp.path().join("cert");
 		let exit = spec
-            .run_command(vec![
+            .run_command(&[
                 "sh".to_string(),
                 "-c".to_string(),
                 format!(
@@ -10121,7 +10103,7 @@ secrets = ["PG_ARGS"]
 
 		spec.check(true).expect("the scoped check resolves");
 
-		let events = super::audit_events(&lines);
+		let events = audit_events(&lines);
 		let check = events
 			.iter()
 			.find(|e| e["action"] == "check")
@@ -10163,9 +10145,9 @@ secrets = ["PG_ARGS"]
 		let (logger, lines) = crate::audit::test_support::collecting_logger();
 		spec.set_audit_for_test(logger);
 
-		assert_eq!(spec.run_command(vec!["true".to_string()]).unwrap(), 0);
+		assert_eq!(spec.run_command(&["true".to_string()]).unwrap(), 0);
 
-		let events = super::audit_events(&lines);
+		let events = audit_events(&lines);
 		let run = events
 			.iter()
 			.find(|e| e["action"] == "run")
@@ -10193,7 +10175,7 @@ secrets = ["PG_ARGS"]
 		spec.export(crate::ExportFormat::Dotenv, &mut Vec::new())
 			.unwrap();
 
-		let events = super::audit_events(&lines);
+		let events = audit_events(&lines);
 		let export = events
 			.iter()
 			.find(|e| e["action"] == "export")
@@ -10214,7 +10196,7 @@ secrets = ["PG_ARGS"]
 
 		assert!(spec.check(true).is_err());
 
-		let events = super::audit_events(&lines);
+		let events = audit_events(&lines);
 		let check = events
 			.iter()
 			.find(|e| e["action"] == "check")
@@ -10670,9 +10652,8 @@ fn delete_removes_the_authoritative_value_and_its_cache_entry() {
 
 	assert_eq!(read_env_var(&source, "API_KEY"), None);
 	assert_eq!(read_env_var(&cache, "API_KEY"), None);
-	let errors = match secrets.validate().unwrap() {
-		Ok(_) => panic!("a deleted required secret must no longer resolve from cache"),
-		Err(errors) => errors,
+	let Err(errors) = secrets.validate().unwrap() else {
+		panic!("a deleted required secret must no longer resolve from cache")
 	};
 	assert_eq!(errors.missing_required, vec!["API_KEY".to_string()]);
 }
@@ -10905,7 +10886,7 @@ fn a_cache_asks_its_store_to_expire_the_entry() {
 	assert_eq!(resolved_value(&secrets, "API_KEY"), "remote");
 	assert_eq!(
 		crate::provider::tests::recorded_expiry("cache-expiry-test/default/API_KEY"),
-		Some(std::time::Duration::from_secs(8 * 60 * 60))
+		Some(std::time::Duration::from_hours(8))
 	);
 }
 
@@ -11281,13 +11262,13 @@ fn a_built_provider_carries_the_operation_profile() {
 	let mut secrets = Secrets::new(config, None, None, None);
 	secrets.set_profile("production");
 
-	let reference = crate::config::NativeAddress {
+	let reference = NativeAddress {
 		item: "/DB_PASSWORD".to_string(),
 		..Default::default()
 	};
 	let provider = secrets
 		.build_provider(
-			"infisical://app.infisical.com/7e2f1a4c-0000-0000-0000-000000000000".to_string(),
+			"infisical://app.infisical.com/7e2f1a4c-0000-0000-0000-000000000000",
 			None,
 		)
 		.unwrap();
@@ -11325,7 +11306,7 @@ fn a_credential_source_provider_gets_no_profile() {
 	let mut secrets = Secrets::new(config, None, None, None);
 	secrets.set_profile("production");
 
-	let reference = crate::config::NativeAddress {
+	let reference = NativeAddress {
 		item: "/ci/VAULT_TOKEN".to_string(),
 		..Default::default()
 	};

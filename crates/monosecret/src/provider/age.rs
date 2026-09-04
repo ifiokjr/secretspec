@@ -88,8 +88,7 @@ impl ParsedIdentity {
 					.map(|recipient| vec![Box::new(recipient) as Box<dyn Recipient + Send>])
 					.map_err(|e| {
 						provider_err(format!(
-							"Failed to derive age recipient from SSH identity: {:?}",
-							e
+							"Failed to derive age recipient from SSH identity: {e:?}"
 						))
 					})
 			}
@@ -163,7 +162,7 @@ impl TryFrom<&ProviderUrl> for AgeConfig {
 		let path_str = url.path();
 		let path = if !path_str.is_empty() && path_str != "/" {
 			match url.host() {
-				Some(host) => format!("{}{}", host, path_str),
+				Some(host) => format!("{host}{path_str}"),
 				None => path_str,
 			}
 		} else if let Some(host) = url.host() {
@@ -176,10 +175,7 @@ impl TryFrom<&ProviderUrl> for AgeConfig {
 			path: PathBuf::from(path),
 			identity_path: url.query_value("identity").map(PathBuf::from),
 			recipients_file: url.query_value("recipients-file").map(PathBuf::from),
-			armor: url
-				.query_value("armor")
-				.map(|v| v != "false")
-				.unwrap_or(true),
+			armor: url.query_value("armor").is_none_or(|v| v != "false"),
 		})
 	}
 }
@@ -371,12 +367,10 @@ fn parse_recipient(s: &str) -> Result<Box<dyn Recipient + Send>> {
 	if let Ok(r) = s.parse::<age::plugin::Recipient>() {
 		let plugin_name = r.plugin().to_string();
 		let plugin = age::plugin::RecipientPluginV1::new(&plugin_name, &[r], &[], NoCallbacks)
-			.map_err(|e| {
-				provider_err(format!("age plugin '{}' unavailable: {:?}", plugin_name, e))
-			})?;
+			.map_err(|e| provider_err(format!("age plugin '{plugin_name}' unavailable: {e:?}")))?;
 		return Ok(Box::new(plugin));
 	}
-	Err(provider_err(format!("Unrecognized age recipient: {}", s)))
+	Err(provider_err(format!("Unrecognized age recipient: {s}")))
 }
 
 impl Provider for AgeProvider {
@@ -494,7 +488,7 @@ impl Provider for AgeProvider {
 			.load()?
 			.into_keys()
 			.map(|key| {
-				let secret = Secret::required(format!("{} secret", key));
+				let secret = Secret::required(format!("{key} secret"));
 				(key, secret)
 			})
 			.collect())
@@ -779,7 +773,7 @@ AAAEADBJvjZT8X6JRJI8xVq/1aU8nMVgOtVnmdwqWwrSlXG3sKLqeplhpW+uObz5dvMgjz
 		let dir = tempfile::tempdir().unwrap();
 		let key = write_identity(dir.path());
 		let roster = dir.path().join("roster.recipients");
-		std::fs::write(&roster, format!("# team\n{}\n", TEST_RECIPIENT)).unwrap();
+		std::fs::write(&roster, format!("# team\n{TEST_RECIPIENT}\n")).unwrap();
 
 		let provider = AgeProvider::new(AgeConfig {
 			path: dir.path().join("team.age"),
@@ -801,7 +795,7 @@ AAAEADBJvjZT8X6JRJI8xVq/1aU8nMVgOtVnmdwqWwrSlXG3sKLqeplhpW+uObz5dvMgjz
 	fn ssh_identity_and_recipient_round_trip() {
 		let dir = tempfile::tempdir().unwrap();
 		let roster = dir.path().join("roster.recipients");
-		std::fs::write(&roster, format!("{}\n", TEST_SSH_RECIPIENT)).unwrap();
+		std::fs::write(&roster, format!("{TEST_SSH_RECIPIENT}\n")).unwrap();
 
 		let mut provider = AgeProvider::new(AgeConfig {
 			path: dir.path().join("ssh.age"),

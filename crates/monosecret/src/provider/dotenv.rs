@@ -387,6 +387,7 @@ impl Provider for DotEnvProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use super::*;
 
@@ -488,8 +489,8 @@ mod tests {
 		// process's current working directory.
 		let root = tempfile::tempdir().unwrap();
 		let env_dir = root.path().join(".config");
-		std::fs::create_dir(&env_dir).unwrap();
-		let mut file = std::fs::File::create(env_dir.join(".env")).unwrap();
+		fs::create_dir(&env_dir).unwrap();
+		let mut file = fs::File::create(env_dir.join(".env")).unwrap();
 		writeln!(file, "USER=hello").unwrap();
 
 		let mut provider = DotEnvProvider::new(DotEnvConfig {
@@ -509,7 +510,7 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let env_file = dir.path().join(".env");
 
-		let mut file = std::fs::File::create(&env_file).unwrap();
+		let mut file = fs::File::create(&env_file).unwrap();
 		writeln!(file, "API_KEY=test123").unwrap();
 		writeln!(file, "DATABASE_URL=postgres://localhost").unwrap();
 
@@ -651,7 +652,7 @@ mod tests {
 		);
 	}
 
-	/// Regression test for https://github.com/cachix/monosecret/issues/73:
+	/// Regression test for <https://github.com/cachix/monosecret/issues/73>:
 	/// The previous parser treated `$2`, `$10`, and the following bcrypt text as variable
 	/// substitutions, corrupting an existing quoted secret while reading it.
 	#[test]

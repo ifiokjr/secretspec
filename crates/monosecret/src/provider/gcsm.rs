@@ -74,8 +74,7 @@ fn validate_gcp_project_id(project_id: &str) -> std::result::Result<(), Monosecr
 	let len = project_id.len();
 	if !(6..=30).contains(&len) {
 		return Err(MonosecretError::ProviderOperationFailed(format!(
-			"GCP project ID must be 6-30 characters, got {}",
-			len
+			"GCP project ID must be 6-30 characters, got {len}"
 		)));
 	}
 
@@ -95,9 +94,8 @@ fn validate_gcp_project_id(project_id: &str) -> std::result::Result<(), Monosecr
 	for c in chars {
 		if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' {
 			return Err(MonosecretError::ProviderOperationFailed(format!(
-				"GCP project ID contains invalid character '{}'. \
-                Only lowercase letters, digits, and hyphens are allowed",
-				c
+				"GCP project ID contains invalid character '{c}'. \
+                Only lowercase letters, digits, and hyphens are allowed"
 			)));
 		}
 	}
@@ -288,7 +286,7 @@ crate::register_provider! {
 }
 
 impl GcsmProvider {
-	/// Creates a new GcsmProvider with the given configuration.
+	/// Creates a new `GcsmProvider` with the given configuration.
 	pub fn new(config: GcsmConfig) -> Self {
 		Self { config }
 	}
@@ -301,17 +299,15 @@ impl GcsmProvider {
 	fn validate_name_component(name: &str, component: &str) -> Result<()> {
 		if component.is_empty() {
 			return Err(MonosecretError::ProviderOperationFailed(format!(
-				"{} cannot be empty",
-				name
+				"{name} cannot be empty"
 			)));
 		}
 
 		for c in component.chars() {
 			if !c.is_ascii_alphanumeric() && c != '_' && c != '-' {
 				return Err(MonosecretError::ProviderOperationFailed(format!(
-					"{} contains invalid character '{}'. \
-                    Only alphanumeric characters, underscores, and hyphens are allowed",
-					name, c
+					"{name} contains invalid character '{c}'. \
+                    Only alphanumeric characters, underscores, and hyphens are allowed"
 				)));
 			}
 		}
@@ -379,7 +375,7 @@ impl GcsmProvider {
 		s.contains("ALREADY_EXISTS") || s.contains("alreadyExists")
 	}
 
-	/// Creates a SecretManagerService client.
+	/// Creates a `SecretManagerService` client.
 	async fn create_client(&self) -> Result<SecretManagerService> {
 		SecretManagerService::builder().build().await.map_err(|e| {
 			MonosecretError::ProviderOperationFailed(format!(
@@ -418,8 +414,8 @@ impl GcsmProvider {
 
 	/// Reads the legacy id as a compatibility source. That id is an
 	/// implementation detail of the fallback rather than an address the caller
-	/// chose: a project with secret-level IAM answers PERMISSION_DENIED rather
-	/// than NOT_FOUND for an id nobody was granted a binding on, and that must
+	/// chose: a project with secret-level IAM answers `PERMISSION_DENIED` rather
+	/// than `NOT_FOUND` for an id nobody was granted a binding on, and that must
 	/// not turn an unset secret into a failed read. All other failures still
 	/// describe a requested backend operation and must reach the caller.
 	async fn read_legacy_value(
@@ -462,7 +458,7 @@ impl GcsmProvider {
                          the current naming convention cannot represent this address: \
                          {naming_error} Writes keep failing until the name changes. Further \
                          secrets with this problem are not reported again."
-					)
+					);
 				});
 				return Ok(Some(value));
 			}
@@ -496,7 +492,7 @@ impl GcsmProvider {
                  store it \
                  under the current name; the 0.19 secret is left in place either way. Further \
                  secrets read this way are not reported again."
-			)
+			);
 		});
 		Ok(Some(value))
 	}
@@ -635,10 +631,7 @@ mod reference_tests {
 		assert!(refusal.to_string().contains("read-only"), "{refusal}");
 		// `set` refuses with the same reason, so the pre-check cannot drift.
 		let err = p
-			.set(
-				Address::Native(&addr),
-				&secrecy::SecretString::new("v".into()),
-			)
+			.set(Address::Native(&addr), &SecretString::new("v".into()))
 			.unwrap_err();
 		assert_eq!(err.to_string(), refusal.to_string());
 	}
@@ -812,7 +805,7 @@ mod legacy_fallback_tests {
 		}
 
 		/// Simulates the secret-level IAM binding a caller was never granted:
-		/// GCSM answers PERMISSION_DENIED rather than NOT_FOUND.
+		/// GCSM answers `PERMISSION_DENIED` rather than `NOT_FOUND`.
 		fn deny_access(&self, name: &str) {
 			self.fail_access(name, "PERMISSION_DENIED");
 		}
@@ -825,6 +818,9 @@ mod legacy_fallback_tests {
 		}
 	}
 
+	// Trait impl: `GcsmBackend` requires async signatures, but the fake
+	// performs no awaits, so `clippy::unused_async_trait_impl` is unavoidable.
+	#[allow(clippy::unused_async_trait_impl)]
 	impl GcsmBackend for FakeGcsmBackend {
 		async fn access_secret_version(
 			&self,

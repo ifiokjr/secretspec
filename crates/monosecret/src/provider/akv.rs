@@ -169,9 +169,8 @@ impl std::str::FromStr for AuthMethod {
 			"workload_identity" => Ok(AuthMethod::WorkloadIdentity),
 			other => {
 				Err(MonosecretError::ProviderOperationFailed(format!(
-					"Unknown auth method '{}'. Expected 'env', 'cli', 'managed_identity', \
-                 or 'workload_identity'.",
-					other
+					"Unknown auth method '{other}'. Expected 'env', 'cli', 'managed_identity', \
+                 or 'workload_identity'."
 				)))
 			}
 		}
@@ -234,11 +233,11 @@ impl TryFrom<&ProviderUrl> for AkvConfig {
 		// clouds); a bare name gets the public-cloud suffix, or an explicit
 		// `?suffix=` override, appended.
 		let (vault_url, suffix) = if vault_host.contains('.') {
-			(format!("https://{}/", vault_host), None)
+			(format!("https://{vault_host}/"), None)
 		} else {
 			match url.query_value("suffix") {
-				Some(suffix) => (format!("https://{}.{}/", vault_host, suffix), Some(suffix)),
-				None => (format!("https://{}.{}/", vault_host, DEFAULT_SUFFIX), None),
+				Some(suffix) => (format!("https://{vault_host}.{suffix}/"), Some(suffix)),
+				None => (format!("https://{vault_host}.{DEFAULT_SUFFIX}/"), None),
 			}
 		};
 
@@ -411,7 +410,7 @@ crate::register_provider! {
 }
 
 impl AkvProvider {
-	/// Creates a new AkvProvider with the given configuration.
+	/// Creates a new `AkvProvider` with the given configuration.
 	pub fn new(config: AkvConfig) -> Self {
 		Self {
 			config,
@@ -452,16 +451,14 @@ impl AkvProvider {
 	fn validate_name_component(name: &str, component: &str) -> Result<()> {
 		if component.is_empty() {
 			return Err(MonosecretError::ProviderOperationFailed(format!(
-				"{} cannot be empty",
-				name
+				"{name} cannot be empty"
 			)));
 		}
 		for c in component.chars() {
 			if !c.is_ascii_alphanumeric() && c != '_' && c != '-' {
 				return Err(MonosecretError::ProviderOperationFailed(format!(
-					"{} contains invalid character '{}'. \
-                    Only alphanumeric characters, underscores, and hyphens are allowed",
-					name, c
+					"{name} contains invalid character '{c}'. \
+                    Only alphanumeric characters, underscores, and hyphens are allowed"
 				)));
 			}
 		}
@@ -552,7 +549,7 @@ impl AkvProvider {
 		}
 	}
 
-	/// Creates a SecretClient for the configured vault.
+	/// Creates a `SecretClient` for the configured vault.
 	fn create_client(&self) -> Result<SecretClient> {
 		let credential = self.resolve_credential()?;
 		SecretClient::new(&self.config.vault_url, credential, None).map_err(|e| {
@@ -580,7 +577,7 @@ impl AkvProvider {
 	/// typed HTTP status code rather than string-matching the error's
 	/// `Display` output (a genuine 404's message is the service's plain-text
 	/// description, e.g. "A secret with (name) was not found in this key
-	/// vault" -- it does not contain the literal text "SecretNotFound" or
+	/// vault" -- it does not contain the literal text "`SecretNotFound`" or
 	/// "404", so matching on those strings misses real not-found responses).
 	fn is_not_found_error(e: &azure_core::Error) -> bool {
 		e.http_status() == Some(StatusCode::NotFound)
@@ -1209,10 +1206,7 @@ mod tests {
 		let refusal = p.check_writable(Address::Native(&addr)).unwrap_err();
 		assert!(refusal.to_string().contains("read-only"), "{refusal}");
 		let err = p
-			.set(
-				Address::Native(&addr),
-				&secrecy::SecretString::new("v".into()),
-			)
+			.set(Address::Native(&addr), &SecretString::new("v".into()))
 			.unwrap_err();
 		assert_eq!(err.to_string(), refusal.to_string());
 	}

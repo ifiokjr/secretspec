@@ -347,6 +347,9 @@ struct ManagedChild {
 }
 
 impl ManagedChild {
+	// The Windows body returns Err on job-assignment or resume failure; clippy
+	// only sees the unix body, where the Result is always Ok.
+	#[cfg_attr(not(windows), allow(clippy::unnecessary_wraps))]
 	fn new(child: Child) -> std::io::Result<Self> {
 		#[cfg(windows)]
 		{
@@ -546,7 +549,7 @@ impl TryFrom<&ProviderUrl> for EjsonConfig {
 		};
 		let path = if !path_str.is_empty() && path_str != "/" {
 			match url.host() {
-				Some(host) => PathBuf::from(format!("{}{}", host, path_str)),
+				Some(host) => PathBuf::from(format!("{host}{path_str}")),
 				None => PathBuf::from(path_str),
 			}
 		} else if let Some(host) = url.host() {
@@ -609,7 +612,7 @@ impl EjsonProvider {
 		let bytes = pointer.as_bytes();
 		let mut index = 0;
 		while index < bytes.len() {
-			if bytes[index] == b'~' {
+			if bytes.get(index).copied() == Some(b'~') {
 				let escape = bytes.get(index + 1).copied();
 				if !matches!(escape, Some(b'0' | b'1')) {
 					return Err(provider_err(format!(

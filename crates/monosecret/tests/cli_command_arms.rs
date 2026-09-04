@@ -187,9 +187,9 @@ fn audit_command_reads_log_with_filters() {
 	fs::write(
 		config_dir.join("config.toml"),
 		format!(
-			r#"[audit]
+			r"[audit]
 path = '{}'
-"#,
+",
 			audit_log.display()
 		),
 	)

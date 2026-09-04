@@ -162,12 +162,12 @@ impl Default for ManagedState {
 
 pub(super) fn run(
 	action: ClaudeAction,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	file: Option<&PathBuf>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 	typed: TypedArgs,
 ) -> Result<()> {
-	let file = typed.file.then(|| file.clone()).flatten();
+	let file = typed.file.then(|| file.cloned()).flatten();
 	match action {
 		ClaudeAction::Configure {
 			token_secret,
@@ -189,12 +189,16 @@ pub(super) fn run(
 				typed,
 			})
 		}
-		ClaudeAction::Login { provider, global } => login(provider, global, &file, reason, caller),
+		ClaudeAction::Login { provider, global } => {
+			login(provider.as_deref(), global, file.as_ref(), reason, caller)
+		}
 		ClaudeAction::Logout { provider, global } => {
-			logout(provider, global, &file, reason, caller)
+			logout(provider.as_deref(), global, file.as_ref(), reason, caller)
 		}
 		ClaudeAction::Unconfigure { global, yes } => unconfigure(global, yes),
-		ClaudeAction::Credential { configuration } => credential(&configuration, &file, caller),
+		ClaudeAction::Credential { configuration } => {
+			credential(&configuration, file.as_ref(), caller)
+		}
 	}
 }
 
@@ -206,49 +210,46 @@ struct ConfigureOptions<'a> {
 	global: bool,
 	yes: bool,
 	file: Option<PathBuf>,
-	reason: &'a Option<String>,
+	reason: Option<&'a str>,
 	typed: TypedArgs,
 }
 
 fn configure(options: ConfigureOptions<'_>) -> Result<()> {
 	validate_resource(&options.resource)?;
 	let settings_path = settings_path(options.global)?;
-	let source = match &options.file {
-		Some(file) => {
-			let token_secret = options.token_secret.as_deref().ok_or_else(|| {
-				miette!("--token-secret is required when --file selects a custom manifest")
-			})?;
-			let manifest = manifest_path(file)?;
-			let mut secrets = Secrets::load_from(&manifest)
-				.into_diagnostic()
-				.wrap_err("Failed to load custom Claude Code credential manifest")?;
-			let profile = if options.typed.profile {
-				options
-					.profile
-					.clone()
-					.ok_or_else(|| miette!("--profile was selected without a profile value"))?
-			} else {
-				GlobalConfig::load()
-					.into_diagnostic()?
-					.and_then(|config| config.defaults.profile)
-					.unwrap_or_else(|| "default".to_string())
-			};
-			secrets.set_profile(&profile);
-			validate_secret(&secrets, token_secret, &profile)?;
-			CredentialSource::Manifest {
-				manifest,
-				profile,
-				token_secret: token_secret.to_string(),
-			}
+	let source = if let Some(file) = &options.file {
+		let token_secret = options.token_secret.as_deref().ok_or_else(|| {
+			miette!("--token-secret is required when --file selects a custom manifest")
+		})?;
+		let manifest = manifest_path(file)?;
+		let mut secrets = Secrets::load_from(&manifest)
+			.into_diagnostic()
+			.wrap_err("Failed to load custom Claude Code credential manifest")?;
+		let profile = if options.typed.profile {
+			options
+				.profile
+				.clone()
+				.ok_or_else(|| miette!("--profile was selected without a profile value"))?
+		} else {
+			GlobalConfig::load()
+				.into_diagnostic()?
+				.and_then(|config| config.defaults.profile)
+				.unwrap_or_else(|| "default".to_string())
+		};
+		secrets.set_profile(&profile);
+		validate_secret(&secrets, token_secret, &profile)?;
+		CredentialSource::Manifest {
+			manifest,
+			profile,
+			token_secret: token_secret.to_string(),
 		}
-		None => {
-			if options.token_secret.is_some() || options.typed.profile {
-				return Err(miette!(
-					"--token-secret and --profile require --file; the embedded Claude Code credential store uses its built-in declaration"
-				));
-			}
-			CredentialSource::Embedded
+	} else {
+		if options.token_secret.is_some() || options.typed.profile {
+			return Err(miette!(
+				"--token-secret and --profile require --file; the embedded Claude Code credential store uses its built-in declaration"
+			));
 		}
+		CredentialSource::Embedded
 	};
 	let provider = options
 		.typed
@@ -258,7 +259,6 @@ fn configure(options: ConfigureOptions<'_>) -> Result<()> {
 	let reason = if options.typed.reason {
 		options
 			.reason
-			.as_deref()
 			.filter(|reason| !reason.trim().is_empty())
 			.ok_or_else(|| miette!("--reason cannot be empty"))?
 			.to_string()
@@ -276,15 +276,21 @@ fn configure(options: ConfigureOptions<'_>) -> Result<()> {
 		.iter()
 		.position(|setting| setting.settings == settings_path);
 	let id = existing_index
-		.map(|index| state.settings[index].id.clone())
-		.unwrap_or_else(|| Uuid::new_v4().simple().to_string());
+		.and_then(|index| state.settings.get(index))
+		.map_or_else(
+			|| Uuid::new_v4().simple().to_string(),
+			|setting| setting.id.clone(),
+		);
 	let helper = helper_command(&id);
 	let existing_helper = api_key_helper(&settings, &settings_path)?;
 
 	match existing_index {
 		Some(index) => {
 			if let Some(existing_helper) = existing_helper
-				&& existing_helper != state.settings[index].helper
+				&& state
+					.settings
+					.get(index)
+					.is_some_and(|setting| existing_helper != setting.helper)
 			{
 				return Err(miette!(
 					"Claude Code apiKeyHelper in {} changed outside Monosecret; refusing to replace it",
@@ -312,9 +318,11 @@ fn configure(options: ConfigureOptions<'_>) -> Result<()> {
 		configured: true,
 	};
 	let state_changed = match existing_index {
-		Some(index) if state.settings[index] == desired => false,
+		Some(index) if state.settings.get(index) == Some(&desired) => false,
 		Some(index) => {
-			state.settings[index] = desired;
+			if let Some(setting) = state.settings.get_mut(index) {
+				*setting = desired;
+			}
 			true
 		}
 		None => {
@@ -414,11 +422,11 @@ fn configure(options: ConfigureOptions<'_>) -> Result<()> {
 }
 
 fn login(
-	provider: Option<String>,
+	provider: Option<&str>,
 	global: bool,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	file: Option<&PathBuf>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 ) -> Result<()> {
 	let setting = lifecycle_setting(global, file)?;
 	if !setting.configured {
@@ -427,8 +435,7 @@ fn login(
 			"Claude Code credential integration is not active for this scope; rerun monosecret claude configure{scope} before login"
 		));
 	}
-	let (secrets, secret) =
-		embedded_cli_secrets(&setting, provider.as_deref(), reason, caller, "login")?;
+	let (secrets, secret) = embedded_cli_secrets(&setting, provider, reason, caller, "login")?;
 	let value = read_credential()?;
 	validate_credential_value(&value)?;
 	secrets
@@ -455,15 +462,14 @@ fn read_credential() -> Result<String> {
 }
 
 fn logout(
-	provider: Option<String>,
+	provider: Option<&str>,
 	global: bool,
-	file: &Option<PathBuf>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	file: Option<&PathBuf>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 ) -> Result<()> {
 	let setting = lifecycle_setting(global, file)?;
-	let (secrets, secret) =
-		embedded_cli_secrets(&setting, provider.as_deref(), reason, caller, "logout")?;
+	let (secrets, secret) = embedded_cli_secrets(&setting, provider, reason, caller, "logout")?;
 	if secrets
 		.delete(&secret)
 		.into_diagnostic()
@@ -478,8 +484,8 @@ fn logout(
 
 fn credential(
 	configuration: &str,
-	file: &Option<PathBuf>,
-	caller: &Option<CallerContext>,
+	file: Option<&PathBuf>,
+	caller: Option<&CallerContext>,
 ) -> Result<()> {
 	if file.is_some() {
 		return Err(miette!(
@@ -503,7 +509,7 @@ fn credential(
 		secrets.set_provider(provider);
 	}
 	secrets = secrets.with_reason(&setting.reason);
-	let caller = caller.clone().unwrap_or_else(|| {
+	let caller = caller.cloned().unwrap_or_else(|| {
 		CallerContext::new("claude-code")
 			.with_operation("credential_get")
 			.with_resource(&setting.resource)
@@ -533,19 +539,19 @@ fn unconfigure(global: bool, yes: bool) -> Result<()> {
 	let state_file = state_path()?;
 	let original_state = read_optional(&state_file)?;
 	let mut state = parse_state(original_state.as_deref(), &state_file)?;
-	let Some(index) = state
+	let Some(setting) = state
 		.settings
-		.iter()
-		.position(|setting| setting.settings == settings_path)
+		.iter_mut()
+		.find(|setting| setting.settings == settings_path)
 	else {
 		println!("No matching Monosecret-managed Claude Code integration found.");
 		return Ok(());
 	};
-	if !state.settings[index].configured {
+	if !setting.configured {
 		println!("No matching active Monosecret-managed Claude Code integration found.");
 		return Ok(());
 	}
-	let managed = state.settings[index].clone();
+	let managed = setting.clone();
 	let original_settings = read_optional(&settings_path)?;
 	let mut settings = parse_settings(original_settings.as_deref(), &settings_path)?;
 	let existing_helper = api_key_helper(&settings, &settings_path)?.map(str::to_string);
@@ -571,7 +577,7 @@ fn unconfigure(global: bool, yes: bool) -> Result<()> {
 		remove_api_key_helper(&mut settings, &settings_path)?;
 		write_json_atomically(&settings_path, &settings, false)?;
 	}
-	state.settings[index].configured = false;
+	setting.configured = false;
 	if let Err(error) = write_json_atomically(
 		&state_file,
 		&serde_json::to_value(&state).into_diagnostic()?,
@@ -589,7 +595,7 @@ fn unconfigure(global: bool, yes: bool) -> Result<()> {
 	Ok(())
 }
 
-fn lifecycle_setting(global: bool, file: &Option<PathBuf>) -> Result<ManagedSetting> {
+fn lifecycle_setting(global: bool, file: Option<&PathBuf>) -> Result<ManagedSetting> {
 	if file.is_some() {
 		return Err(miette!(
 			"monosecret claude login and logout use the manifest recorded by configure; omit --file"
@@ -613,8 +619,8 @@ fn lifecycle_setting(global: bool, file: &Option<PathBuf>) -> Result<ManagedSett
 fn embedded_cli_secrets(
 	setting: &ManagedSetting,
 	provider: Option<&str>,
-	reason: &Option<String>,
-	caller: &Option<CallerContext>,
+	reason: Option<&str>,
+	caller: Option<&CallerContext>,
 	action: &str,
 ) -> Result<(Secrets, String)> {
 	if !matches!(setting.source, CredentialSource::Embedded) {
@@ -626,8 +632,8 @@ fn embedded_cli_secrets(
 	if let Some(provider) = provider.or(setting.provider.as_deref()) {
 		secrets.set_provider(provider);
 	}
-	secrets = secrets.with_reason(reason.as_deref().unwrap_or(&setting.reason));
-	let caller = caller.clone().unwrap_or_else(|| {
+	secrets = secrets.with_reason(reason.unwrap_or(&setting.reason));
+	let caller = caller.cloned().unwrap_or_else(|| {
 		CallerContext::new("claude-code")
 			.with_operation(format!("credential_{action}"))
 			.with_resource(&setting.resource)
@@ -745,14 +751,13 @@ fn settings_path(global: bool) -> Result<PathBuf> {
 }
 
 fn claude_config_dir() -> Result<PathBuf> {
-	match std::env::var_os("CLAUDE_CONFIG_DIR").filter(|value| !value.is_empty()) {
-		Some(path) => resolve_path(Path::new(&path)),
-		None => {
-			let home = etcetera::home_dir()
-				.into_diagnostic()
-				.wrap_err("Failed to locate the user home directory")?;
-			resolve_path(&home.join(".claude"))
-		}
+	if let Some(path) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|value| !value.is_empty()) {
+		resolve_path(Path::new(&path))
+	} else {
+		let home = etcetera::home_dir()
+			.into_diagnostic()
+			.wrap_err("Failed to locate the user home directory")?;
+		resolve_path(&home.join(".claude"))
 	}
 }
 

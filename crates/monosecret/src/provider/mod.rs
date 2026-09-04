@@ -120,6 +120,7 @@ pub use macros::ProviderRegistration;
 pub use macros::declared_flag;
 pub use macros::declared_read_capability;
 #[cfg(any(feature = "awssm", feature = "infisical", feature = "scaleway", test))]
+#[cfg(any(feature = "awssm", feature = "infisical", feature = "scaleway", test))]
 pub(crate) use path::join_slash_path;
 pub(crate) use preflight::ProviderWithPreflight;
 pub use registry::ProviderInfo;

@@ -16,6 +16,7 @@ fn test_spec() -> Spec {
 }
 
 #[test]
+#[allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
 fn public_api_emits_union_and_profile_schemas() {
 	let spec = test_spec();
 

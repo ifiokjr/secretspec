@@ -97,7 +97,7 @@ impl CompletionContext {
 fn completion_words(args: &[OsString]) -> &[OsString] {
 	args.iter()
 		.position(|word| word == "--")
-		.map_or(args, |index| &args[index + 1..])
+		.map_or(args, |index| args.get(index + 1..).unwrap_or_default())
 }
 
 fn profile_value(matches: &ArgMatches) -> Option<String> {
@@ -173,7 +173,7 @@ fn command_candidates(current: &OsStr, path: Option<&OsStr>) -> Vec<CompletionCa
 		.is_some_and(|parent| !parent.as_os_str().is_empty())
 	{
 		return PathCompleter::any()
-			.filter(|path| path.is_executable())
+			.filter(IsExecutable::is_executable)
 			.complete(current);
 	}
 
@@ -700,6 +700,6 @@ personal = "keyring://"
 		);
 		let hidden = command_candidates(OsStr::new(".deploy-"), Some(directory.path().as_os_str()));
 		assert_eq!(hidden.len(), 1);
-		assert!(hidden[0].is_hide_set());
+		assert!(hidden.first().expect("one candidate").is_hide_set());
 	}
 }

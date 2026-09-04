@@ -331,7 +331,7 @@ crate::register_provider! {
 }
 
 impl InfisicalProvider {
-	/// Creates a new InfisicalProvider with the given configuration.
+	/// Creates a new `InfisicalProvider` with the given configuration.
 	pub fn new(config: InfisicalConfig) -> Self {
 		Self {
 			config,
@@ -572,11 +572,14 @@ impl InfisicalProvider {
 			))
 		})?;
 
-		let token = parsed["accessToken"].as_str().ok_or_else(|| {
-			MonosecretError::ProviderOperationFailed(
-				"Infisical login response missing accessToken".to_string(),
-			)
-		})?;
+		let token = parsed
+			.get("accessToken")
+			.and_then(serde_json::Value::as_str)
+			.ok_or_else(|| {
+				MonosecretError::ProviderOperationFailed(
+					"Infisical login response missing accessToken".to_string(),
+				)
+			})?;
 
 		Ok(SecretString::new(token.to_string().into()))
 	}
@@ -586,7 +589,11 @@ impl InfisicalProvider {
 	fn error_message(body: &str) -> String {
 		serde_json::from_str::<serde_json::Value>(body)
 			.ok()
-			.and_then(|v| v["message"].as_str().map(str::to_string))
+			.and_then(|v| {
+				v.get("message")
+					.and_then(serde_json::Value::as_str)
+					.map(str::to_string)
+			})
 			.unwrap_or_else(|| body.to_string())
 	}
 
@@ -673,7 +680,7 @@ impl InfisicalProvider {
 			))
 		})?;
 		url.path_segments_mut()
-			.map_err(|_| {
+			.map_err(|()| {
 				MonosecretError::ProviderOperationFailed(format!(
 					"Invalid Infisical endpoint '{}': not a base URL",
 					self.config.endpoint
@@ -702,7 +709,10 @@ impl InfisicalProvider {
 						"Failed to parse Infisical response: {e}"
 					))
 				})?;
-				Self::secret_value(&parsed["secret"], &loc.key).map(SecretRead::Response)
+				// `Value`'s str-indexing yields `Null` for a missing key, so
+				// mirror that with an explicit fallback.
+				let secret = parsed.get("secret").unwrap_or(&serde_json::Value::Null);
+				Self::secret_value(secret, &loc.key).map(SecretRead::Response)
 			}
 			// A 404 covers a missing secret, folder, environment and project
 			// alike. The caller decides when an all-missing operation warrants
@@ -783,11 +793,14 @@ impl InfisicalProvider {
 						"Failed to parse Infisical response: {e}"
 					))
 				})?;
-				let secrets = parsed["secrets"].as_array().ok_or_else(|| {
-					MonosecretError::ProviderOperationFailed(
-						"Infisical list response missing `secrets`".to_string(),
-					)
-				})?;
+				let secrets = parsed
+					.get("secrets")
+					.and_then(serde_json::Value::as_array)
+					.ok_or_else(|| {
+						MonosecretError::ProviderOperationFailed(
+							"Infisical list response missing `secrets`".to_string(),
+						)
+					})?;
 				let mut listed = HashMap::new();
 				for secret in secrets {
 					let Some(key) = secret["secretKey"].as_str() else {
@@ -1315,6 +1328,7 @@ impl Provider for InfisicalProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use std::io::BufRead;
 	use std::io::BufReader;
@@ -1358,10 +1372,10 @@ mod tests {
 			if line == "\r\n" || line.is_empty() {
 				break;
 			}
-			if let Some((name, value)) = line.split_once(':') {
-				if name.eq_ignore_ascii_case("content-length") {
-					content_length = value.trim().parse().ok()?;
-				}
+			if let Some((name, value)) = line.split_once(':')
+				&& name.eq_ignore_ascii_case("content-length")
+			{
+				content_length = value.trim().parse().ok()?;
 			}
 		}
 
@@ -1390,6 +1404,11 @@ mod tests {
 					Ok((stream, _)) => {
 						let connection_id = next_connection_id;
 						next_connection_id += 1;
+						// Accepted sockets inherit the listener's non-blocking mode on
+						// macOS/BSD; restore blocking so reads honor the read timeout
+						// below instead of failing instantly with `EAGAIN` and
+						// dropping the connection before the request arrives.
+						stream.set_nonblocking(false).unwrap();
 						stream
 							.set_read_timeout(Some(Duration::from_secs(5)))
 							.unwrap();
@@ -1398,10 +1417,7 @@ mod tests {
 						workers.push(thread::spawn(move || {
                             let mut reader = BufReader::new(stream.try_clone().unwrap());
                             let mut writer = stream;
-                            loop {
-                                let Some(request) = read_request(&mut reader) else {
-                                    break;
-                                };
+                            while let Some(request) = read_request(&mut reader) {
                                 let seen = request_count.fetch_add(1, Ordering::AcqRel) + 1;
                                 sender.send((connection_id, request.clone())).unwrap();
 
@@ -1508,7 +1524,7 @@ mod tests {
 	/// of reqwest's connection-pool behavior.
 	fn response_server(
 		responses: Vec<(&'static str, &'static str)>,
-	) -> (SocketAddr, std::thread::JoinHandle<Vec<String>>) {
+	) -> (SocketAddr, thread::JoinHandle<Vec<String>>) {
 		response_server_with_lengths(
 			responses
 				.into_iter()
@@ -1522,10 +1538,10 @@ mod tests {
 	/// status instead of buffering data it did not need.
 	fn response_server_with_lengths(
 		responses: Vec<(&'static str, &'static str, usize)>,
-	) -> (SocketAddr, std::thread::JoinHandle<Vec<String>>) {
+	) -> (SocketAddr, thread::JoinHandle<Vec<String>>) {
 		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
 		let endpoint = listener.local_addr().unwrap();
-		let server = std::thread::spawn(move || {
+		let server = thread::spawn(move || {
 			let mut requests = Vec::new();
 			for (status, body, content_length) in responses {
 				let (mut stream, _) = listener.accept().unwrap();
@@ -1543,8 +1559,7 @@ mod tests {
 				write!(
 					stream,
 					"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: \
-                     {}\r\nConnection: close\r\n\r\n{body}",
-					content_length
+                     {content_length}\r\nConnection: close\r\n\r\n{body}"
 				)
 				.unwrap();
 			}
@@ -2184,7 +2199,7 @@ mod tests {
 	/// contract rather than its own wrapping: it must stay a `&self` hook.
 	#[test]
 	fn set_profile_reaches_the_provider_through_arc() {
-		let p = std::sync::Arc::new(provider(&format!(
+		let p = Arc::new(provider(&format!(
 			"infisical://app.infisical.com/{PROJECT}"
 		)));
 		Provider::set_profile(&p, "prod");

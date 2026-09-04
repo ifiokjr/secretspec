@@ -1,3 +1,5 @@
+#![allow(clippy::indexing_slicing)] // test fixtures: missing keys must fail loudly; panic-on-missing is the assertion
+
 use std::env;
 use std::fs;
 use std::io::Write;

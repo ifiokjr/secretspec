@@ -252,7 +252,11 @@ impl ResolutionPlan {
 			};
 			let primary = route.group_key();
 			if let Some(&idx) = group_index.get(&primary) {
-				groups[idx].1.push(secret)
+				groups
+					.get_mut(idx)
+					.expect("invariant: group index was recorded for an existing group")
+					.1
+					.push(secret);
 			} else {
 				group_index.insert(primary, groups.len());
 				groups.push((primary, vec![secret]));
@@ -418,7 +422,7 @@ impl Secrets {
 				.secrets
 				.get(&name)
 				.expect("planned names come from the compiled profile");
-			secrets.push(self.plan_one_secret(name, secret, &override_spec)?);
+			secrets.push(self.plan_one_secret(name, secret, override_spec.as_deref())?);
 		}
 
 		let override_uri = override_spec
@@ -450,7 +454,7 @@ impl Secrets {
 		override_arg: Option<&str>,
 	) -> Result<Option<PlannedSecret>> {
 		let override_spec = self.explicit_provider_spec(override_arg);
-		self.plan_one(name, profile_name, &override_spec)
+		self.plan_one(name, profile_name, override_spec.as_deref())
 	}
 
 	/// As [`Secrets::plan_secret`], but ignoring every provider override —
@@ -465,7 +469,7 @@ impl Secrets {
 		name: &str,
 		profile_name: &str,
 	) -> Result<Option<PlannedSecret>> {
-		self.plan_one(name, profile_name, &None)
+		self.plan_one(name, profile_name, None)
 	}
 
 	/// Plan one declared secret against an already-decided override spec.
@@ -474,7 +478,7 @@ impl Secrets {
 		&self,
 		name: &str,
 		profile_name: &str,
-		override_spec: &Option<String>,
+		override_spec: Option<&str>,
 	) -> Result<Option<PlannedSecret>> {
 		let Some(secret) = self
 			.manifest
@@ -499,7 +503,7 @@ impl Secrets {
 		&self,
 		name: String,
 		secret: &CompiledSecret,
-		override_spec: &Option<String>,
+		override_spec: Option<&str>,
 	) -> Result<PlannedSecret> {
 		self.validate_scoped_refs(&name, &secret.config)?;
 		// A composed secret's value is derived by the executor, so it routes
@@ -525,11 +529,7 @@ impl Secrets {
 	/// so the chain stays tried in order. An empty or absent chain is the default
 	/// provider. This is the one routing deriver behind the plan, `get`, `set`,
 	/// and generation.
-	pub(crate) fn route_for(
-		&self,
-		config: &Secret,
-		override_spec: &Option<String>,
-	) -> Result<Route> {
+	pub(crate) fn route_for(&self, config: &Secret, override_spec: Option<&str>) -> Result<Route> {
 		// Either arm keeps the raw spec as the build key (the spec may be an
 		// alias whose `credentials` must stay reachable when the store is
 		// constructed — a resolved URI has lost it), resolves the URI for
@@ -542,8 +542,8 @@ impl Secrets {
 			self.validate_credential_sources(spec)?;
 			return Ok(Route {
 				primary: Some(ResolvedPrimary {
-					spec: spec.clone(),
-					uri: self.resolve_provider_spec(spec.clone()),
+					spec: spec.to_string(),
+					uri: self.resolve_provider_spec(spec.to_string()),
 				}),
 				fallback: Vec::new(),
 				cache: None,
@@ -704,11 +704,19 @@ impl Secrets {
                  authoritative source '{source}'. A cache must be a distinct store, otherwise \
                  refreshing it overwrites the secret it caches.",
 				uri = crate::audit::redact_uri_strict(&cache_uri),
-				source = crate::audit::redact_uri_strict(
-					alias
-						.authoritative_uri()
-						.unwrap_or_else(|| alias.fallback()[shared].as_str()),
-				),
+				// An inline URI alias never reaches the fallback (its
+				// authoritative URI short-circuits above), so this lookup only
+				// ever runs for the cached-fallback form, where sources mirror
+				// the fallback list one-to-one.
+				source = crate::audit::redact_uri_strict(alias.authoritative_uri().unwrap_or_else(
+					|| {
+						alias
+							.fallback()
+							.get(shared)
+							.expect("invariant: sources mirror the fallback list")
+							.as_str()
+					}
+				),),
 			)));
 		}
 
@@ -732,10 +740,16 @@ impl Secrets {
 				"cached provider alias '{name}' requires at least one authoritative source"
 			))
 		})?;
+		// Every authoritative source (inline: one URI; fallback form: one per
+		// fallback entry) resolves a URI above, so index 0 always exists here.
+		let first_uri = source_uris
+			.first()
+			.expect("invariant: every authoritative source resolved a URI")
+			.clone();
 		Ok(Route {
 			primary: Some(ResolvedPrimary {
 				spec: first,
-				uri: source_uris[0].clone(),
+				uri: first_uri,
 			}),
 			fallback: specs.collect(),
 			cache: Some(ResolvedCache {
@@ -797,11 +811,11 @@ impl Secrets {
 
 /// Deterministic, dependency-free fingerprint used only for cache invalidation.
 fn stable_fingerprint<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
-	let mut hash = 0xcbf29ce484222325_u64;
+	let mut hash = 0xcbf2_9ce4_8422_2325_u64;
 	for part in parts {
 		for byte in part.len().to_le_bytes().iter().chain(part.as_bytes()) {
 			hash ^= u64::from(*byte);
-			hash = hash.wrapping_mul(0x100000001b3);
+			hash = hash.wrapping_mul(0x0100_0000_01b3);
 		}
 	}
 	format!("v1-{hash:016x}")
@@ -1059,11 +1073,11 @@ mod tests {
 				panic!("a ref should address native coordinates")
 			}
 		}
-		let plain = find(&plan, "PLAIN");
+		let plain_secret = find(&plan, "PLAIN");
 		let plain_address = spec
 			.address_for_spec(
-				plain,
-				plain.route.as_ref().and_then(Route::group_key),
+				plain_secret,
+				plain_secret.route.as_ref().and_then(Route::group_key),
 				"proj",
 				"default",
 			)
@@ -1212,7 +1226,7 @@ mod tests {
 	/// A cached route alias over the given sources, cached in `cache_spec`.
 	fn cached_alias(sources: &[&str], cache_spec: &str, max_age: &str) -> ProviderAlias {
 		ProviderAlias::cached(
-			sources.iter().map(|s| s.to_string()).collect(),
+			sources.iter().map(ToString::to_string).collect(),
 			ProviderCache::new(cache_spec, max_age).unwrap(),
 		)
 		.unwrap()

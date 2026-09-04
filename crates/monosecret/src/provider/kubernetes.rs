@@ -42,7 +42,7 @@ fn runtime() -> &'static tokio::runtime::Runtime {
 
 fn block_on<F>(future: F) -> F::Output
 where
-	F: std::future::Future + Send,
+	F: Future + Send,
 	F::Output: Send,
 {
 	match tokio::runtime::Handle::try_current() {
@@ -102,17 +102,15 @@ impl TryFrom<&ProviderUrl> for KubernetesConfig {
 	type Error = MonosecretError;
 
 	fn try_from(url: &ProviderUrl) -> std::result::Result<Self, Self::Error> {
-		let kind: KubernetesKind;
-		match url.scheme() {
-			"k8s+configmap" => kind = KubernetesKind::ConfigMap,
-			"k8s+secret" => kind = KubernetesKind::Secret,
+		let kind: KubernetesKind = match url.scheme() {
+			"k8s+configmap" => KubernetesKind::ConfigMap,
+			"k8s+secret" => KubernetesKind::Secret,
 			scheme => {
 				return Err(MonosecretError::ProviderOperationFailed(format!(
-					"Invalid scheme '{}' for kubernetes provider. Expected 'k8s+configmap' or 'k8s+secret'.",
-					scheme
+					"Invalid scheme '{scheme}' for kubernetes provider. Expected 'k8s+configmap' or 'k8s+secret'."
 				)));
 			}
-		}
+		};
 
 		let name: String;
 		let namespace: Option<String>;
@@ -124,9 +122,9 @@ impl TryFrom<&ProviderUrl> for KubernetesConfig {
 				}
 			}
 			None => {
-				return Err(MonosecretError::ProviderOperationFailed(format!(
-					"A Kubernetes objet identifier must be provided"
-				)));
+				return Err(MonosecretError::ProviderOperationFailed(
+					"A Kubernetes objet identifier must be provided".to_string(),
+				));
 			}
 		}
 
@@ -157,8 +155,9 @@ impl KubernetesProvider {
 		}
 	}
 
+	#[allow(clippy::ref_option)] // `pub` signature; `cli` calls this, so the parameter types stay stable
 	pub fn build_uri(kind: &KubernetesKind, name: &String, namespace: &Option<String>) -> String {
-		let mut uri = format!("k8s+{}://{}", kind, name);
+		let mut uri = format!("k8s+{kind}://{name}");
 		if let Some(namespace) = namespace {
 			uri.push('@');
 			uri.push_str(namespace);
@@ -190,17 +189,15 @@ impl KubernetesProvider {
 	fn validate_name_component(name: &str, component: &str) -> Result<()> {
 		if component.is_empty() {
 			return Err(MonosecretError::ProviderOperationFailed(format!(
-				"{} cannot be empty",
-				name
+				"{name} cannot be empty"
 			)));
 		}
 
 		for c in component.chars() {
 			if !c.is_ascii_alphanumeric() && c != '_' && c != '-' && c != '.' {
 				return Err(MonosecretError::ProviderOperationFailed(format!(
-					"{} contains invalid character '{}'. \
-                    Only alphanumeric characters, underscores, periods, and hyphens are allowed",
-					name, c
+					"{name} contains invalid character '{c}'. \
+                    Only alphanumeric characters, underscores, periods, and hyphens are allowed"
 				)));
 			}
 		}
@@ -221,11 +218,11 @@ impl KubernetesProvider {
 		Self::validate_name_component("project", project)?;
 		Self::validate_name_component("profile", profile)?;
 		Self::validate_name_component("key", key)?;
-		let secret_name = format!("monosecret--{}--{}--{}", project, profile, key);
+		let secret_name = format!("monosecret--{project}--{profile}--{key}");
 		if secret_name.len() > 253 {
-			return Err(MonosecretError::ProviderOperationFailed(format!(
-				"Key cannot be longer than 253 characters"
-			)));
+			return Err(MonosecretError::ProviderOperationFailed(
+				"Key cannot be longer than 253 characters".to_string(),
+			));
 		}
 		Ok(secret_name)
 	}
@@ -239,19 +236,17 @@ impl KubernetesProvider {
 		let name = self.config.name.as_str();
 		let value = match self.config.kind {
 			KubernetesKind::ConfigMap => {
-				let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
+				let api: Api<ConfigMap> = Api::namespaced(client.clone(), namespace);
 				api.get(name).await.map(|cm| {
-					cm.data.map_or(None, |d| {
-						d.get(key).map(|v| StringRepresentation::Plain(v.clone()))
-					})
+					cm.data
+						.and_then(|d| d.get(key).map(|v| StringRepresentation::Plain(v.clone())))
 				})
 			}
 			KubernetesKind::Secret => {
-				let api: Api<Secret> = Api::namespaced(client.clone(), &namespace);
+				let api: Api<Secret> = Api::namespaced(client.clone(), namespace);
 				api.get(name).await.map(|cm| {
-					cm.data.map_or(None, |d| {
-						d.get(key).map(|v| StringRepresentation::Base64(v.clone()))
-					})
+					cm.data
+						.and_then(|d| d.get(key).map(|v| StringRepresentation::Base64(v.clone())))
 				})
 			}
 		};
@@ -272,10 +267,8 @@ impl KubernetesProvider {
 			Ok(None) => Ok(None),
 			Err(e) => {
 				Err(MonosecretError::ProviderOperationFailed(format!(
-					"Cannot get {}/{} in namespace {}: {}",
+					"Cannot get {}/{name} in namespace {namespace}: {}",
 					self.config.kind,
-					name,
-					namespace,
 					crate::error::display_error_chain(&e)
 				)))
 			}
@@ -304,11 +297,11 @@ impl KubernetesProvider {
 		let patch = Patch::Merge(&patch);
 		let patched = match self.config.kind {
 			KubernetesKind::ConfigMap => {
-				let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
+				let api: Api<ConfigMap> = Api::namespaced(client.clone(), namespace);
 				api.patch(name, &params, &patch).await.map(|_| ())
 			}
 			KubernetesKind::Secret => {
-				let api: Api<Secret> = Api::namespaced(client.clone(), &namespace);
+				let api: Api<Secret> = Api::namespaced(client.clone(), namespace);
 				api.patch(name, &params, &patch).await.map(|_| ())
 			}
 		};
@@ -339,16 +332,16 @@ impl KubernetesProvider {
 		)]));
 		let patched = match self.config.kind {
 			KubernetesKind::ConfigMap => {
-				let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
+				let api: Api<ConfigMap> = Api::namespaced(client.clone(), namespace);
 				api.patch(name, &params, &patch).await.map(|_| ())
 			}
 			KubernetesKind::Secret => {
-				let api: Api<Secret> = Api::namespaced(client.clone(), &namespace);
+				let api: Api<Secret> = Api::namespaced(client.clone(), namespace);
 				api.patch(name, &params, &patch).await.map(|_| ())
 			}
 		};
 		match patched {
-			Ok(_) => Ok(true),
+			Ok(()) => Ok(true),
 			// This happens when we try to remove a path that doesn't exist
 			Err(kube::Error::Api(status)) if status.code == 422 && status.reason == "Invalid" => {
 				Ok(false)
@@ -396,7 +389,7 @@ impl KubernetesProvider {
 					crate::error::display_error_chain(&e)
 				))
 			});
-		response.map(|r| r.status.map(|s| s.allowed).unwrap_or(false))
+		response.map(|r| r.status.is_some_and(|s| s.allowed))
 	}
 }
 
@@ -491,14 +484,21 @@ mod tests {
 				read, 0,
 				"connection closed before completing request headers"
 			);
-			request.extend_from_slice(&buffer[..read]);
+			request.extend_from_slice(
+				buffer
+					.get(..read)
+					.expect("invariant: `Read::read` never returns more than the buffer length"),
+			);
 
 			if let Some(headers_end) = request
 				.windows(4)
 				.position(|window| window == b"\r\n\r\n")
 				.map(|position| position + 4)
 			{
-				let headers = std::str::from_utf8(&request[..headers_end]).unwrap();
+				let headers = std::str::from_utf8(request.get(..headers_end).expect(
+					"invariant: the matched four-byte separator keeps `headers_end` within `request`",
+				))
+				.unwrap();
 				let content_length = headers
 					.lines()
 					.find_map(|line| {
@@ -514,10 +514,19 @@ mod tests {
 		while request.len() < headers_end + content_length {
 			let read = stream.read(&mut buffer).unwrap();
 			assert_ne!(read, 0, "connection closed before completing request body");
-			request.extend_from_slice(&buffer[..read]);
+			request.extend_from_slice(
+				buffer
+					.get(..read)
+					.expect("invariant: `Read::read` never returns more than the buffer length"),
+			);
 		}
 
-		serde_json::from_slice(&request[headers_end..headers_end + content_length]).unwrap()
+		serde_json::from_slice(
+			request
+				.get(headers_end..headers_end + content_length)
+				.expect("invariant: the read loop above filled the request body"),
+		)
+		.unwrap()
 	}
 
 	fn provider_with_access_reviews(
@@ -581,7 +590,10 @@ mod tests {
 	}
 
 	fn assert_secret_patch_review(request: &serde_json::Value) {
-		let attributes = &request["spec"]["resourceAttributes"];
+		let attributes = request
+			.get("spec")
+			.and_then(|spec| spec.get("resourceAttributes"))
+			.expect("patch review request must contain spec.resourceAttributes");
 		assert_eq!(attributes["verb"], "patch");
 		assert_eq!(attributes["resource"], "secrets");
 		assert_eq!(attributes["namespace"], "app");
@@ -630,7 +642,7 @@ mod tests {
 
 		let requests = server.join().unwrap();
 		assert_eq!(requests.len(), 1);
-		assert_secret_patch_review(&requests[0]);
+		assert_secret_patch_review(requests.first().expect("one request was expected"));
 	}
 
 	#[test]

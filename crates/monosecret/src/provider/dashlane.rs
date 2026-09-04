@@ -365,7 +365,7 @@ impl DashlaneProvider {
 	pub fn new(config: DashlaneConfig) -> Self {
 		Self {
 			config,
-			credentials: Default::default(),
+			credentials: HashMap::new(),
 		}
 	}
 
@@ -554,7 +554,6 @@ impl DashlaneProvider {
 
 	/// Resolves one address against an already-listed content type.
 	fn lookup(
-		&self,
 		items: &[VaultItem],
 		item_type: ItemType,
 		name: &str,
@@ -636,7 +635,7 @@ impl Provider for DashlaneProvider {
 		let mut lacked_field = false;
 		for &item_type in self.types_to_search() {
 			let items = self.list(item_type)?;
-			match self.lookup(&items, item_type, &coords.item, coords.field.as_deref())? {
+			match Self::lookup(&items, item_type, &coords.item, coords.field.as_deref())? {
 				Found::Value(value) => return Ok(Some(value)),
 				Found::NoField => lacked_field = true,
 				Found::NoItem => {}
@@ -669,7 +668,7 @@ impl Provider for DashlaneProvider {
 				if found.contains_key(*name) {
 					continue;
 				}
-				match self.lookup(&items, item_type, &coords.item, coords.field.as_deref())? {
+				match Self::lookup(&items, item_type, &coords.item, coords.field.as_deref())? {
 					Found::Value(value) => {
 						found.insert((*name).to_string(), value);
 					}
@@ -712,6 +711,7 @@ impl Default for DashlaneProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use url::Url;
 
@@ -921,11 +921,9 @@ mod tests {
 	/// conflated with the item being absent.
 	#[test]
 	fn a_missing_referenced_field_is_distinguished() {
-		let provider = DashlaneProvider::default();
 		let items = vec![item("{A}", "GitHub", "password", "v")];
 		assert!(matches!(
-			provider
-				.lookup(&items, ItemType::Password, "GitHub", Some("otpSecret"))
+			DashlaneProvider::lookup(&items, ItemType::Password, "GitHub", Some("otpSecret"))
 				.unwrap(),
 			Found::NoField
 		));
@@ -944,24 +942,21 @@ mod tests {
 	/// title but has no `login` field; the login that does must still be found.
 	#[test]
 	fn an_earlier_type_lacking_the_field_does_not_end_the_search() {
-		let provider = DashlaneProvider::default();
 		let notes = vec![item("{N}", "Production database", "content", "notes")];
 		let logins = vec![item("{L}", "Production database", "login", "app_user")];
 
 		assert!(matches!(
-			provider
-				.lookup(&notes, ItemType::Note, "Production database", Some("login"))
+			DashlaneProvider::lookup(&notes, ItemType::Note, "Production database", Some("login"))
 				.unwrap(),
 			Found::NoField
 		));
-		let found = provider
-			.lookup(
-				&logins,
-				ItemType::Password,
-				"Production database",
-				Some("login"),
-			)
-			.unwrap();
+		let found = DashlaneProvider::lookup(
+			&logins,
+			ItemType::Password,
+			"Production database",
+			Some("login"),
+		)
+		.unwrap();
 		match found {
 			Found::Value(value) => {
 				use secrecy::ExposeSecret;
@@ -975,12 +970,9 @@ mod tests {
 	/// fallback chain gets a chance.
 	#[test]
 	fn an_empty_default_field_reads_as_unset() {
-		let provider = DashlaneProvider::default();
 		let items = vec![item("{A}", "GitHub", "content", "")];
 		assert!(matches!(
-			provider
-				.lookup(&items, ItemType::Note, "GitHub", None)
-				.unwrap(),
+			DashlaneProvider::lookup(&items, ItemType::Note, "GitHub", None).unwrap(),
 			Found::NoItem
 		));
 	}

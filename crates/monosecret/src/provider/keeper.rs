@@ -262,7 +262,7 @@ impl KeeperProvider {
 		self.with_client("retrieve records", |client| client.get_secrets())
 	}
 
-	fn record_index(&self, records: &[Record], target: &KeeperTarget) -> Result<Option<usize>> {
+	fn record_index(records: &[Record], target: &KeeperTarget) -> Result<Option<usize>> {
 		if target.native
 			&& let Some(index) = records.iter().position(|record| record.uid == target.item)
 		{
@@ -484,17 +484,22 @@ impl Provider for KeeperProvider {
 	fn get(&self, addr: Address<'_>) -> Result<Option<SecretString>> {
 		let target = self.target(addr)?;
 		let records = self.records()?;
-		let Some(index) = self.record_index(&records, &target)? else {
+		let Some(index) = Self::record_index(&records, &target)? else {
 			return Ok(None);
 		};
-		Self::secret_value(&records[index], &target.field).map(Some)
+		let record = records.get(index).ok_or_else(|| {
+			MonosecretError::ProviderOperationFailed(format!(
+				"Keeper record at index {index} disappeared from the response"
+			))
+		})?;
+		Self::secret_value(record, &target.field).map(Some)
 	}
 
 	fn set(&self, addr: Address<'_>, value: &SecretString) -> Result<()> {
 		self.check_writable(addr)?;
 		let target = self.target(addr)?;
 		let mut records = self.records()?;
-		match self.record_index(&records, &target)? {
+		match Self::record_index(&records, &target)? {
 			Some(index) => self.update_record(records.swap_remove(index), &target.field, value),
 			None if target.native => {
 				Err(MonosecretError::ProviderOperationFailed(format!(
@@ -520,7 +525,7 @@ impl Provider for KeeperProvider {
 		}
 		let target = self.target(addr)?;
 		let mut records = self.records()?;
-		let Some(index) = self.record_index(&records, &target)? else {
+		let Some(index) = Self::record_index(&records, &target)? else {
 			return Ok(false);
 		};
 		let record = records.swap_remove(index);
@@ -549,12 +554,13 @@ impl Provider for KeeperProvider {
 		}
 		let target = self.target(addr)?;
 		let records = self.records()?;
-		if let Some(index) = self.record_index(&records, &target)?
-			&& !records[index].is_editable
+		if let Some(index) = Self::record_index(&records, &target)?
+			&& let Some(record) = records.get(index)
+			&& !record.is_editable
 		{
 			return Err(MonosecretError::ProviderOperationFailed(format!(
 				"Keeper record '{}' is not editable by this application",
-				records[index].title
+				record.title
 			)));
 		}
 		Ok(())
@@ -572,11 +578,10 @@ impl Provider for KeeperProvider {
 		let records = self.records()?;
 		let mut values = HashMap::new();
 		for (name, target) in targets {
-			if let Some(index) = self.record_index(&records, &target)? {
-				values.insert(
-					name.to_string(),
-					Self::secret_value(&records[index], &target.field)?,
-				);
+			if let Some(index) = Self::record_index(&records, &target)?
+				&& let Some(record) = records.get(index)
+			{
+				values.insert(name.to_string(), Self::secret_value(record, &target.field)?);
 			}
 		}
 		Ok(values)
@@ -584,6 +589,7 @@ impl Provider for KeeperProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)] // test fixtures: indexing is the assertion
 mod tests {
 	use std::sync::Arc;
 
@@ -915,7 +921,7 @@ mod tests {
 			"typed fields",
 			true,
 			serde_json::json!([
-				{"type": "date", "label": "Renewal", "value": [1700000000000_u64]}
+				{"type": "date", "label": "Renewal", "value": [1_700_000_000_000_u64]}
 			]),
 			serde_json::json!([
 				{"type": "checkbox", "label": "Enabled", "value": [true]},
@@ -957,7 +963,7 @@ mod tests {
 
 		let state = state.lock().unwrap();
 		let expected = [
-			serde_json::json!(1700000000001_u64),
+			serde_json::json!(1_700_000_000_001_u64),
 			serde_json::json!(false),
 			serde_json::json!({"hostName": "replica.example.com", "port": "5433"}),
 			serde_json::json!({"first": "Grace", "last": "Hopper"}),
@@ -980,7 +986,7 @@ mod tests {
 			"typed fields",
 			true,
 			serde_json::json!([
-				{"type": "date", "label": "Renewal", "value": [1700000000000_u64]}
+				{"type": "date", "label": "Renewal", "value": [1_700_000_000_000_u64]}
 			]),
 			serde_json::json!([]),
 		)]);
