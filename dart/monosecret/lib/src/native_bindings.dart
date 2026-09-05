@@ -1,6 +1,7 @@
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
+import 'package:meta/meta.dart';
 
 const _nativeAssetId = 'package:monosecret/src/native_bindings.dart';
 
@@ -24,6 +25,11 @@ external void _monosecretFree(Pointer<Utf8> pointer);
 )
 external Pointer<Utf8> _monosecretAbiVersion();
 
+@Native<Pointer<Utf8> Function(Pointer<Utf8>)>(
+  symbol: 'monosecret_call',
+  assetId: _nativeAssetId,
+)
+external Pointer<Utf8> _monosecretCall(Pointer<Utf8> request);
 String nativeAbiVersion() {
   final pointer = _monosecretAbiVersion();
   if (pointer == nullptr) {
@@ -37,17 +43,36 @@ String nativeResolve(String requestJson) {
   final request = requestJson.toNativeUtf8(allocator: calloc);
 
   try {
-    final response = _monosecretResolve(request);
-    if (response == nullptr) {
-      throw StateError('monosecret_resolve returned a null pointer.');
-    }
-
-    try {
-      return response.toDartString();
-    } finally {
-      _monosecretFree(response);
-    }
+    return decodeResponse(
+      _monosecretResolve(request),
+      symbol: 'monosecret_resolve',
+    );
   } finally {
     calloc.free(request);
+  }
+}
+
+String nativeCall(String requestJson) {
+  final request = requestJson.toNativeUtf8(allocator: calloc);
+
+  try {
+    return decodeResponse(_monosecretCall(request), symbol: 'monosecret_call');
+  } finally {
+    calloc.free(request);
+  }
+}
+
+/// Copies the NUL-terminated [response] into a Dart string and frees the
+/// native allocation.
+@visibleForTesting
+String decodeResponse(Pointer<Utf8> response, {required String symbol}) {
+  if (response == nullptr) {
+    throw StateError('$symbol returned a null pointer.');
+  }
+
+  try {
+    return response.toDartString();
+  } finally {
+    _monosecretFree(response);
   }
 }
