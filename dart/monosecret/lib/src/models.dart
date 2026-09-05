@@ -23,6 +23,47 @@ class MissingRequiredException extends MonosecretException {
   final List<String> missing;
 }
 
+/// Caller-asserted software-integration context (Monosecret 0.20+).
+///
+/// Records *what* invoked secret access in audit records. It is deliberately
+/// separate from the user-supplied access reason, which answers *why* the
+/// access is happening and may be required by a project's `require_reason`
+/// policy — a caller context never satisfies that policy.
+///
+/// The context is caller-asserted metadata, not an authenticated identity.
+/// Do not put credentials or secret values in any field.
+class CallerContext {
+  const CallerContext({
+    required this.name,
+    this.version,
+    this.operation,
+    this.resource,
+  });
+
+  /// Stable name of the integration, such as `dart-app`.
+  final String name;
+
+  /// Version of the integration, when useful for diagnostics.
+  final String? version;
+
+  /// Integration-specific operation, such as `credential_get`.
+  final String? operation;
+
+  /// Non-secret resource being accessed, such as a repository host.
+  final String? resource;
+
+  /// Serializes the context for the native request, omitting absent fields.
+  Map<String, String> toRequest() => {
+    for (final entry in {
+      'name': name,
+      'version': version,
+      'operation': operation,
+      'resource': resource,
+    }.entries)
+      if (entry.value != null) entry.key: entry.value!,
+  };
+}
+
 /// One resolved secret.
 class ResolvedSecret {
   const ResolvedSecret({

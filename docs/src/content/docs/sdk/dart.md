@@ -55,6 +55,37 @@ final report = await Monosecret.builder()
 
 Reports contain status and provenance without copying secret values into native buffers or Dart strings.
 
+## Inline specifications and caller context (0.20+)
+
+```dart
+final resolved = await Monosecret.builder()
+    .withInlineSpec({
+      'project': {'name': 'my-app'},
+      'profiles': {
+        'default': {
+          'secrets': {
+            'TOKEN': {'description': 'API token', 'required': true},
+          },
+        },
+      },
+    }, '/project')
+    .withProvider('dotenv://.env')
+    .withCaller(
+      const CallerContext(
+        name: 'my-dart-app',
+        version: '1.0.0',
+        operation: 'startup',
+      ),
+    )
+    .withReason('Start the API server')
+    .load();
+```
+
+Inline resolution uses the versioned native call entry point and cannot fall
+back to a filesystem manifest. An older native library raises a `capability`
+`MonosecretException` instead. `withCaller` records the invoking integration
+in audit records; it never satisfies a `require_reason` policy.
+
 ## Filter resolution
 
 ```dart

@@ -1,23 +1,102 @@
 import 'dart:convert';
 import 'dart:isolate';
 
+import 'package:meta/meta.dart';
+
 import 'models.dart';
 import 'native_bindings.dart';
 import 'version.dart';
 
 const _resolveSchemaVersion = 2;
 const _reportSchemaVersion = 1;
+const _nativeCallRequestVersion = 1;
+const _inlineSpecSchemaVersion = 2;
+
+/// Whether the bundled native library exposes the versioned `monosecret_call`
+/// entry point. Probed once and cached; tests override
+/// [inlineSupportProbeForTest] to cover both branches.
+bool _inlineSupportProbed = false;
+bool _inlineSupport = false;
+bool Function() _inlineSupportProbe = probeInlineSupport;
+
+/// Overrides the inline-support probe (testing only). Passing a probe also
+/// resets the cached result so the next request re-evaluates it.
+@visibleForTesting
+set inlineSupportProbeForTest(bool Function() probe) {
+  _inlineSupportProbe = probe;
+  _inlineSupportProbed = false;
+}
+
+/// Probes the bundled native library for `monosecret_call` without touching
+/// the filesystem: an unparsable request still yields an error envelope from
+/// a capable library, while an older one fails the symbol lookup entirely.
+@visibleForTesting
+bool probeInlineSupport() => callEntryPointsUsable();
+
+/// Whether the native `monosecret_call` entry point is usable.
+///
+/// An unparsable request still yields an error envelope from a capable
+/// library, while an older one fails the symbol lookup entirely. [call]
+/// replaces the native binding for tests so both branches are coverable.
+@visibleForTesting
+bool callEntryPointsUsable({String Function(String)? call}) {
+  final callFn = call ?? nativeCall;
+  try {
+    callFn('{"not":"a call request"}');
+    return true;
+  } on Object {
+    return false;
+  }
+}
+
+bool _inlineSpecsSupported() {
+  if (!_inlineSupportProbed) {
+    _inlineSupport = _inlineSupportProbe();
+    _inlineSupportProbed = true;
+  }
+
+  return _inlineSupport;
+}
 
 /// Entry point for native Monosecret resolution.
 abstract final class Monosecret {
   static MonosecretBuilder builder() => MonosecretBuilder();
 }
 
+/// Guards that the bundled native library matches this Dart package.
+@visibleForTesting
+void checkNativeAbiVersion(String actual) {
+  if (actual != monosecretVersion) {
+    throw MonosecretException(
+      'version',
+      'Native ABI version $actual does not match Dart package version '
+          '$monosecretVersion.',
+    );
+  }
+}
+
 /// Configures one native resolution request.
 class MonosecretBuilder {
   final Map<String, Object?> _request = {};
+  (Map<String, Object?>, String)? _inline;
 
-  MonosecretBuilder withPath(String? path) => _set('path', path);
+  MonosecretBuilder withPath(String? path) {
+    _inline = null;
+    return _set('path', path);
+  }
+
+  /// Resolves a strict inline-spec v1 declaration at [baseDir]
+  /// (Monosecret 0.20+).
+  ///
+  /// Inline resolution uses the versioned native call entry point, so an
+  /// older native library cannot fall back to a filesystem manifest —
+  /// calling [load] raises a `capability` [MonosecretException] instead.
+  /// Setting [withPath] afterwards clears the inline spec.
+  MonosecretBuilder withInlineSpec(Map<String, Object?> spec, String baseDir) {
+    _request.remove('path');
+    _inline = (spec, baseDir);
+    return this;
+  }
 
   MonosecretBuilder withProvider(String? provider) =>
       _set('provider', provider);
@@ -27,6 +106,18 @@ class MonosecretBuilder {
   MonosecretBuilder withScope(String? scope) => _set('scope', scope);
 
   MonosecretBuilder withReason(String? reason) => _set('reason', reason);
+
+  /// Identifies the invoking software integration in audit records
+  /// (Monosecret 0.20+). Never satisfies a `require_reason` policy.
+  MonosecretBuilder withCaller(CallerContext? caller) {
+    if (caller == null) {
+      _request.remove('caller');
+    } else {
+      _request['caller'] = caller.toRequest();
+    }
+
+    return this;
+  }
 
   MonosecretBuilder withNoValues([bool noValues = true]) =>
       _set('no_values', noValues);
@@ -39,8 +130,7 @@ class MonosecretBuilder {
 
   /// Resolves secret values through the bundled native library.
   Future<Resolved> load() async {
-    final response = await _requestNative(
-      _request,
+    final response = await _dispatch(
       kind: 'resolve',
       expectedSchemaVersion: _resolveSchemaVersion,
     );
@@ -50,14 +140,72 @@ class MonosecretBuilder {
 
   /// Produces a value-free resolution report.
   Future<ResolutionReport> report() async {
-    final request = {..._request, 'mode': 'report'};
-    final response = await _requestNative(
-      request,
+    final response = await _dispatch(
       kind: 'report',
       expectedSchemaVersion: _reportSchemaVersion,
+      mode: 'report',
     );
 
     return parseReport(response);
+  }
+
+  /// Builds the native request for this builder.
+  ///
+  /// Returns the request document and whether it must go through the
+  /// versioned `monosecret_call` entry point (inline specs cannot fall back
+  /// to the legacy `monosecret_resolve` symbol).
+  (Map<String, Object?>, bool) _nativeRequest({String? mode}) {
+    final options = {..._request, if (mode != null) 'mode': mode};
+    final inline = _inline;
+    if (inline == null) {
+      return (options, false);
+    }
+
+    final (spec, baseDir) = inline;
+    return (
+      {
+        'request_version': _nativeCallRequestVersion,
+        'operation': 'resolve',
+        'source': {
+          'kind': 'inline',
+          'spec_version': _inlineSpecSchemaVersion,
+          'base_dir': baseDir,
+          'spec': spec,
+        },
+        'options': options,
+      },
+      true,
+    );
+  }
+
+  Future<Map<String, Object?>> _dispatch({
+    required String kind,
+    required int expectedSchemaVersion,
+    String? mode,
+  }) async {
+    final (request, versioned) = _nativeRequest(mode: mode);
+    if (versioned && !_inlineSpecsSupported()) {
+      throw const MonosecretException(
+        'capability',
+        'the loaded native library predates inline specifications; upgrade '
+            'the monosecret Dart package so its bundled library matches '
+            '(Monosecret 0.20+)',
+      );
+    }
+
+    checkNativeAbiVersion(nativeAbiVersion());
+
+    final requestJson = jsonEncode(request);
+    final responseJson = await Isolate.run(
+      () => versioned ? nativeCall(requestJson) : nativeResolve(requestJson),
+    );
+    final decoded = jsonDecode(responseJson);
+
+    return parseEnvelope(
+      decoded,
+      kind: kind,
+      expectedSchemaVersion: expectedSchemaVersion,
+    );
   }
 
   MonosecretBuilder _set(String key, Object? value) {
@@ -83,6 +231,7 @@ class MonosecretClient {
     String? provider,
     String? scope,
     String? reason,
+    CallerContext? caller,
     Iterable<String> include = const [],
     Iterable<String> groups = const [],
     bool noValues = false,
@@ -93,6 +242,7 @@ class MonosecretClient {
         .withProvider(provider)
         .withScope(scope)
         .withReason(reason)
+        .withCaller(caller)
         .withInclude(include)
         .withGroups(groups)
         .withNoValues(noValues)
@@ -105,6 +255,7 @@ class MonosecretClient {
     String? provider,
     String? scope,
     String? reason,
+    CallerContext? caller,
     Iterable<String> include = const [],
     Iterable<String> groups = const [],
   }) {
@@ -114,6 +265,7 @@ class MonosecretClient {
         .withProvider(provider)
         .withScope(scope)
         .withReason(reason)
+        .withCaller(caller)
         .withInclude(include)
         .withGroups(groups)
         .report();
@@ -195,28 +347,3 @@ class MonosecretClient {
 
 /// Returns the version exported by the bundled native library.
 String abiVersion() => nativeAbiVersion();
-
-Future<Map<String, Object?>> _requestNative(
-  Map<String, Object?> request, {
-  required String kind,
-  required int expectedSchemaVersion,
-}) async {
-  final actualVersion = nativeAbiVersion();
-  if (actualVersion != monosecretVersion) {
-    throw MonosecretException(
-      'version',
-      'Native ABI version $actualVersion does not match Dart package version '
-          '$monosecretVersion.',
-    );
-  }
-
-  final requestJson = jsonEncode(request);
-  final responseJson = await Isolate.run(() => nativeResolve(requestJson));
-  final decoded = jsonDecode(responseJson);
-
-  return parseEnvelope(
-    decoded,
-    kind: kind,
-    expectedSchemaVersion: expectedSchemaVersion,
-  );
-}
