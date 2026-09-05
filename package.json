@@ -3,23 +3,21 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "check": "tsgo -config tsconfig.json",
+    "build:rust": "cargo build --release --bin monosecret",
     "fmt": "oxfmt --write \"**/*.ts\"",
     "fmt:check": "oxfmt --check \"**/*.ts\"",
     "lint": "oxlint --type-aware .",
-    "lint:syntax": "oxlint .",
-    "build": "tsdown",
-    "build:rust": "cargo build --release --bin monosecret"
+    "lint:syntax": "oxlint ."
   },
   "devDependencies": {
     "@rslint/tsgo": "^0.7.3",
-    "@types/node": "^26.2.0",
-    "oxfmt": "^0.63.0",
-    "oxlint": "^1.78.0",
+    "@types/node": "^26.4.1",
+    "oxfmt": "^0.66.0",
+    "oxlint": "^1.81.0",
     "oxlint-tsgolint": "^7.0.2001",
-    "tsdown": "^0.22.14",
+    "tsdown": "^0.23.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.0"
   },
   "engines": {
     "node": ">=24.0.0",
