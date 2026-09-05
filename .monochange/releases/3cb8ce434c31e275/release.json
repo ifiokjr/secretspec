@@ -1,0 +1,944 @@
+{
+  "schema_version": "0.5",
+  "kind": "monochange.releaseRecord",
+  "created_at": "2026-09-05T16:26:14Z",
+  "command": "release",
+  "version": "0.3.2",
+  "versions": {
+    "monosecret": "0.3.2"
+  },
+  "release_targets": [
+    {
+      "id": "monosecret",
+      "kind": "group",
+      "version": "0.3.2",
+      "version_format": "primary",
+      "tag": true,
+      "release": true,
+      "tag_name": "v0.3.2",
+      "members": [
+        "rust:monosecret",
+        "rust:monosecret_derive",
+        "rust:monosecret_ffi",
+        "@monosecret/cli",
+        "@monosecret/client",
+        "@monosecret/client-darwin-arm64",
+        "@monosecret/client-linux-arm64-gnu",
+        "@monosecret/client-linux-x64-gnu",
+        "@monosecret/client-win32-x64-msvc",
+        "@monosecret/skill",
+        "@monosecret/cli-darwin-arm64",
+        "@monosecret/cli-darwin-x64",
+        "@monosecret/cli-linux-arm64-gnu",
+        "@monosecret/cli-linux-arm64-musl",
+        "@monosecret/cli-linux-x64-gnu",
+        "@monosecret/cli-linux-x64-musl",
+        "@monosecret/cli-win32-arm64-msvc",
+        "@monosecret/cli-win32-x64-msvc",
+        "dart",
+        "dart:monosecret_builder"
+      ]
+    }
+  ],
+  "released_packages": [
+    "@monosecret/cli",
+    "@monosecret/cli-darwin-arm64",
+    "@monosecret/cli-darwin-x64",
+    "@monosecret/cli-linux-arm64-gnu",
+    "@monosecret/cli-linux-arm64-musl",
+    "@monosecret/cli-linux-x64-gnu",
+    "@monosecret/cli-linux-x64-musl",
+    "@monosecret/cli-win32-arm64-msvc",
+    "@monosecret/cli-win32-x64-msvc",
+    "@monosecret/client",
+    "@monosecret/client-darwin-arm64",
+    "@monosecret/client-linux-arm64-gnu",
+    "@monosecret/client-linux-x64-gnu",
+    "@monosecret/client-win32-x64-msvc",
+    "@monosecret/skill",
+    "monosecret",
+    "monosecret_builder",
+    "monosecret_derive",
+    "monosecret_ffi"
+  ],
+  "changed_files": [
+    "CHANGELOG.md",
+    "Cargo.lock",
+    "Cargo.toml",
+    "Package.swift",
+    "crates/monosecret/CHANGELOG.md",
+    "crates/monosecret/Cargo.toml",
+    "crates/monosecret_derive/CHANGELOG.md",
+    "crates/monosecret_derive/Cargo.toml",
+    "crates/monosecret_ffi/Cargo.toml",
+    "dart/monosecret/CHANGELOG.md",
+    "dart/monosecret/lib/src/version.dart",
+    "dart/monosecret/pubspec.yaml",
+    "dart/monosecret_builder/CHANGELOG.md",
+    "dart/monosecret_builder/pubspec.yaml",
+    "dotnet/monosecret_dotnet/src/Monosecret/Monosecret.csproj",
+    "haskell/monosecret_hs/monosecret.cabal",
+    "npm/monosecret__cli/package.json",
+    "npm/monosecret__cli-darwin-arm64/package.json",
+    "npm/monosecret__cli-darwin-x64/package.json",
+    "npm/monosecret__cli-linux-arm64-gnu/package.json",
+    "npm/monosecret__cli-linux-arm64-musl/package.json",
+    "npm/monosecret__cli-linux-x64-gnu/package.json",
+    "npm/monosecret__cli-linux-x64-musl/package.json",
+    "npm/monosecret__cli-win32-arm64-msvc/package.json",
+    "npm/monosecret__cli-win32-x64-msvc/package.json",
+    "npm/monosecret__client/package.json",
+    "npm/monosecret__client-darwin-arm64/package.json",
+    "npm/monosecret__client-linux-arm64-gnu/package.json",
+    "npm/monosecret__client-linux-x64-gnu/package.json",
+    "npm/monosecret__client-win32-x64-msvc/package.json",
+    "npm/monosecret__skill/package.json",
+    "pubspec.yaml",
+    "python/monosecret_py/pyproject.toml",
+    "ruby/monosecret_rb/monosecret_rb.gemspec"
+  ],
+  "package_publications": [
+    {
+      "package": "@monosecret/cli",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-darwin-arm64",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-darwin-x64",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-linux-arm64-gnu",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-linux-arm64-musl",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-linux-x64-gnu",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-linux-x64-musl",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-win32-arm64-msvc",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/cli-win32-x64-msvc",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "@monosecret/skill",
+      "ecosystem": "npm",
+      "registry": "npm",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "dart",
+      "ecosystem": "dart",
+      "registry": "pub_dev",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "dart:monosecret_builder",
+      "ecosystem": "dart",
+      "registry": "pub_dev",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "rust:monosecret",
+      "ecosystem": "cargo",
+      "registry": "crates_io",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    },
+    {
+      "package": "rust:monosecret_derive",
+      "ecosystem": "cargo",
+      "registry": "crates_io",
+      "version": "0.3.2",
+      "mode": "builtin",
+      "trusted_publishing": {
+        "enabled": true,
+        "repository": null,
+        "workflow": null,
+        "environment": null
+      }
+    }
+  ],
+  "updated_changelogs": [
+    "CHANGELOG.md",
+    "crates/monosecret/CHANGELOG.md",
+    "crates/monosecret_derive/CHANGELOG.md",
+    "dart/monosecret/CHANGELOG.md",
+    "dart/monosecret_builder/CHANGELOG.md"
+  ],
+  "deleted_changesets": [
+    ".changeset/1788523620-monosecret.md",
+    ".changeset/dart-call-abi.md",
+    ".changeset/default-cargo-builds-cli.md",
+    ".changeset/dependency-refresh.md",
+    ".changeset/lint-deny-sweep.md"
+  ],
+  "changesets": [
+    {
+      "path": ".changeset/1788523620-monosecret.md",
+      "summary": "Sync upstream SecretSpec through 0.20.0 + 0.21-era main",
+      "details": "Merge cachix/secretspec from `671de322` (the recorded 0.19.1-era merge base) through upstream `main` @ `5ea68378` (2026-09-04), rebranded into the `crates/monosecret`, `crates/monosecret_derive`, `crates/monosecret_ffi`, and per-language `monosecret_*` SDK layout.\n\n###### New providers\n\n- **EJSON** (`ejson://`): encrypted JSON key/value files through `ejson`, with preflight discovery of the secrets directory (0.20+).\n\n###### New features\n\n- **Project default provider chains (0.21+)**: a project-level `[defaults]` table with a `providers` chain applied to every provider-backed secret that neither its profile nor a secret selects. Resolution order: secret → profile `[defaults].providers` → project `[defaults].providers` → user-global default. The inline-spec envelope moves to v2 with optional inline `defaults`.\n- **OpenPGP and OpenSSH private-key generation (0.21+)**: `type = \"openpgp_private_key\"` (ed25519 default, configurable RSA, user ID, sign/encrypt capability profiles) and `type = \"ssh_private_key\"` (ed25519 default, configurable RSA and comments), generated entirely in Rust via rPGP and `ssh-key`.\n- **Claude Code credential integration (0.21+)**: `monosecret claude configure`/`unconfigure`/`login`/`logout` wire Anthropic API and LLM gateway credentials through Claude Code's `apiKeyHelper`, with settings-scope isolation, worktree handling, and `CLAUDE_CONFIG_DIR` support.\n- **Providers disabled at compile time now report clearly**: a secret routed at a feature-gated provider whose Cargo feature is off returns a stable `provider_feature_disabled` error naming the provider and the feature.\n\n###### Fixes\n\n- Provider metadata centralized into a shared catalog shared by enabled and disabled registrations, so discovery and error metadata stay identical in every build.\n- Inline-spec resolution gains the v2 envelope across the FFI and every SDK (`monosecret_call` sources now advertise `spec_version` 2).\n- Docs: EJSON provider guide, Claude Code integration guide, OpenPGP/SSH key-generation reference, project-defaults configuration reference, and a dotenv discouragement notice; the Claude OAuth security post is rebranded for the fork.",
+      "targets": [
+        {
+          "id": "monosecret",
+          "kind": "group",
+          "bump": "minor",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "feat"
+        }
+      ],
+      "context": {
+        "provider": "github",
+        "host": "github.com",
+        "capabilities": {
+          "commit_web_urls": true,
+          "actor_profiles": true,
+          "review_request_lookup": true,
+          "related_issues": true,
+          "issue_comments": true
+        },
+        "introduced": null,
+        "last_updated": null,
+        "related_issues": []
+      }
+    },
+    {
+      "path": ".changeset/dart-call-abi.md",
+      "summary": "Dart SDK: inline specs and caller context via the versioned call ABI",
+      "details": "The Dart SDK now binds the versioned `monosecret_call` native entry point,\nmatching the other language SDKs:\n\n- `MonosecretBuilder.withInlineSpec(spec, baseDir)` resolves strict\n  inline-spec v1 declarations through the versioned call envelope; inline\n  resolution never falls back to a filesystem manifest, and `withPath`\n  clears the inline spec.\n- `CallerContext` and `MonosecretBuilder.withCaller` record the invoking\n  integration in audit records (they never satisfy a `require_reason`\n  policy); `MonosecretClient.resolve`/`report` accept an optional caller.\n- The bundled native library is probed for the call entry point and the\n  result is cached; older libraries raise a `capability`\n  `MonosecretException` on inline requests instead of an opaque ffi error.",
+      "targets": [
+        {
+          "id": "dart",
+          "kind": "package",
+          "bump": "minor",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "feat"
+        }
+      ],
+      "context": {
+        "provider": "github",
+        "host": "github.com",
+        "capabilities": {
+          "commit_web_urls": true,
+          "actor_profiles": true,
+          "review_request_lookup": true,
+          "related_issues": true,
+          "issue_comments": true
+        },
+        "introduced": {
+          "actor": {
+            "provider": "github",
+            "host": "github.com",
+            "id": null,
+            "login": "ifiokjr",
+            "display_name": "ifiokjr",
+            "url": "https://github.com/ifiokjr",
+            "source": "review_request_author"
+          },
+          "commit": {
+            "provider": "github",
+            "host": "github.com",
+            "sha": "142e4ee9d71d632167e9f3afe75430a297df2d7c",
+            "short_sha": "142e4ee",
+            "url": "https://github.com/ifiokjr/monosecret/commit/142e4ee9d71d632167e9f3afe75430a297df2d7c",
+            "authored_at": "2026-09-05T11:44:58+01:00",
+            "committed_at": "2026-09-05T13:02:43+01:00",
+            "author_name": "Ifiok Jr.",
+            "author_email": "ifiokotung@gmail.com"
+          },
+          "review_request": {
+            "provider": "github",
+            "host": "github.com",
+            "kind": "pull_request",
+            "id": "#48",
+            "title": "feat(dart): add the monosecret_call ABI with inline specs and caller context",
+            "url": "https://github.com/ifiokjr/monosecret/pull/48",
+            "author": {
+              "provider": "github",
+              "host": "github.com",
+              "id": null,
+              "login": "ifiokjr",
+              "display_name": "ifiokjr",
+              "url": "https://github.com/ifiokjr",
+              "source": "review_request_author"
+            }
+          }
+        },
+        "last_updated": {
+          "actor": {
+            "provider": "github",
+            "host": "github.com",
+            "id": null,
+            "login": "ifiokjr",
+            "display_name": "ifiokjr",
+            "url": "https://github.com/ifiokjr",
+            "source": "review_request_author"
+          },
+          "commit": {
+            "provider": "github",
+            "host": "github.com",
+            "sha": "142e4ee9d71d632167e9f3afe75430a297df2d7c",
+            "short_sha": "142e4ee",
+            "url": "https://github.com/ifiokjr/monosecret/commit/142e4ee9d71d632167e9f3afe75430a297df2d7c",
+            "authored_at": "2026-09-05T11:44:58+01:00",
+            "committed_at": "2026-09-05T13:02:43+01:00",
+            "author_name": "Ifiok Jr.",
+            "author_email": "ifiokotung@gmail.com"
+          },
+          "review_request": {
+            "provider": "github",
+            "host": "github.com",
+            "kind": "pull_request",
+            "id": "#48",
+            "title": "feat(dart): add the monosecret_call ABI with inline specs and caller context",
+            "url": "https://github.com/ifiokjr/monosecret/pull/48",
+            "author": {
+              "provider": "github",
+              "host": "github.com",
+              "id": null,
+              "login": "ifiokjr",
+              "display_name": "ifiokjr",
+              "url": "https://github.com/ifiokjr",
+              "source": "review_request_author"
+            }
+          }
+        },
+        "related_issues": []
+      }
+    },
+    {
+      "path": ".changeset/default-cargo-builds-cli.md",
+      "summary": "Default cargo builds to the CLI crate",
+      "details": "Plain `cargo build`, `cargo check`, and `cargo test` now operate on the CLI crate only via workspace `default-members`. The language SDK members (FFI, npm, PHP, Python, and examples) require the `php`, `python`, and `node` interpreters at build time and are now selected explicitly with `--workspace` / `-p` in CI, devenv tasks, and publish workflows. Sandboxed CLI-only builds — such as Nix packaging, which installs monosecret without those interpreters — work again with a bare `cargo build`.",
+      "targets": [
+        {
+          "id": "monosecret",
+          "kind": "group",
+          "bump": "minor",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "feat"
+        }
+      ],
+      "context": {
+        "provider": "github",
+        "host": "github.com",
+        "capabilities": {
+          "commit_web_urls": true,
+          "actor_profiles": true,
+          "review_request_lookup": true,
+          "related_issues": true,
+          "issue_comments": true
+        },
+        "introduced": {
+          "actor": {
+            "provider": "github",
+            "host": "github.com",
+            "id": null,
+            "login": "ifiokjr",
+            "display_name": "ifiokjr",
+            "url": "https://github.com/ifiokjr",
+            "source": "review_request_author"
+          },
+          "commit": {
+            "provider": "github",
+            "host": "github.com",
+            "sha": "b6ba530e6480f05cf289ccd74cba0a0b5b7d48fc",
+            "short_sha": "b6ba530",
+            "url": "https://github.com/ifiokjr/monosecret/commit/b6ba530e6480f05cf289ccd74cba0a0b5b7d48fc",
+            "authored_at": "2026-09-04T12:46:45+01:00",
+            "committed_at": "2026-09-04T12:46:45+01:00",
+            "author_name": "Ifiok Jr.",
+            "author_email": "1160934+ifiokjr@users.noreply.github.com"
+          },
+          "review_request": {
+            "provider": "github",
+            "host": "github.com",
+            "kind": "pull_request",
+            "id": "#44",
+            "title": "feat(build): default cargo builds to the CLI crate",
+            "url": "https://github.com/ifiokjr/monosecret/pull/44",
+            "author": {
+              "provider": "github",
+              "host": "github.com",
+              "id": null,
+              "login": "ifiokjr",
+              "display_name": "ifiokjr",
+              "url": "https://github.com/ifiokjr",
+              "source": "review_request_author"
+            }
+          }
+        },
+        "last_updated": {
+          "actor": {
+            "provider": "github",
+            "host": "github.com",
+            "id": null,
+            "login": "ifiokjr",
+            "display_name": "ifiokjr",
+            "url": "https://github.com/ifiokjr",
+            "source": "review_request_author"
+          },
+          "commit": {
+            "provider": "github",
+            "host": "github.com",
+            "sha": "b6ba530e6480f05cf289ccd74cba0a0b5b7d48fc",
+            "short_sha": "b6ba530",
+            "url": "https://github.com/ifiokjr/monosecret/commit/b6ba530e6480f05cf289ccd74cba0a0b5b7d48fc",
+            "authored_at": "2026-09-04T12:46:45+01:00",
+            "committed_at": "2026-09-04T12:46:45+01:00",
+            "author_name": "Ifiok Jr.",
+            "author_email": "1160934+ifiokjr@users.noreply.github.com"
+          },
+          "review_request": {
+            "provider": "github",
+            "host": "github.com",
+            "kind": "pull_request",
+            "id": "#44",
+            "title": "feat(build): default cargo builds to the CLI crate",
+            "url": "https://github.com/ifiokjr/monosecret/pull/44",
+            "author": {
+              "provider": "github",
+              "host": "github.com",
+              "id": null,
+              "login": "ifiokjr",
+              "display_name": "ifiokjr",
+              "url": "https://github.com/ifiokjr",
+              "source": "review_request_author"
+            }
+          }
+        },
+        "related_issues": []
+      }
+    },
+    {
+      "path": ".changeset/dependency-refresh.md",
+      "summary": "Refresh cargo, pnpm, dart, and devenv dependencies",
+      "details": "`cargo update`, `pnpm update --latest` (vitest 4 → 5, tsdown 0.22 → 0.23,\noxfmt 0.63 → 0.66, oxlint 1.78 → 1.81), `dart pub upgrade`, and\n`devenv update` (devenv CLI, git-hooks.nix, custom nixpkgs inputs).\n\n`keepass` is pinned to `=0.13.17`: the 0.13.25 release depends on a\ncipher/cbc combination that `aes` 0.8 does not implement, which broke the\nkdbx provider's build.",
+      "targets": [
+        {
+          "id": "rust:monosecret",
+          "kind": "package",
+          "bump": "patch",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "fix"
+        },
+        {
+          "id": "rust:monosecret_derive",
+          "kind": "package",
+          "bump": "patch",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "fix"
+        },
+        {
+          "id": "rust:monosecret_ffi",
+          "kind": "package",
+          "bump": "patch",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "fix"
+        },
+        {
+          "id": "@monosecret/client",
+          "kind": "package",
+          "bump": "patch",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "fix"
+        },
+        {
+          "id": "dart",
+          "kind": "package",
+          "bump": "patch",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "fix"
+        }
+      ],
+      "context": {
+        "provider": "github",
+        "host": "github.com",
+        "capabilities": {
+          "commit_web_urls": true,
+          "actor_profiles": true,
+          "review_request_lookup": true,
+          "related_issues": true,
+          "issue_comments": true
+        },
+        "introduced": {
+          "actor": {
+            "provider": "github",
+            "host": "github.com",
+            "id": null,
+            "login": "ifiokjr",
+            "display_name": "ifiokjr",
+            "url": "https://github.com/ifiokjr",
+            "source": "review_request_author"
+          },
+          "commit": {
+            "provider": "github",
+            "host": "github.com",
+            "sha": "628d281bc45c07e9448b015d121ed89273db8bed",
+            "short_sha": "628d281",
+            "url": "https://github.com/ifiokjr/monosecret/commit/628d281bc45c07e9448b015d121ed89273db8bed",
+            "authored_at": "2026-09-05T15:35:20+01:00",
+            "committed_at": "2026-09-05T16:05:42+01:00",
+            "author_name": "Ifiok Jr.",
+            "author_email": "ifiokotung@gmail.com"
+          },
+          "review_request": {
+            "provider": "github",
+            "host": "github.com",
+            "kind": "pull_request",
+            "id": "#49",
+            "title": "chore(deps): refresh cargo, pnpm, dart, and devenv dependencies",
+            "url": "https://github.com/ifiokjr/monosecret/pull/49",
+            "author": {
+              "provider": "github",
+              "host": "github.com",
+              "id": null,
+              "login": "ifiokjr",
+              "display_name": "ifiokjr",
+              "url": "https://github.com/ifiokjr",
+              "source": "review_request_author"
+            }
+          }
+        },
+        "last_updated": {
+          "actor": {
+            "provider": "github",
+            "host": "github.com",
+            "id": null,
+            "login": "ifiokjr",
+            "display_name": "ifiokjr",
+            "url": "https://github.com/ifiokjr",
+            "source": "review_request_author"
+          },
+          "commit": {
+            "provider": "github",
+            "host": "github.com",
+            "sha": "628d281bc45c07e9448b015d121ed89273db8bed",
+            "short_sha": "628d281",
+            "url": "https://github.com/ifiokjr/monosecret/commit/628d281bc45c07e9448b015d121ed89273db8bed",
+            "authored_at": "2026-09-05T15:35:20+01:00",
+            "committed_at": "2026-09-05T16:05:42+01:00",
+            "author_name": "Ifiok Jr.",
+            "author_email": "ifiokotung@gmail.com"
+          },
+          "review_request": {
+            "provider": "github",
+            "host": "github.com",
+            "kind": "pull_request",
+            "id": "#49",
+            "title": "chore(deps): refresh cargo, pnpm, dart, and devenv dependencies",
+            "url": "https://github.com/ifiokjr/monosecret/pull/49",
+            "author": {
+              "provider": "github",
+              "host": "github.com",
+              "id": null,
+              "login": "ifiokjr",
+              "display_name": "ifiokjr",
+              "url": "https://github.com/ifiokjr",
+              "source": "review_request_author"
+            }
+          }
+        },
+        "related_issues": []
+      }
+    },
+    {
+      "path": ".changeset/lint-deny-sweep.md",
+      "summary": "Eliminate every clippy warning and promote lint groups to deny",
+      "details": "Fixed ~1330 clippy warnings across the workspace (format-arg inlining,\ndoc-comment backticks, digit-separated literals, redundant\nqualifications/closures, needless borrows, `let … else`, internal\npass-by-value → references, `#[must_use]` additions, unnecessary `Result`\nwraps, dead code) and converted `indexing_slicing` in production parsers to\nbounds-checked access with error propagation, so malformed provider responses\ncan no longer panic. Fixed a latent `cached_route` panic (inline-URI alias\ncaching into its own store), a pre-existing flaky Infisical TCP test, and\nreverted a clippy `--fix` regression that flipped the vault missing-`tls`\ndefault.\n\nAll clippy groups (`complexity`, `pedantic`, `perf`, `style`, `suspicious`)\nare now `deny`, the ffi/node/php/python crates inherit the workspace lints,\nand CI clippy runs with `-D warnings`.",
+      "targets": [
+        {
+          "id": "rust:monosecret",
+          "kind": "package",
+          "bump": "patch",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "fix"
+        },
+        {
+          "id": "rust:monosecret_derive",
+          "kind": "package",
+          "bump": "patch",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "fix"
+        },
+        {
+          "id": "rust:monosecret_ffi",
+          "kind": "package",
+          "bump": "patch",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "fix"
+        },
+        {
+          "id": "@monosecret/client",
+          "kind": "package",
+          "bump": "patch",
+          "origin": "direct-change",
+          "evidence_refs": [],
+          "change_type": "fix"
+        }
+      ],
+      "context": {
+        "provider": "github",
+        "host": "github.com",
+        "capabilities": {
+          "commit_web_urls": true,
+          "actor_profiles": true,
+          "review_request_lookup": true,
+          "related_issues": true,
+          "issue_comments": true
+        },
+        "introduced": {
+          "actor": {
+            "provider": "github",
+            "host": "github.com",
+            "id": null,
+            "login": "ifiokjr",
+            "display_name": "ifiokjr",
+            "url": "https://github.com/ifiokjr",
+            "source": "review_request_author"
+          },
+          "commit": {
+            "provider": "github",
+            "host": "github.com",
+            "sha": "c0b50d5724cdda76a39e93b9fec85681591fe059",
+            "short_sha": "c0b50d5",
+            "url": "https://github.com/ifiokjr/monosecret/commit/c0b50d5724cdda76a39e93b9fec85681591fe059",
+            "authored_at": "2026-09-04T12:28:31+01:00",
+            "committed_at": "2026-09-04T13:24:41+01:00",
+            "author_name": "Ifiok Jr.",
+            "author_email": "ifiokotung@gmail.com"
+          },
+          "review_request": {
+            "provider": "github",
+            "host": "github.com",
+            "kind": "pull_request",
+            "id": "#45",
+            "title": "fix(lints): eliminate every clippy warning and promote lint groups to deny",
+            "url": "https://github.com/ifiokjr/monosecret/pull/45",
+            "author": {
+              "provider": "github",
+              "host": "github.com",
+              "id": null,
+              "login": "ifiokjr",
+              "display_name": "ifiokjr",
+              "url": "https://github.com/ifiokjr",
+              "source": "review_request_author"
+            }
+          }
+        },
+        "last_updated": {
+          "actor": {
+            "provider": "github",
+            "host": "github.com",
+            "id": null,
+            "login": "ifiokjr",
+            "display_name": "ifiokjr",
+            "url": "https://github.com/ifiokjr",
+            "source": "review_request_author"
+          },
+          "commit": {
+            "provider": "github",
+            "host": "github.com",
+            "sha": "c0b50d5724cdda76a39e93b9fec85681591fe059",
+            "short_sha": "c0b50d5",
+            "url": "https://github.com/ifiokjr/monosecret/commit/c0b50d5724cdda76a39e93b9fec85681591fe059",
+            "authored_at": "2026-09-04T12:28:31+01:00",
+            "committed_at": "2026-09-04T13:24:41+01:00",
+            "author_name": "Ifiok Jr.",
+            "author_email": "ifiokotung@gmail.com"
+          },
+          "review_request": {
+            "provider": "github",
+            "host": "github.com",
+            "kind": "pull_request",
+            "id": "#45",
+            "title": "fix(lints): eliminate every clippy warning and promote lint groups to deny",
+            "url": "https://github.com/ifiokjr/monosecret/pull/45",
+            "author": {
+              "provider": "github",
+              "host": "github.com",
+              "id": null,
+              "login": "ifiokjr",
+              "display_name": "ifiokjr",
+              "url": "https://github.com/ifiokjr",
+              "source": "review_request_author"
+            }
+          }
+        },
+        "related_issues": []
+      }
+    }
+  ],
+  "changelogs": [
+    {
+      "owner_id": "monosecret",
+      "owner_kind": "group",
+      "output": "default",
+      "stream": "default",
+      "path": "CHANGELOG.md",
+      "format": "keep_a_changelog",
+      "notes": {
+        "title": "[0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)",
+        "summary": [
+          "Grouped release for `monosecret`."
+        ],
+        "sections": [
+          {
+            "title": "Features",
+            "collapsed": false,
+            "entries": [
+              "#### Sync upstream SecretSpec through 0.20.0 + 0.21-era main\n_Packages:_ _monosecret_\n\nMerge cachix/secretspec from `671de322` (the recorded 0.19.1-era merge base) through upstream `main` @ `5ea68378` (2026-09-04), rebranded into the `crates/monosecret`, `crates/monosecret_derive`, `crates/monosecret_ffi`, and per-language `monosecret_*` SDK layout.\n\n###### New providers\n\n- **EJSON** (`ejson://`): encrypted JSON key/value files through `ejson`, with preflight discovery of the secrets directory (0.20+).\n\n###### New features\n\n- **Project default provider chains (0.21+)**: a project-level `[defaults]` table with a `providers` chain applied to every provider-backed secret that neither its profile nor a secret selects. Resolution order: secret → profile `[defaults].providers` → project `[defaults].providers` → user-global default. The inline-spec envelope moves to v2 with optional inline `defaults`.\n- **OpenPGP and OpenSSH private-key generation (0.21+)**: `type = \"openpgp_private_key\"` (ed25519 default, configurable RSA, user ID, sign/encrypt capability profiles) and `type = \"ssh_private_key\"` (ed25519 default, configurable RSA and comments), generated entirely in Rust via rPGP and `ssh-key`.\n- **Claude Code credential integration (0.21+)**: `monosecret claude configure`/`unconfigure`/`login`/`logout` wire Anthropic API and LLM gateway credentials through Claude Code's `apiKeyHelper`, with settings-scope isolation, worktree handling, and `CLAUDE_CONFIG_DIR` support.\n- **Providers disabled at compile time now report clearly**: a secret routed at a feature-gated provider whose Cargo feature is off returns a stable `provider_feature_disabled` error naming the provider and the feature.\n\n###### Fixes\n\n- Provider metadata centralized into a shared catalog shared by enabled and disabled registrations, so discovery and error metadata stay identical in every build.\n- Inline-spec resolution gains the v2 envelope across the FFI and every SDK (`monosecret_call` sources now advertise `spec_version` 2).\n- Docs: EJSON provider guide, Claude Code integration guide, OpenPGP/SSH key-generation reference, project-defaults configuration reference, and a dotenv discouragement notice; the Claude OAuth security post is rebranded for the fork.",
+              "#### Default cargo builds to the CLI crate\n_Packages:_ _monosecret_\n\nPlain `cargo build`, `cargo check`, and `cargo test` now operate on the CLI crate only via workspace `default-members`. The language SDK members (FFI, npm, PHP, Python, and examples) require the `php`, `python`, and `node` interpreters at build time and are now selected explicitly with `--workspace` / `-p` in CI, devenv tasks, and publish workflows. Sandboxed CLI-only builds — such as Nix packaging, which installs monosecret without those interpreters — work again with a bare `cargo build`.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #44](https://github.com/ifiokjr/monosecret/pull/44)",
+              "#### Dart SDK: inline specs and caller context via the versioned call ABI\n_Packages:_ _dart_\n\nThe Dart SDK now binds the versioned `monosecret_call` native entry point,\nmatching the other language SDKs:\n\n- `MonosecretBuilder.withInlineSpec(spec, baseDir)` resolves strict\n  inline-spec v1 declarations through the versioned call envelope; inline\n  resolution never falls back to a filesystem manifest, and `withPath`\n  clears the inline spec.\n- `CallerContext` and `MonosecretBuilder.withCaller` record the invoking\n  integration in audit records (they never satisfy a `require_reason`\n  policy); `MonosecretClient.resolve`/`report` accept an optional caller.\n- The bundled native library is probed for the call entry point and the\n  result is cached; older libraries raise a `capability`\n  `MonosecretException` on inline requests instead of an opaque ffi error.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #48](https://github.com/ifiokjr/monosecret/pull/48)"
+            ]
+          },
+          {
+            "title": "Fixes",
+            "collapsed": false,
+            "entries": [
+              "#### Refresh cargo, pnpm, dart, and devenv dependencies\n_Packages:_ _rust:monosecret_, _rust:monosecret_derive_, _rust:monosecret_ffi_, _@monosecret/client_, _dart_\n\n`cargo update`, `pnpm update --latest` (vitest 4 → 5, tsdown 0.22 → 0.23,\noxfmt 0.63 → 0.66, oxlint 1.78 → 1.81), `dart pub upgrade`, and\n`devenv update` (devenv CLI, git-hooks.nix, custom nixpkgs inputs).\n\n`keepass` is pinned to `=0.13.17`: the 0.13.25 release depends on a\ncipher/cbc combination that `aes` 0.8 does not implement, which broke the\nkdbx provider's build.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #49](https://github.com/ifiokjr/monosecret/pull/49)",
+              "#### Eliminate every clippy warning and promote lint groups to deny\n_Packages:_ _rust:monosecret_, _rust:monosecret_derive_, _rust:monosecret_ffi_, _@monosecret/client_\n\nFixed ~1330 clippy warnings across the workspace (format-arg inlining,\ndoc-comment backticks, digit-separated literals, redundant\nqualifications/closures, needless borrows, `let … else`, internal\npass-by-value → references, `#[must_use]` additions, unnecessary `Result`\nwraps, dead code) and converted `indexing_slicing` in production parsers to\nbounds-checked access with error propagation, so malformed provider responses\ncan no longer panic. Fixed a latent `cached_route` panic (inline-URI alias\ncaching into its own store), a pre-existing flaky Infisical TCP test, and\nreverted a clippy `--fix` regression that flipped the vault missing-`tls`\ndefault.\n\nAll clippy groups (`complexity`, `pedantic`, `perf`, `style`, `suspicious`)\nare now `deny`, the ffi/node/php/python crates inherit the workspace lints,\nand CI clippy runs with `-D warnings`.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #45](https://github.com/ifiokjr/monosecret/pull/45)"
+            ]
+          }
+        ]
+      },
+      "rendered": "## [0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)\n\nGrouped release for `monosecret`.\n### Features\n\n#### Sync upstream SecretSpec through 0.20.0 + 0.21-era main\n_Packages:_ _monosecret_\n\nMerge cachix/secretspec from `671de322` (the recorded 0.19.1-era merge base) through upstream `main` @ `5ea68378` (2026-09-04), rebranded into the `crates/monosecret`, `crates/monosecret_derive`, `crates/monosecret_ffi`, and per-language `monosecret_*` SDK layout.\n\n###### New providers\n\n- **EJSON** (`ejson://`): encrypted JSON key/value files through `ejson`, with preflight discovery of the secrets directory (0.20+).\n\n###### New features\n\n- **Project default provider chains (0.21+)**: a project-level `[defaults]` table with a `providers` chain applied to every provider-backed secret that neither its profile nor a secret selects. Resolution order: secret → profile `[defaults].providers` → project `[defaults].providers` → user-global default. The inline-spec envelope moves to v2 with optional inline `defaults`.\n- **OpenPGP and OpenSSH private-key generation (0.21+)**: `type = \"openpgp_private_key\"` (ed25519 default, configurable RSA, user ID, sign/encrypt capability profiles) and `type = \"ssh_private_key\"` (ed25519 default, configurable RSA and comments), generated entirely in Rust via rPGP and `ssh-key`.\n- **Claude Code credential integration (0.21+)**: `monosecret claude configure`/`unconfigure`/`login`/`logout` wire Anthropic API and LLM gateway credentials through Claude Code's `apiKeyHelper`, with settings-scope isolation, worktree handling, and `CLAUDE_CONFIG_DIR` support.\n- **Providers disabled at compile time now report clearly**: a secret routed at a feature-gated provider whose Cargo feature is off returns a stable `provider_feature_disabled` error naming the provider and the feature.\n\n###### Fixes\n\n- Provider metadata centralized into a shared catalog shared by enabled and disabled registrations, so discovery and error metadata stay identical in every build.\n- Inline-spec resolution gains the v2 envelope across the FFI and every SDK (`monosecret_call` sources now advertise `spec_version` 2).\n- Docs: EJSON provider guide, Claude Code integration guide, OpenPGP/SSH key-generation reference, project-defaults configuration reference, and a dotenv discouragement notice; the Claude OAuth security post is rebranded for the fork.\n\n#### Default cargo builds to the CLI crate\n_Packages:_ _monosecret_\n\nPlain `cargo build`, `cargo check`, and `cargo test` now operate on the CLI crate only via workspace `default-members`. The language SDK members (FFI, npm, PHP, Python, and examples) require the `php`, `python`, and `node` interpreters at build time and are now selected explicitly with `--workspace` / `-p` in CI, devenv tasks, and publish workflows. Sandboxed CLI-only builds — such as Nix packaging, which installs monosecret without those interpreters — work again with a bare `cargo build`.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #44](https://github.com/ifiokjr/monosecret/pull/44)\n\n#### Dart SDK: inline specs and caller context via the versioned call ABI\n_Packages:_ _dart_\n\nThe Dart SDK now binds the versioned `monosecret_call` native entry point,\nmatching the other language SDKs:\n\n- `MonosecretBuilder.withInlineSpec(spec, baseDir)` resolves strict\n  inline-spec v1 declarations through the versioned call envelope; inline\n  resolution never falls back to a filesystem manifest, and `withPath`\n  clears the inline spec.\n- `CallerContext` and `MonosecretBuilder.withCaller` record the invoking\n  integration in audit records (they never satisfy a `require_reason`\n  policy); `MonosecretClient.resolve`/`report` accept an optional caller.\n- The bundled native library is probed for the call entry point and the\n  result is cached; older libraries raise a `capability`\n  `MonosecretException` on inline requests instead of an opaque ffi error.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #48](https://github.com/ifiokjr/monosecret/pull/48)\n\n### Fixes\n\n#### Refresh cargo, pnpm, dart, and devenv dependencies\n_Packages:_ _rust:monosecret_, _rust:monosecret_derive_, _rust:monosecret_ffi_, _@monosecret/client_, _dart_\n\n`cargo update`, `pnpm update --latest` (vitest 4 → 5, tsdown 0.22 → 0.23,\noxfmt 0.63 → 0.66, oxlint 1.78 → 1.81), `dart pub upgrade`, and\n`devenv update` (devenv CLI, git-hooks.nix, custom nixpkgs inputs).\n\n`keepass` is pinned to `=0.13.17`: the 0.13.25 release depends on a\ncipher/cbc combination that `aes` 0.8 does not implement, which broke the\nkdbx provider's build.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #49](https://github.com/ifiokjr/monosecret/pull/49)\n\n#### Eliminate every clippy warning and promote lint groups to deny\n_Packages:_ _rust:monosecret_, _rust:monosecret_derive_, _rust:monosecret_ffi_, _@monosecret/client_\n\nFixed ~1330 clippy warnings across the workspace (format-arg inlining,\ndoc-comment backticks, digit-separated literals, redundant\nqualifications/closures, needless borrows, `let … else`, internal\npass-by-value → references, `#[must_use]` additions, unnecessary `Result`\nwraps, dead code) and converted `indexing_slicing` in production parsers to\nbounds-checked access with error propagation, so malformed provider responses\ncan no longer panic. Fixed a latent `cached_route` panic (inline-URI alias\ncaching into its own store), a pre-existing flaky Infisical TCP test, and\nreverted a clippy `--fix` regression that flipped the vault missing-`tls`\ndefault.\n\nAll clippy groups (`complexity`, `pedantic`, `perf`, `style`, `suspicious`)\nare now `deny`, the ffi/node/php/python crates inherit the workspace lints,\nand CI clippy runs with `-D warnings`.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #45](https://github.com/ifiokjr/monosecret/pull/45)"
+    },
+    {
+      "owner_id": "rust:monosecret",
+      "owner_kind": "package",
+      "output": "default",
+      "stream": "default",
+      "path": "crates/monosecret/CHANGELOG.md",
+      "format": "keep_a_changelog",
+      "notes": {
+        "title": "[0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)",
+        "summary": [],
+        "sections": [
+          {
+            "title": "Fixes",
+            "collapsed": false,
+            "entries": [
+              "#### Refresh cargo, pnpm, dart, and devenv dependencies\n\n`cargo update`, `pnpm update --latest` (vitest 4 → 5, tsdown 0.22 → 0.23,\noxfmt 0.63 → 0.66, oxlint 1.78 → 1.81), `dart pub upgrade`, and\n`devenv update` (devenv CLI, git-hooks.nix, custom nixpkgs inputs).\n\n`keepass` is pinned to `=0.13.17`: the 0.13.25 release depends on a\ncipher/cbc combination that `aes` 0.8 does not implement, which broke the\nkdbx provider's build.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #49](https://github.com/ifiokjr/monosecret/pull/49)",
+              "#### Eliminate every clippy warning and promote lint groups to deny\n\nFixed ~1330 clippy warnings across the workspace (format-arg inlining,\ndoc-comment backticks, digit-separated literals, redundant\nqualifications/closures, needless borrows, `let … else`, internal\npass-by-value → references, `#[must_use]` additions, unnecessary `Result`\nwraps, dead code) and converted `indexing_slicing` in production parsers to\nbounds-checked access with error propagation, so malformed provider responses\ncan no longer panic. Fixed a latent `cached_route` panic (inline-URI alias\ncaching into its own store), a pre-existing flaky Infisical TCP test, and\nreverted a clippy `--fix` regression that flipped the vault missing-`tls`\ndefault.\n\nAll clippy groups (`complexity`, `pedantic`, `perf`, `style`, `suspicious`)\nare now `deny`, the ffi/node/php/python crates inherit the workspace lints,\nand CI clippy runs with `-D warnings`.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #45](https://github.com/ifiokjr/monosecret/pull/45)"
+            ]
+          }
+        ]
+      },
+      "rendered": "## [0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)\n\n### Fixes\n\n#### Refresh cargo, pnpm, dart, and devenv dependencies\n\n`cargo update`, `pnpm update --latest` (vitest 4 → 5, tsdown 0.22 → 0.23,\noxfmt 0.63 → 0.66, oxlint 1.78 → 1.81), `dart pub upgrade`, and\n`devenv update` (devenv CLI, git-hooks.nix, custom nixpkgs inputs).\n\n`keepass` is pinned to `=0.13.17`: the 0.13.25 release depends on a\ncipher/cbc combination that `aes` 0.8 does not implement, which broke the\nkdbx provider's build.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #49](https://github.com/ifiokjr/monosecret/pull/49)\n\n#### Eliminate every clippy warning and promote lint groups to deny\n\nFixed ~1330 clippy warnings across the workspace (format-arg inlining,\ndoc-comment backticks, digit-separated literals, redundant\nqualifications/closures, needless borrows, `let … else`, internal\npass-by-value → references, `#[must_use]` additions, unnecessary `Result`\nwraps, dead code) and converted `indexing_slicing` in production parsers to\nbounds-checked access with error propagation, so malformed provider responses\ncan no longer panic. Fixed a latent `cached_route` panic (inline-URI alias\ncaching into its own store), a pre-existing flaky Infisical TCP test, and\nreverted a clippy `--fix` regression that flipped the vault missing-`tls`\ndefault.\n\nAll clippy groups (`complexity`, `pedantic`, `perf`, `style`, `suspicious`)\nare now `deny`, the ffi/node/php/python crates inherit the workspace lints,\nand CI clippy runs with `-D warnings`.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #45](https://github.com/ifiokjr/monosecret/pull/45)"
+    },
+    {
+      "owner_id": "rust:monosecret_derive",
+      "owner_kind": "package",
+      "output": "default",
+      "stream": "default",
+      "path": "crates/monosecret_derive/CHANGELOG.md",
+      "format": "keep_a_changelog",
+      "notes": {
+        "title": "[0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)",
+        "summary": [],
+        "sections": [
+          {
+            "title": "Fixes",
+            "collapsed": false,
+            "entries": [
+              "#### Refresh cargo, pnpm, dart, and devenv dependencies\n\n`cargo update`, `pnpm update --latest` (vitest 4 → 5, tsdown 0.22 → 0.23,\noxfmt 0.63 → 0.66, oxlint 1.78 → 1.81), `dart pub upgrade`, and\n`devenv update` (devenv CLI, git-hooks.nix, custom nixpkgs inputs).\n\n`keepass` is pinned to `=0.13.17`: the 0.13.25 release depends on a\ncipher/cbc combination that `aes` 0.8 does not implement, which broke the\nkdbx provider's build.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #49](https://github.com/ifiokjr/monosecret/pull/49)",
+              "#### Eliminate every clippy warning and promote lint groups to deny\n\nFixed ~1330 clippy warnings across the workspace (format-arg inlining,\ndoc-comment backticks, digit-separated literals, redundant\nqualifications/closures, needless borrows, `let … else`, internal\npass-by-value → references, `#[must_use]` additions, unnecessary `Result`\nwraps, dead code) and converted `indexing_slicing` in production parsers to\nbounds-checked access with error propagation, so malformed provider responses\ncan no longer panic. Fixed a latent `cached_route` panic (inline-URI alias\ncaching into its own store), a pre-existing flaky Infisical TCP test, and\nreverted a clippy `--fix` regression that flipped the vault missing-`tls`\ndefault.\n\nAll clippy groups (`complexity`, `pedantic`, `perf`, `style`, `suspicious`)\nare now `deny`, the ffi/node/php/python crates inherit the workspace lints,\nand CI clippy runs with `-D warnings`.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #45](https://github.com/ifiokjr/monosecret/pull/45)"
+            ]
+          }
+        ]
+      },
+      "rendered": "## [0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)\n\n### Fixes\n\n#### Refresh cargo, pnpm, dart, and devenv dependencies\n\n`cargo update`, `pnpm update --latest` (vitest 4 → 5, tsdown 0.22 → 0.23,\noxfmt 0.63 → 0.66, oxlint 1.78 → 1.81), `dart pub upgrade`, and\n`devenv update` (devenv CLI, git-hooks.nix, custom nixpkgs inputs).\n\n`keepass` is pinned to `=0.13.17`: the 0.13.25 release depends on a\ncipher/cbc combination that `aes` 0.8 does not implement, which broke the\nkdbx provider's build.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #49](https://github.com/ifiokjr/monosecret/pull/49)\n\n#### Eliminate every clippy warning and promote lint groups to deny\n\nFixed ~1330 clippy warnings across the workspace (format-arg inlining,\ndoc-comment backticks, digit-separated literals, redundant\nqualifications/closures, needless borrows, `let … else`, internal\npass-by-value → references, `#[must_use]` additions, unnecessary `Result`\nwraps, dead code) and converted `indexing_slicing` in production parsers to\nbounds-checked access with error propagation, so malformed provider responses\ncan no longer panic. Fixed a latent `cached_route` panic (inline-URI alias\ncaching into its own store), a pre-existing flaky Infisical TCP test, and\nreverted a clippy `--fix` regression that flipped the vault missing-`tls`\ndefault.\n\nAll clippy groups (`complexity`, `pedantic`, `perf`, `style`, `suspicious`)\nare now `deny`, the ffi/node/php/python crates inherit the workspace lints,\nand CI clippy runs with `-D warnings`.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #45](https://github.com/ifiokjr/monosecret/pull/45)"
+    },
+    {
+      "owner_id": "dart",
+      "owner_kind": "package",
+      "output": "default",
+      "stream": "default",
+      "path": "dart/monosecret/CHANGELOG.md",
+      "format": "keep_a_changelog",
+      "notes": {
+        "title": "[0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)",
+        "summary": [],
+        "sections": [
+          {
+            "title": "Features",
+            "collapsed": false,
+            "entries": [
+              "#### Dart SDK: inline specs and caller context via the versioned call ABI\n\nThe Dart SDK now binds the versioned `monosecret_call` native entry point,\nmatching the other language SDKs:\n\n- `MonosecretBuilder.withInlineSpec(spec, baseDir)` resolves strict\n  inline-spec v1 declarations through the versioned call envelope; inline\n  resolution never falls back to a filesystem manifest, and `withPath`\n  clears the inline spec.\n- `CallerContext` and `MonosecretBuilder.withCaller` record the invoking\n  integration in audit records (they never satisfy a `require_reason`\n  policy); `MonosecretClient.resolve`/`report` accept an optional caller.\n- The bundled native library is probed for the call entry point and the\n  result is cached; older libraries raise a `capability`\n  `MonosecretException` on inline requests instead of an opaque ffi error.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #48](https://github.com/ifiokjr/monosecret/pull/48)"
+            ]
+          },
+          {
+            "title": "Fixes",
+            "collapsed": false,
+            "entries": [
+              "#### Refresh cargo, pnpm, dart, and devenv dependencies\n\n`cargo update`, `pnpm update --latest` (vitest 4 → 5, tsdown 0.22 → 0.23,\noxfmt 0.63 → 0.66, oxlint 1.78 → 1.81), `dart pub upgrade`, and\n`devenv update` (devenv CLI, git-hooks.nix, custom nixpkgs inputs).\n\n`keepass` is pinned to `=0.13.17`: the 0.13.25 release depends on a\ncipher/cbc combination that `aes` 0.8 does not implement, which broke the\nkdbx provider's build.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #49](https://github.com/ifiokjr/monosecret/pull/49)"
+            ]
+          }
+        ]
+      },
+      "rendered": "## [0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)\n\n### Features\n\n#### Dart SDK: inline specs and caller context via the versioned call ABI\n\nThe Dart SDK now binds the versioned `monosecret_call` native entry point,\nmatching the other language SDKs:\n\n- `MonosecretBuilder.withInlineSpec(spec, baseDir)` resolves strict\n  inline-spec v1 declarations through the versioned call envelope; inline\n  resolution never falls back to a filesystem manifest, and `withPath`\n  clears the inline spec.\n- `CallerContext` and `MonosecretBuilder.withCaller` record the invoking\n  integration in audit records (they never satisfy a `require_reason`\n  policy); `MonosecretClient.resolve`/`report` accept an optional caller.\n- The bundled native library is probed for the call entry point and the\n  result is cached; older libraries raise a `capability`\n  `MonosecretException` on inline requests instead of an opaque ffi error.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #48](https://github.com/ifiokjr/monosecret/pull/48)\n\n### Fixes\n\n#### Refresh cargo, pnpm, dart, and devenv dependencies\n\n`cargo update`, `pnpm update --latest` (vitest 4 → 5, tsdown 0.22 → 0.23,\noxfmt 0.63 → 0.66, oxlint 1.78 → 1.81), `dart pub upgrade`, and\n`devenv update` (devenv CLI, git-hooks.nix, custom nixpkgs inputs).\n\n`keepass` is pinned to `=0.13.17`: the 0.13.25 release depends on a\ncipher/cbc combination that `aes` 0.8 does not implement, which broke the\nkdbx provider's build.\n\n_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #49](https://github.com/ifiokjr/monosecret/pull/49)"
+    },
+    {
+      "owner_id": "dart:monosecret_builder",
+      "owner_kind": "package",
+      "output": "default",
+      "stream": "default",
+      "path": "dart/monosecret_builder/CHANGELOG.md",
+      "format": "keep_a_changelog",
+      "notes": {
+        "title": "[0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)",
+        "summary": [],
+        "sections": [
+          {
+            "title": "Changed",
+            "collapsed": false,
+            "entries": [
+              "- No package-specific changes were recorded; `monosecret_builder` was updated to 0.3.2 as part of group `monosecret`."
+            ]
+          }
+        ]
+      },
+      "rendered": "## [0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)\n\n### Changed\n\n- No package-specific changes were recorded; `monosecret_builder` was updated to 0.3.2 as part of group `monosecret`."
+    }
+  ],
+  "provider": {
+    "kind": "github",
+    "owner": "ifiokjr",
+    "repo": "monosecret",
+    "host": null
+  }
+}

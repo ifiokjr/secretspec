@@ -5,6 +5,100 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)
+
+Grouped release for `monosecret`.
+
+### Features
+
+#### Sync upstream SecretSpec through 0.20.0 + 0.21-era main
+
+_Packages:_ _monosecret_
+
+Merge cachix/secretspec from `671de322` (the recorded 0.19.1-era merge base) through upstream `main` @ `5ea68378` (2026-09-04), rebranded into the `crates/monosecret`, `crates/monosecret_derive`, `crates/monosecret_ffi`, and per-language `monosecret_*` SDK layout.
+
+###### New providers
+
+- **EJSON** (`ejson://`): encrypted JSON key/value files through `ejson`, with preflight discovery of the secrets directory (0.20+).
+
+###### New features
+
+- **Project default provider chains (0.21+)**: a project-level `[defaults]` table with a `providers` chain applied to every provider-backed secret that neither its profile nor a secret selects. Resolution order: secret → profile `[defaults].providers` → project `[defaults].providers` → user-global default. The inline-spec envelope moves to v2 with optional inline `defaults`.
+- **OpenPGP and OpenSSH private-key generation (0.21+)**: `type = "openpgp_private_key"` (ed25519 default, configurable RSA, user ID, sign/encrypt capability profiles) and `type = "ssh_private_key"` (ed25519 default, configurable RSA and comments), generated entirely in Rust via rPGP and `ssh-key`.
+- **Claude Code credential integration (0.21+)**: `monosecret claude configure`/`unconfigure`/`login`/`logout` wire Anthropic API and LLM gateway credentials through Claude Code's `apiKeyHelper`, with settings-scope isolation, worktree handling, and `CLAUDE_CONFIG_DIR` support.
+- **Providers disabled at compile time now report clearly**: a secret routed at a feature-gated provider whose Cargo feature is off returns a stable `provider_feature_disabled` error naming the provider and the feature.
+
+###### Fixes
+
+- Provider metadata centralized into a shared catalog shared by enabled and disabled registrations, so discovery and error metadata stay identical in every build.
+- Inline-spec resolution gains the v2 envelope across the FFI and every SDK (`monosecret_call` sources now advertise `spec_version` 2).
+- Docs: EJSON provider guide, Claude Code integration guide, OpenPGP/SSH key-generation reference, project-defaults configuration reference, and a dotenv discouragement notice; the Claude OAuth security post is rebranded for the fork.
+
+#### Default cargo builds to the CLI crate
+
+_Packages:_ _monosecret_
+
+Plain `cargo build`, `cargo check`, and `cargo test` now operate on the CLI crate only via workspace `default-members`. The language SDK members (FFI, npm, PHP, Python, and examples) require the `php`, `python`, and `node` interpreters at build time and are now selected explicitly with `--workspace` / `-p` in CI, devenv tasks, and publish workflows. Sandboxed CLI-only builds — such as Nix packaging, which installs monosecret without those interpreters — work again with a bare `cargo build`.
+
+_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #44](https://github.com/ifiokjr/monosecret/pull/44)
+
+#### Dart SDK: inline specs and caller context via the versioned call ABI
+
+_Packages:_ _dart_
+
+The Dart SDK now binds the versioned `monosecret_call` native entry point,
+matching the other language SDKs:
+
+- `MonosecretBuilder.withInlineSpec(spec, baseDir)` resolves strict
+  inline-spec v1 declarations through the versioned call envelope; inline
+  resolution never falls back to a filesystem manifest, and `withPath`
+  clears the inline spec.
+- `CallerContext` and `MonosecretBuilder.withCaller` record the invoking
+  integration in audit records (they never satisfy a `require_reason`
+  policy); `MonosecretClient.resolve`/`report` accept an optional caller.
+- The bundled native library is probed for the call entry point and the
+  result is cached; older libraries raise a `capability`
+  `MonosecretException` on inline requests instead of an opaque ffi error.
+
+_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #48](https://github.com/ifiokjr/monosecret/pull/48)
+
+### Fixes
+
+#### Refresh cargo, pnpm, dart, and devenv dependencies
+
+_Packages:_ _rust:monosecret_, _rust:monosecret_derive_, _rust:monosecret_ffi_, _@monosecret/client_, _dart_
+
+`cargo update`, `pnpm update --latest` (vitest 4 → 5, tsdown 0.22 → 0.23,
+oxfmt 0.63 → 0.66, oxlint 1.78 → 1.81), `dart pub upgrade`, and
+`devenv update` (devenv CLI, git-hooks.nix, custom nixpkgs inputs).
+
+`keepass` is pinned to `=0.13.17`: the 0.13.25 release depends on a
+cipher/cbc combination that `aes` 0.8 does not implement, which broke the
+kdbx provider's build.
+
+_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #49](https://github.com/ifiokjr/monosecret/pull/49)
+
+#### Eliminate every clippy warning and promote lint groups to deny
+
+_Packages:_ _rust:monosecret_, _rust:monosecret_derive_, _rust:monosecret_ffi_, _@monosecret/client_
+
+Fixed ~1330 clippy warnings across the workspace (format-arg inlining,
+doc-comment backticks, digit-separated literals, redundant
+qualifications/closures, needless borrows, `let … else`, internal
+pass-by-value → references, `#[must_use]` additions, unnecessary `Result`
+wraps, dead code) and converted `indexing_slicing` in production parsers to
+bounds-checked access with error propagation, so malformed provider responses
+can no longer panic. Fixed a latent `cached_route` panic (inline-URI alias
+caching into its own store), a pre-existing flaky Infisical TCP test, and
+reverted a clippy `--fix` regression that flipped the vault missing-`tls`
+default.
+
+All clippy groups (`complexity`, `pedantic`, `perf`, `style`, `suspicious`)
+are now `deny`, the ffi/node/php/python crates inherit the workspace lints,
+and CI clippy runs with `-D warnings`.
+
+_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #45](https://github.com/ifiokjr/monosecret/pull/45)
+
 ## [0.3.1](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.1) (2026-08-28)
 
 Grouped release for `monosecret`.
