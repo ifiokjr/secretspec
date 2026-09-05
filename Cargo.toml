@@ -19,7 +19,7 @@ resolver = "2"
 default-members = ["crates/monosecret"]
 
 [workspace.package]
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 
 [workspace.dependencies]
@@ -132,9 +132,9 @@ zbus-secret-service-keyring-store = { version = "1.0.0", features = [
 ], default-features = false }
 
 # internal crates
-monosecret = { version = "0.3.1", path = "./crates/monosecret", default-features = false }
-monosecret_derive = { version = "0.3.1", path = "./crates/monosecret_derive" }
-monosecret_ffi = { version = "0.3.1", path = "./crates/monosecret_ffi" }
+monosecret = { version = "0.3.2", path = "./crates/monosecret", default-features = false }
+monosecret_derive = { version = "0.3.2", path = "./crates/monosecret_derive" }
+monosecret_ffi = { version = "0.3.2", path = "./crates/monosecret_ffi" }
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
