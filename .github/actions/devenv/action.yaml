@@ -84,13 +84,18 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        # Pin the installer inputs to the nixpkgs revision devenv.lock locks
-        # for the project shell. The floating nixpkgs# channel is a moving
-        # target: when an unstable snapshot ships an invalid stdenv bootstrap
-        # path ("unpack-bootstrap-tools.sh" / "builder.sh" is not valid),
-        # every fresh evaluation fails until the channel self-heals, which
-        # repeatedly broke lint/build/packaging jobs on 2026-09-07.
-        nixpkgs_rev="b6018f87da91d19d0ab4cf979885689b469cdd41"
+        # Pin the installer inputs to a fixed nixpkgs-unstable snapshot
+        # (0af3d1402dec3fc7e93635e511d1f7428c89cebf, devenv 2.2.2 / cachix
+        # 1.9.1+) — the same toolchain the floating nixpkgs# channel served
+        # CI on 2026-09-07. The channel is a moving target: when an unstable
+        # snapshot ships an invalid stdenv bootstrap path
+        # ("unpack-bootstrap-tools.sh" / "builder.sh" is not valid), every
+        # fresh evaluation fails until the channel self-heals, which
+        # repeatedly broke lint/build/packaging jobs. Deliberately NOT the
+        # devenv.lock revision: it is older and ships devenv 1.11.1, whose
+        # shell sets TMPDIR from XDG_RUNTIME_DIR and breaks the snapshot
+        # tests (PR #52's first run).
+        nixpkgs_rev="0af3d1402dec3fc7e93635e511d1f7428c89cebf"
         for attempt in 1 2 3; do
           if nix profile add --accept-flake-config "github:NixOS/nixpkgs/${nixpkgs_rev}#cachix" && cachix use devenv && nix profile add "github:NixOS/nixpkgs/${nixpkgs_rev}#devenv"; then
             exit 0
