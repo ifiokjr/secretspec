@@ -84,8 +84,15 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
+        # Pin the installer inputs to the nixpkgs revision devenv.lock locks
+        # for the project shell. The floating nixpkgs# channel is a moving
+        # target: when an unstable snapshot ships an invalid stdenv bootstrap
+        # path ("unpack-bootstrap-tools.sh" / "builder.sh" is not valid),
+        # every fresh evaluation fails until the channel self-heals, which
+        # repeatedly broke lint/build/packaging jobs on 2026-09-07.
+        nixpkgs_rev="b6018f87da91d19d0ab4cf979885689b469cdd41"
         for attempt in 1 2 3; do
-          if nix profile add --accept-flake-config nixpkgs#cachix && cachix use devenv && nix profile add nixpkgs#devenv; then
+          if nix profile add --accept-flake-config "github:NixOS/nixpkgs/${nixpkgs_rev}#cachix" && cachix use devenv && nix profile add "github:NixOS/nixpkgs/${nixpkgs_rev}#devenv"; then
             exit 0
           fi
           if [ "$attempt" -eq 3 ]; then

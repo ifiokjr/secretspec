@@ -39,9 +39,30 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
-          cargo run -p monosecret -- \
-            --reason "Load RELEASE_PR_MERGE_TOKEN to refresh the release pull request." \
-            env --shell github --profile ci --include RELEASE_PR_MERGE_TOKEN
+          set -euo pipefail
+          # 1Password service accounts have hourly and daily request limits
+          # that are account-wide (shared with local usage of this token),
+          # and exhausted blocks can outlast a single attempt by 15+ minutes
+          # with no backoff duration in the error (the blank "Try again in
+          # seconds"). Retry with escalating backoff, and dump the rate
+          # limit usage on final failure so the block is diagnosable from
+          # the log.
+          for attempt in 1 2 3 4 5; do
+            if cargo run -p monosecret -- \
+              --reason "Load RELEASE_PR_MERGE_TOKEN to refresh the release pull request." \
+              env --shell github --profile ci --include RELEASE_PR_MERGE_TOKEN; then
+              exit 0
+            else
+              status=$?
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              op service-account ratelimit --format json || true
+              echo "::error::Failed to load release secrets after ${attempt} attempts (1Password service account rate limit?)"
+              exit "$status"
+            fi
+            echo "attempt ${attempt}/5 failed (exit ${status}); retrying in $((attempt * 30))s"
+            sleep $((attempt * 30))
+          done
         shell: devenv shell -- bash -e {0}
 
       - name: configure release git credentials
@@ -140,9 +161,25 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
-          cargo run -p monosecret -- \
-            --reason "Load RELEASE_PR_MERGE_TOKEN to create release tags and comment on released issues." \
-            env --shell github --profile ci --include RELEASE_PR_MERGE_TOKEN
+          set -euo pipefail
+          # Same 1Password service-account rate-limit resilience as the
+          # "create" job above.
+          for attempt in 1 2 3 4 5; do
+            if cargo run -p monosecret -- \
+              --reason "Load RELEASE_PR_MERGE_TOKEN to create release tags and comment on released issues." \
+              env --shell github --profile ci --include RELEASE_PR_MERGE_TOKEN; then
+              exit 0
+            else
+              status=$?
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              op service-account ratelimit --format json || true
+              echo "::error::Failed to load release secrets after ${attempt} attempts (1Password service account rate limit?)"
+              exit "$status"
+            fi
+            echo "attempt ${attempt}/5 failed (exit ${status}); retrying in $((attempt * 30))s"
+            sleep $((attempt * 30))
+          done
         shell: devenv shell -- bash -e {0}
 
       - name: configure release git credentials
