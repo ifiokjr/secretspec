@@ -135,7 +135,11 @@ pub struct OnePasswordEnvProvider {
 	config: OnePasswordEnvConfig,
 	op_command: String,
 	/// Provider-local dependency secrets that are passed to the `op` child process.
-	dependency_env: HashMap<String, SecretString>,
+	/// Interior mutability because delivery is post-construction and the
+	/// factory shares the provider as an `Arc` when it registers an auth
+	/// preflight (a `&mut self` hook cannot be forwarded through the blanket
+	/// `impl Provider for Arc<T>`).
+	dependency_env: Mutex<HashMap<String, SecretString>>,
 	/// Lazy cache of all environment variables, populated on first access.
 	cache: Mutex<Option<HashMap<String, SecretString>>>,
 }
@@ -148,7 +152,7 @@ impl OnePasswordEnvProvider {
 		Self {
 			config,
 			op_command,
-			dependency_env: HashMap::new(),
+			dependency_env: Mutex::new(HashMap::new()),
 			cache: Mutex::new(None),
 		}
 	}
@@ -185,7 +189,12 @@ impl OnePasswordEnvProvider {
 
 		if let Some(ref token) = self.config.service_account_token {
 			cmd.env("OP_SERVICE_ACCOUNT_TOKEN", token);
-		} else if let Some(token) = self.dependency_env.get("OP_SERVICE_ACCOUNT_TOKEN") {
+		} else if let Some(token) = self
+			.dependency_env
+			.lock()
+			.ok()
+			.and_then(|env| env.get("OP_SERVICE_ACCOUNT_TOKEN").cloned())
+		{
 			cmd.env("OP_SERVICE_ACCOUNT_TOKEN", token.expose_secret());
 		}
 		if let Some(ref account) = self.config.account {
@@ -232,13 +241,15 @@ impl OnePasswordEnvProvider {
 }
 
 impl Provider for OnePasswordEnvProvider {
-	fn configure_dependency_secrets(
-		&mut self,
-		dependencies: &[(String, SecretString)],
-	) -> Result<()> {
+	fn configure_dependency_secrets(&self, dependencies: &[(String, SecretString)]) -> Result<()> {
+		let mut env = self.dependency_env.lock().map_err(|error| {
+			MonosecretError::ProviderOperationFailed(format!(
+				"provider dependency delivery failed: {error}"
+			))
+		})?;
 		for (name, value) in dependencies {
 			if name == "OP_SERVICE_ACCOUNT_TOKEN" {
-				self.dependency_env.insert(name.clone(), value.clone());
+				env.insert(name.clone(), value.clone());
 			}
 		}
 		Ok(())

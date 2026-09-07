@@ -35,3 +35,13 @@ keyring-stored service account token):
   provider credential and ahead of the ambient environment variable, matching
   `onepassword+env`'s existing behavior. Forwarding and token-precedence
   regression tests included.
+- **`Arc` wrapping dropped the same hook one layer deeper** (caught by the
+  new end-to-end regression tests): providers registered with a preflight are
+  built as `Box<Arc<P>>`, and the blanket `impl Provider for Arc<T>` cannot
+  forward a `&mut self` hook — an `Arc` gives no `&mut` access — so the
+  delivery died at that layer even with the guard fixed.
+  `configure_dependency_secrets` is now a `&self` hook with interior
+  mutability (matching `set_reason`/`set_profile`), forwarded explicitly by
+  the `Arc` blanket impl and `PreflightGuard`. This also fixes the
+  `onepassword+env` provider, whose pre-existing implementation was silently
+  swallowed by the same wrapper stack.

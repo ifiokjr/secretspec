@@ -256,14 +256,14 @@ impl Provider for PreflightGuard {
 		self.inner.with_credentials(credentials);
 	}
 
-	/// Forwarded mutably into the wrapped provider: the trait default is a
-	/// no-op, so a wrapper that skipped this would silently drop every
-	/// `depends_on` bootstrap secret (e.g. a 1Password service account token)
-	/// resolved by [`crate::secrets::Secrets::build_provider_for_use`].
-	fn configure_dependency_secrets(
-		&mut self,
-		dependencies: &[(String, SecretString)],
-	) -> Result<()> {
+	/// Forwarded into the wrapped provider. This hook is post-construction, so
+	/// it must stay forwarded: the trait default is a no-op, and a wrapper that
+	/// skipped it would silently drop every `depends_on` bootstrap secret
+	/// (e.g. a 1Password service account token) resolved by
+	/// [`crate::secrets::Secrets::build_provider_for_use`]. The wrapped
+	/// provider is shared as an `Arc` when a preflight is registered, so the
+	/// `Arc` blanket impl must forward this too.
+	fn configure_dependency_secrets(&self, dependencies: &[(String, SecretString)]) -> Result<()> {
 		self.inner.configure_dependency_secrets(dependencies)
 	}
 
@@ -368,7 +368,7 @@ mod tests {
 		}
 
 		fn configure_dependency_secrets(
-			&mut self,
+			&self,
 			dependencies: &[(String, SecretString)],
 		) -> Result<()> {
 			self.received
@@ -439,17 +439,20 @@ mod tests {
 		assert_eq!(profile.lock().unwrap().as_deref(), Some("production"));
 	}
 
-	/// Regression test for 0.3.2: without the forwarding impl, the trait's
-	/// no-op default swallowed `depends_on` bootstrap secrets here, so a
-	/// 1Password provider whose service account token was resolved from
-	/// another secret ran every `op` child tokenless.
+	/// Regression test for 0.3.2: without forwarding, the trait's no-op
+	/// default swallowed `depends_on` bootstrap secrets here, so a 1Password
+	/// provider whose service account token was resolved from another secret
+	/// ran every `op` child tokenless. The provider is wrapped in `Arc` inside
+	/// the guard because the registration factory shares it for the preflight
+	/// closure — the exact `Box<Arc<P>>` shape `provider_from_url` builds — so
+	/// this pins the `Arc` forwarding and the guard forwarding together.
 	#[test]
 	fn dependency_secrets_reach_the_provider_through_preflight_guard() {
 		let received = Arc::new(Mutex::new(Vec::new()));
-		let mut guard = PreflightGuard::new(ProviderWithPreflight {
-			provider: Box::new(DependencyRecordingProvider {
+		let guard = PreflightGuard::new(ProviderWithPreflight {
+			provider: Box::new(Arc::new(DependencyRecordingProvider {
 				received: Arc::clone(&received),
-			}),
+			})),
 			preflight: Some(Box::new(|| {
 				panic!("configure_dependency_secrets must not run preflight")
 			})),

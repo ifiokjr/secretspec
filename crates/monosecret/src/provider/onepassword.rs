@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::process::Command;
+use std::sync::Mutex;
 
 use secrecy::ExposeSecret;
 use secrecy::SecretString;
@@ -454,8 +455,10 @@ pub struct OnePasswordProvider {
 	credentials: ProviderCredentials,
 	/// Bootstrap secrets handed over via `depends_on`, keyed by the child
 	/// environment variable they should be exported as (see
-	/// [`Provider::configure_dependency_secrets`]).
-	dependency_env: HashMap<String, SecretString>,
+	/// [`Provider::configure_dependency_secrets`]). Interior mutability because
+	/// delivery is post-construction and the factory shares the provider as an
+	/// `Arc` when it registers an auth preflight.
+	dependency_env: Mutex<HashMap<String, SecretString>>,
 	#[cfg(test)]
 	command_override: Option<std::sync::Arc<TestOpCommandOverride>>,
 }
@@ -496,7 +499,7 @@ impl OnePasswordProvider {
 			config,
 			op_command,
 			credentials: ProviderCredentials::new(),
-			dependency_env: HashMap::new(),
+			dependency_env: Mutex::new(HashMap::new()),
 			#[cfg(test)]
 			command_override: None,
 		}
@@ -521,7 +524,9 @@ impl OnePasswordProvider {
 			})
 			.or_else(|| {
 				self.dependency_env
-					.get(OP_SERVICE_ACCOUNT_TOKEN_ENV)
+					.lock()
+					.ok()
+					.and_then(|env| env.get(OP_SERVICE_ACCOUNT_TOKEN_ENV).cloned())
 					.map(|secret| secret.expose_secret().to_string())
 			})
 			.or_else(|| std::env::var(OP_SERVICE_ACCOUNT_TOKEN_ENV).ok())
@@ -1284,13 +1289,15 @@ impl Provider for OnePasswordProvider {
 	/// provider would run `op` as whichever account the CLI finds signed in —
 	/// or fail with "account is not signed in" in CI — instead of the service
 	/// account the spec declared.
-	fn configure_dependency_secrets(
-		&mut self,
-		dependencies: &[(String, SecretString)],
-	) -> Result<()> {
+	fn configure_dependency_secrets(&self, dependencies: &[(String, SecretString)]) -> Result<()> {
+		let mut env = self.dependency_env.lock().map_err(|error| {
+			MonosecretError::ProviderOperationFailed(format!(
+				"provider dependency delivery failed: {error}"
+			))
+		})?;
 		for (name, value) in dependencies {
 			if name == OP_SERVICE_ACCOUNT_TOKEN_ENV {
-				self.dependency_env.insert(name.clone(), value.clone());
+				env.insert(name.clone(), value.clone());
 			}
 		}
 		Ok(())
@@ -2145,7 +2152,7 @@ mod tests {
 			])
 			.unwrap();
 
-		let observed_env = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+		let observed_env = std::sync::Arc::new(Mutex::new(Vec::new()));
 		let observed = std::sync::Arc::clone(&observed_env);
 		provider.command_override = Some(std::sync::Arc::new(move |command, _stdin| {
 			observed.lock().unwrap().extend(command_envs(command));
@@ -2186,7 +2193,7 @@ mod tests {
 			service_account_token: Some("credential-token".to_string()),
 			..OnePasswordConfig::default()
 		};
-		let mut provider = OnePasswordProvider::new(config);
+		let provider = OnePasswordProvider::new(config);
 		provider
 			.configure_dependency_secrets(&[(
 				"OP_SERVICE_ACCOUNT_TOKEN".into(),
@@ -2203,7 +2210,7 @@ mod tests {
 	#[test]
 	fn dependency_token_outranks_ambient_environment() {
 		let _guard = crate::tests::EnvVarGuard::set("OP_SERVICE_ACCOUNT_TOKEN", "ambient-token");
-		let mut provider = OnePasswordProvider::new(config("op+token://Development/Dotfiles"));
+		let provider = OnePasswordProvider::new(config("op+token://Development/Dotfiles"));
 		provider
 			.configure_dependency_secrets(&[(
 				"OP_SERVICE_ACCOUNT_TOKEN".into(),
