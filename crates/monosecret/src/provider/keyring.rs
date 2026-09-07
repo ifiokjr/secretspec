@@ -354,4 +354,22 @@ mod tests {
 		let err = p.entry_target(Address::Native(&addr)).unwrap_err();
 		assert!(err.to_string().contains("`version`"), "{err}");
 	}
+
+	/// Convention entries live under the current system username, so the
+	/// username must come from whoami's real platform backend. whoami without
+	/// its `std` feature (its non-default build) compiles a stub that reports
+	/// `"anonymous"` on every native platform, silently pointing every keyring
+	/// read and write at an account that does not exist. Introduced in 0.3.2 by
+	/// `whoami = { default-features = false }`, which disabled the feature and
+	/// made every keychain lookup miss; the workspace dependency must keep the
+	/// default features enabled.
+	#[test]
+	fn current_username_is_not_the_whoami_stub() {
+		let username = KeyringProvider::current_username().unwrap();
+		assert_ne!(
+			username, "anonymous",
+			"whoami is compiled without its `std` feature; the stub username \
+				 mis-addresses every keyring entry"
+		);
+	}
 }

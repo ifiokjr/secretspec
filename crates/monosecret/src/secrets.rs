@@ -1766,7 +1766,7 @@ impl Secrets {
 		let credentials = self
 			.provider_credentials_cache
 			.get_or_try_init(&key, || self.resolve_provider_credentials(spec, &profile))?;
-		let mut provider = self.build_provider_with_credentials(
+		let provider = self.build_provider_with_credentials(
 			spec,
 			credentials,
 			allow_inline_cached,

@@ -149,10 +149,16 @@ pub trait Provider: Send + Sync {
 	fn get(&self, addr: Address<'_>) -> Result<Option<SecretString>>;
 
 	/// Supplies fork-compatible provider bootstrap secrets before first use.
-	fn configure_dependency_secrets(
-		&mut self,
-		_dependencies: &[(String, SecretString)],
-	) -> Result<()> {
+	///
+	/// Called post-construction, after resolution has fetched the values: the
+	/// provider holds them for every later operation. Implementors must use
+	/// interior mutability (`Mutex`/`RwLock`), matching `set_reason` and
+	/// `set_profile`: preflight providers are built as `Box<Arc<P>>`, and a
+	/// `&mut self` hook cannot be forwarded through the blanket
+	/// [`impl Provider for Arc<T>`](Self) — an `Arc` gives no `&mut` access to
+	/// its inner value, so such a hook would silently receive this default
+	/// no-op and every delivered secret would be dropped.
+	fn configure_dependency_secrets(&self, _dependencies: &[(String, SecretString)]) -> Result<()> {
 		Ok(())
 	}
 
@@ -812,6 +818,14 @@ impl<T: Provider> Provider for std::sync::Arc<T> {
 
 	fn set_profile(&self, profile: &str) {
 		(**self).set_profile(profile);
+	}
+
+	/// Post-construction hook, so it must forward through the `Arc`: the
+	/// factory wraps preflight providers as `Box<Arc<P>>` and resolution
+	/// delivers `depends_on` secrets after construction. The default no-op
+	/// here was the third layer that dropped 0.3.2's dependency delivery.
+	fn configure_dependency_secrets(&self, dependencies: &[(String, SecretString)]) -> Result<()> {
+		(**self).configure_dependency_secrets(dependencies)
 	}
 
 	fn reflect(&self, context: DiscoveryContext<'_>) -> Result<HashMap<String, crate::Secret>> {

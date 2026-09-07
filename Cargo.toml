@@ -125,7 +125,11 @@ tracing = { default-features = false, version = "^0.1" }
 trybuild = { default-features = false, version = "^1.0" }
 url = "2.5"
 uuid = { version = "1", features = ["serde", "v4"], default-features = false }
-whoami = { default-features = false, version = "^2.1" }
+# Default features are required: whoami's `std` feature is what compiles the
+# real platform backend. Without it, native builds silently get the stub that
+# reports `"anonymous"` for `whoami::username()`, which mis-addresses every
+# keyring entry (the account coordinate) on macOS/Linux/Windows.
+whoami = "^2.1"
 windows-native-keyring-store = { default-features = false, version = "^1.1.0" }
 zbus-secret-service-keyring-store = { version = "1.0.0", features = [
   "rt-tokio-crypto-rust",

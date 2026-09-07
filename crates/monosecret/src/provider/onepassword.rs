@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::process::Command;
+use std::sync::Mutex;
 
 use secrecy::ExposeSecret;
 use secrecy::SecretString;
@@ -12,7 +13,6 @@ use crate::provider::Address;
 use crate::provider::Provider;
 use crate::provider::ProviderCredentials;
 use crate::provider::ProviderUrl;
-use crate::provider::credential_or_env;
 
 /// Represents a `OnePassword` item retrieved from the CLI.
 ///
@@ -453,6 +453,12 @@ pub struct OnePasswordProvider {
 	op_command: String,
 	/// Credentials supplied by the provider alias.
 	credentials: ProviderCredentials,
+	/// Bootstrap secrets handed over via `depends_on`, keyed by the child
+	/// environment variable they should be exported as (see
+	/// [`Provider::configure_dependency_secrets`]). Interior mutability because
+	/// delivery is post-construction and the factory shares the provider as an
+	/// `Arc` when it registers an auth preflight.
+	dependency_env: Mutex<HashMap<String, SecretString>>,
 	#[cfg(test)]
 	command_override: Option<std::sync::Arc<TestOpCommandOverride>>,
 }
@@ -493,6 +499,7 @@ impl OnePasswordProvider {
 			config,
 			op_command,
 			credentials: ProviderCredentials::new(),
+			dependency_env: Mutex::new(HashMap::new()),
 			#[cfg(test)]
 			command_override: None,
 		}
@@ -500,16 +507,30 @@ impl OnePasswordProvider {
 
 	/// The service account token in effect: the URI-supplied one
 	/// (`onepassword+token://`), else an explicitly supplied credential, then
-	/// the conventional environment variable. When all are absent, `op` falls
-	/// back to its own authentication (desktop app or manual signin) exactly as before.
+	/// a `depends_on`-delivered bootstrap secret, and only then the
+	/// conventional environment variable. When all are absent, `op` falls back
+	/// to its own authentication (desktop app or manual signin) exactly as
+	/// before. The `depends_on` secret outranks the ambient variable to match
+	/// [`OnePasswordEnvProvider`], where the delivered token is exported
+	/// explicitly rather than inherited.
 	fn effective_service_account_token(&self) -> Option<String> {
-		self.config.service_account_token.clone().or_else(|| {
-			credential_or_env(
-				&self.credentials,
-				SERVICE_ACCOUNT_TOKEN,
-				OP_SERVICE_ACCOUNT_TOKEN_ENV,
-			)
-		})
+		self.config
+			.service_account_token
+			.clone()
+			.or_else(|| {
+				self.credentials
+					.get(SERVICE_ACCOUNT_TOKEN)
+					.map(|secret| secret.expose_secret().to_string())
+			})
+			.or_else(|| {
+				self.dependency_env
+					.lock()
+					.ok()
+					.and_then(|env| env.get(OP_SERVICE_ACCOUNT_TOKEN_ENV).cloned())
+					.map(|secret| secret.expose_secret().to_string())
+			})
+			.or_else(|| std::env::var(OP_SERVICE_ACCOUNT_TOKEN_ENV).ok())
+			.filter(|token| !token.is_empty())
 	}
 
 	/// Executes a `OnePassword` CLI command with proper error handling.
@@ -1261,6 +1282,27 @@ impl OnePasswordProvider {
 }
 
 impl Provider for OnePasswordProvider {
+	/// Receives the provider's `depends_on` bootstrap secrets. The conventional
+	/// `OP_SERVICE_ACCOUNT_TOKEN` names the service account token every `op`
+	/// child process authenticates with (see
+	/// [`Self::effective_service_account_token`]); without it a `depends_on`
+	/// provider would run `op` as whichever account the CLI finds signed in —
+	/// or fail with "account is not signed in" in CI — instead of the service
+	/// account the spec declared.
+	fn configure_dependency_secrets(&self, dependencies: &[(String, SecretString)]) -> Result<()> {
+		let mut env = self.dependency_env.lock().map_err(|error| {
+			MonosecretError::ProviderOperationFailed(format!(
+				"provider dependency delivery failed: {error}"
+			))
+		})?;
+		for (name, value) in dependencies {
+			if name == OP_SERVICE_ACCOUNT_TOKEN_ENV {
+				env.insert(name.clone(), value.clone());
+			}
+		}
+		Ok(())
+	}
+
 	/// Convention items are titled by the folder-prefix format string,
 	/// `monosecret/{project}/{profile}/{key}` by default, in the store's
 	/// default vault, and read like whole-item references: the `value` field
@@ -2076,6 +2118,110 @@ mod tests {
 			.get_args()
 			.map(|arg| arg.to_string_lossy().into_owned())
 			.collect()
+	}
+
+	fn command_envs(command: &Command) -> Vec<(String, String)> {
+		command
+			.get_envs()
+			.filter_map(|(key, value)| {
+				value.map(|value| {
+					(
+						key.to_string_lossy().into_owned(),
+						value.to_string_lossy().into_owned(),
+					)
+				})
+			})
+			.collect()
+	}
+
+	/// A `depends_on`-delivered `OP_SERVICE_ACCOUNT_TOKEN` must reach every
+	/// `op` child process. Dropping it (the pre-0.3.3 behavior) runs `op` as
+	/// whichever account the CLI finds signed in, so a service-account setup
+	/// fails with "<vault> isn't a vault in this account" or "account is not
+	/// signed in" even though resolution itself succeeded.
+	#[test]
+	fn dependency_token_is_exported_to_op_children() {
+		let mut provider = OnePasswordProvider::new(config("op+token://Development/Dotfiles"));
+		provider
+			.configure_dependency_secrets(&[
+				("IGNORED".into(), SecretString::new("ignored".into())),
+				(
+					"OP_SERVICE_ACCOUNT_TOKEN".into(),
+					SecretString::new("dependency-token".into()),
+				),
+			])
+			.unwrap();
+
+		let observed_env = std::sync::Arc::new(Mutex::new(Vec::new()));
+		let observed = std::sync::Arc::clone(&observed_env);
+		provider.command_override = Some(std::sync::Arc::new(move |command, _stdin| {
+			observed.lock().unwrap().extend(command_envs(command));
+			let args = command_args(command);
+			match args.first().map(String::as_str) {
+				// Whole-field reads resolve through `op read op://...`.
+				Some("read") => Ok("secret".to_string()),
+				_ => Ok(r#"[{"id":"item-id","title":"Dotfiles","fields":[{"id":"password","value":"secret","label":"password"}]}]"#.to_string()),
+			}
+		}));
+
+		let addr = crate::config::NativeAddress {
+			item: "Dotfiles".into(),
+			field: Some("password".into()),
+			..Default::default()
+		};
+		let value = provider
+			.get(Address::Native(&addr))
+			.unwrap()
+			.expect("stub returns the item");
+		assert_eq!(value.expose_secret(), "secret");
+
+		let envs = observed_env.lock().unwrap();
+		assert!(
+			envs.iter().any(|(key, value)| {
+				key == "OP_SERVICE_ACCOUNT_TOKEN" && value == "dependency-token"
+			}),
+			"the dependency token must be exported to every op child: {envs:?}"
+		);
+	}
+
+	/// An explicitly supplied provider credential outranks the `depends_on`
+	/// one, so a deliberate configuration can never be silently overridden by
+	/// the bootstrap secret.
+	#[test]
+	fn credential_service_token_outranks_dependency_token() {
+		let config = OnePasswordConfig {
+			service_account_token: Some("credential-token".to_string()),
+			..OnePasswordConfig::default()
+		};
+		let provider = OnePasswordProvider::new(config);
+		provider
+			.configure_dependency_secrets(&[(
+				"OP_SERVICE_ACCOUNT_TOKEN".into(),
+				SecretString::new("dependency-token".into()),
+			)])
+			.unwrap();
+
+		assert_eq!(
+			provider.effective_service_account_token().as_deref(),
+			Some("credential-token"),
+		);
+	}
+
+	#[test]
+	fn dependency_token_outranks_ambient_environment() {
+		let _guard = crate::tests::EnvVarGuard::set("OP_SERVICE_ACCOUNT_TOKEN", "ambient-token");
+		let provider = OnePasswordProvider::new(config("op+token://Development/Dotfiles"));
+		provider
+			.configure_dependency_secrets(&[(
+				"OP_SERVICE_ACCOUNT_TOKEN".into(),
+				SecretString::new("dependency-token".into()),
+			)])
+			.unwrap();
+
+		assert_eq!(
+			provider.effective_service_account_token().as_deref(),
+			Some("dependency-token"),
+		);
 	}
 
 	fn framed_output(template: &InjectTemplate, values: &[&str]) -> String {
