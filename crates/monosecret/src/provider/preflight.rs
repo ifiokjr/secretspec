@@ -256,6 +256,17 @@ impl Provider for PreflightGuard {
 		self.inner.with_credentials(credentials);
 	}
 
+	/// Forwarded mutably into the wrapped provider: the trait default is a
+	/// no-op, so a wrapper that skipped this would silently drop every
+	/// `depends_on` bootstrap secret (e.g. a 1Password service account token)
+	/// resolved by [`crate::secrets::Secrets::build_provider_for_use`].
+	fn configure_dependency_secrets(
+		&mut self,
+		dependencies: &[(String, SecretString)],
+	) -> Result<()> {
+		self.inner.configure_dependency_secrets(dependencies)
+	}
+
 	fn reflect(&self, context: DiscoveryContext<'_>) -> Result<HashMap<String, crate::Secret>> {
 		self.check()?;
 		self.inner.reflect(context)
@@ -321,6 +332,53 @@ mod tests {
 		}
 	}
 
+	/// Records the names of every `depends_on` delivery, so the guard's
+	/// forwarding can be observed.
+	struct DependencyRecordingProvider {
+		received: Arc<Mutex<Vec<String>>>,
+	}
+
+	impl Provider for DependencyRecordingProvider {
+		fn convention_address(
+			&self,
+			_project: &str,
+			_profile: &str,
+			key: &str,
+		) -> Result<NativeAddress> {
+			Ok(NativeAddress {
+				item: key.to_string(),
+				..Default::default()
+			})
+		}
+
+		fn get(&self, _addr: Address<'_>) -> Result<Option<SecretString>> {
+			Ok(None)
+		}
+
+		fn set(&self, _addr: Address<'_>, _value: &SecretString) -> Result<()> {
+			Ok(())
+		}
+
+		fn name(&self) -> &'static str {
+			"dependency-recording"
+		}
+
+		fn uri(&self) -> String {
+			"dependency-recording://".to_string()
+		}
+
+		fn configure_dependency_secrets(
+			&mut self,
+			dependencies: &[(String, SecretString)],
+		) -> Result<()> {
+			self.received
+				.lock()
+				.unwrap()
+				.extend(dependencies.iter().map(|(name, _)| name.clone()));
+			Ok(())
+		}
+	}
+
 	#[test]
 	fn success_probes_once_per_key() {
 		let cache = AuthCheckCache::default();
@@ -379,5 +437,34 @@ mod tests {
 		guard.set_profile("production");
 
 		assert_eq!(profile.lock().unwrap().as_deref(), Some("production"));
+	}
+
+	/// Regression test for 0.3.2: without the forwarding impl, the trait's
+	/// no-op default swallowed `depends_on` bootstrap secrets here, so a
+	/// 1Password provider whose service account token was resolved from
+	/// another secret ran every `op` child tokenless.
+	#[test]
+	fn dependency_secrets_reach_the_provider_through_preflight_guard() {
+		let received = Arc::new(Mutex::new(Vec::new()));
+		let mut guard = PreflightGuard::new(ProviderWithPreflight {
+			provider: Box::new(DependencyRecordingProvider {
+				received: Arc::clone(&received),
+			}),
+			preflight: Some(Box::new(|| {
+				panic!("configure_dependency_secrets must not run preflight")
+			})),
+		});
+
+		guard
+			.configure_dependency_secrets(&[(
+				"OP_SERVICE_ACCOUNT_TOKEN".to_string(),
+				SecretString::new("token".into()),
+			)])
+			.unwrap();
+
+		assert_eq!(
+			received.lock().unwrap().as_slice(),
+			["OP_SERVICE_ACCOUNT_TOKEN".to_string()],
+		);
 	}
 }
