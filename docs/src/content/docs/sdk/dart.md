@@ -86,6 +86,11 @@ back to a filesystem manifest. An older native library raises a `capability`
 `MonosecretException` instead. `withCaller` records the invoking integration
 in audit records; it never satisfies a `require_reason` policy.
 
+`withInlineSpec(spec, baseDir)` resolves strict inline-spec v1 declarations.
+`baseDir` resolves relative provider paths — useful when the specification is
+embedded inside the application and its providers reference files relative to
+a known project directory.
+
 ## Filter resolution
 
 ```dart
