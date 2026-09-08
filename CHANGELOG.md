@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.3) (2026-09-08)
+
+Grouped release for `monosecret`.
+
+### Fixes
+
+#### Fix keyring lookups and 1Password `depends_on` tokens broken in 0.3.2
+
+_Packages:_ _rust:monosecret_, _rust:monosecret_derive_, _rust:monosecret_ffi_, _@monosecret/client_
+
+Two regressions broke every keyring-backed secret for specs whose providers
+declare `depends_on` (e.g. an `op+token` provider bootstrapped from a
+keyring-stored service account token):
+
+- **whoami compiled without its `std` feature**: the workspace dependency
+  `whoami = { default-features = false }` selected whoami's stub platform
+  backend, which reports `"anonymous"` as the current username on every
+  native platform. The keyring provider addresses convention entries by
+  `(service = monosecret/{project}/{profile}/{key}, account = username)`, so
+  every lookup silently missed and every `set` would have written to a
+  non-existent account. Default features are restored (the `std` feature is
+  what compiles the real macOS/Windows/Linux backend), and a regression test
+  asserts the resolved username is not the stub value.
+
+- **`PreflightGuard` dropped `depends_on` bootstrap secrets**: the guard
+  wrapping providers with auth preflights forwarded `set_reason`,
+  `set_profile`, and `with_base_dir`, but not
+  `Provider::configure_dependency_secrets` — so the trait's no-op default
+  swallowed every resolved dependency. A provider declared with
+  `depends_on = [{ secret = "OP_SERVICE_ACCOUNT_TOKEN" }]` resolved the token
+  correctly and then discarded it, running every `op` child tokenless (which
+  fails with `"<vault>" isn't a vault in this account` or `account is not
+  signed in`). The guard now forwards the call, and the `onepassword` provider
+  (`op+token://`) implements it: a delivered `OP_SERVICE_ACCOUNT_TOKEN` is
+  exported to every `op` child process, ranked after an explicitly supplied
+  provider credential and ahead of the ambient environment variable, matching
+  `onepassword+env`'s existing behavior. Forwarding and token-precedence
+  regression tests included.
+- **`Arc` wrapping dropped the same hook one layer deeper** (caught by the
+  new end-to-end regression tests): providers registered with a preflight are
+  built as `Box<Arc<P>>`, and the blanket `impl Provider for Arc<T>` cannot
+  forward a `&mut self` hook — an `Arc` gives no `&mut` access — so the
+  delivery died at that layer even with the guard fixed.
+  `configure_dependency_secrets` is now a `&self` hook with interior
+  mutability (matching `set_reason`/`set_profile`), forwarded explicitly by
+  the `Arc` blanket impl and `PreflightGuard`. This also fixes the
+  `onepassword+env` provider, whose pre-existing implementation was silently
+  swallowed by the same wrapper stack.
+
+_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #50](https://github.com/ifiokjr/monosecret/pull/50)
+
+### Other
+
+#### End-to-end regression tests for provider `depends_on` delivery
+
+_Packages:_ _rust:monosecret_, _rust:monosecret_derive_, _rust:monosecret_ffi_, _@monosecret/client_
+
+Adds `crates/monosecret/tests/provider_dependency_token.rs`, two integration
+tests that run the real CLI binary against a temporary manifest mirroring the
+dotfiles setup that broke in 0.3.2: an `op+token` provider alias bootstrapped
+from a `depends_on` secret stored in another provider, with the `op` CLI
+replaced by a stub that records the `OP_SERVICE_ACCOUNT_TOKEN` it was
+exported.
+
+- **`depends_on_token_reaches_op_child_through_full_resolution`** resolves a
+  secret through the full pipeline (manifest parsing, fallback planning,
+  `PreflightGuard`, the `Arc`-wrapped concrete provider, child-process
+  environment) and asserts every `op` child ran with the delivered token and
+  the value resolved. This test caught the `Arc` layer of the 0.3.2
+  regression after the isolated unit tests all passed — a refactor that
+  builds providers through a path that skips dependency delivery fails here
+  even when wrapper-level tests stay green.
+- **`missing_dependency_secret_fails_resolution_loudly`** asserts a missing
+  bootstrap secret fails resolution hard with the
+  `requires secret '<name>'` error, rather than silently continuing
+  tokenless.
+
+Together with the wrapper-level unit tests on PR #50 (guard forwarding,
+`Arc` forwarding, child-env export, precedence), every layer of the delivery
+path is pinned so the regression cannot return unnoticed on a future release.
+
+_Owner:_ [@ifiokjr](https://github.com/ifiokjr) · _Review:_ [PR #51](https://github.com/ifiokjr/monosecret/pull/51) · _Related issues:_ [#50](https://github.com/ifiokjr/monosecret/issues/50)
+
 ## [0.3.2](https://github.com/ifiokjr/monosecret/releases/tag/v0.3.2) (2026-09-05)
 
 Grouped release for `monosecret`.
