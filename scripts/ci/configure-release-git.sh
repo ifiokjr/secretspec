@@ -8,12 +8,12 @@ validate_token() {
 }
 
 if [ -z "$token" ]; then
-	echo "::error::RELEASE_PR_MERGE_TOKEN was not loaded from Monosecret." >&2
+	echo "::error::RELEASE_PR_MERGE_TOKEN is not set. Add it to the repository secrets (Settings > Secrets and variables > Actions)." >&2
 	exit 1
 fi
 
 if ! user_info="$(validate_token)"; then
-	echo "::error::Monosecret-loaded RELEASE_PR_MERGE_TOKEN is not valid for GitHub." >&2
+	echo "::error::RELEASE_PR_MERGE_TOKEN is not valid for GitHub. Rotate the repository secret." >&2
 	exit 1
 fi
 
