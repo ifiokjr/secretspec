@@ -23,6 +23,14 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    env:
+      # 1Password service-account rate limits are pooled account-wide (all
+      # service accounts in one 1Password account share hourly/daily request
+      # budgets), so resolving this token through Monosecret at release time
+      # made the release train depend on an external API's availability —
+      # 1Password blocked it for a full day on 2026-09-07/08. The token lives
+      # directly in repository secrets instead.
+      RELEASE_PR_MERGE_TOKEN: ${{ secrets.RELEASE_PR_MERGE_TOKEN }}
     steps:
       - name: checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -34,36 +42,6 @@ jobs:
         uses: ./.github/actions/devenv
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: load release automation secrets
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: |
-          set -euo pipefail
-          # 1Password service accounts have hourly and daily request limits
-          # that are account-wide (shared with local usage of this token),
-          # and exhausted blocks can outlast a single attempt by 15+ minutes
-          # with no backoff duration in the error (the blank "Try again in
-          # seconds"). Retry with escalating backoff, and dump the rate
-          # limit usage on final failure so the block is diagnosable from
-          # the log.
-          for attempt in 1 2 3 4 5; do
-            if cargo run -p monosecret -- \
-              --reason "Load RELEASE_PR_MERGE_TOKEN to refresh the release pull request." \
-              env --shell github --profile ci --include RELEASE_PR_MERGE_TOKEN; then
-              exit 0
-            else
-              status=$?
-            fi
-            if [ "$attempt" -eq 5 ]; then
-              op service-account ratelimit --format json || true
-              echo "::error::Failed to load release secrets after ${attempt} attempts (1Password service account rate limit?)"
-              exit "$status"
-            fi
-            echo "attempt ${attempt}/5 failed (exit ${status}); retrying in $((attempt * 30))s"
-            sleep $((attempt * 30))
-          done
-        shell: devenv shell -- bash -e {0}
 
       - name: configure release git credentials
         run: scripts/ci/configure-release-git.sh
@@ -144,6 +122,11 @@ jobs:
       actions: write
       contents: write
       issues: write
+    env:
+      # See the note on the `create` job: resolved directly from repository
+      # secrets rather than through 1Password, whose account-wide service
+      # account rate limits can block releases for a full day.
+      RELEASE_PR_MERGE_TOKEN: ${{ secrets.RELEASE_PR_MERGE_TOKEN }}
     steps:
       - name: checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -156,31 +139,6 @@ jobs:
         uses: ./.github/actions/devenv
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: load release automation secrets
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: |
-          set -euo pipefail
-          # Same 1Password service-account rate-limit resilience as the
-          # "create" job above.
-          for attempt in 1 2 3 4 5; do
-            if cargo run -p monosecret -- \
-              --reason "Load RELEASE_PR_MERGE_TOKEN to create release tags and comment on released issues." \
-              env --shell github --profile ci --include RELEASE_PR_MERGE_TOKEN; then
-              exit 0
-            else
-              status=$?
-            fi
-            if [ "$attempt" -eq 5 ]; then
-              op service-account ratelimit --format json || true
-              echo "::error::Failed to load release secrets after ${attempt} attempts (1Password service account rate limit?)"
-              exit "$status"
-            fi
-            echo "attempt ${attempt}/5 failed (exit ${status}); retrying in $((attempt * 30))s"
-            sleep $((attempt * 30))
-          done
-        shell: devenv shell -- bash -e {0}
 
       - name: configure release git credentials
         run: scripts/ci/configure-release-git.sh
